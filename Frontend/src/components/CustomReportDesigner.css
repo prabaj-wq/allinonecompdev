@@ -1,0 +1,301 @@
+/* Custom Report Designer Styles */
+
+.ag-theme-quartz {
+  --ag-header-height: 50px;
+  --ag-header-foreground-color: #1f2937;
+  --ag-header-background-color: #f8fafc;
+  --ag-header-cell-hover-background-color: #f1f5f9;
+  --ag-border-color: #cbd5e1;
+  --ag-row-hover-color: #f8fafc;
+  --ag-selected-row-background-color: #dbeafe;
+  --ag-odd-row-background-color: #ffffff;
+  --ag-even-row-background-color: #f8fafc;
+  --ag-cell-horizontal-border: solid #e2e8f0;
+  --ag-cell-vertical-border: solid #e2e8f0;
+  --ag-font-size: 13px;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ag-cell-padding: 12px 16px;
+  --ag-row-height: 46px;
+}
+
+.ag-theme-quartz .ag-header {
+  border-bottom: 2px solid #cbd5e1;
+  font-weight: 600;
+  font-size: 13px;
+  background-color: #f8fafc;
+}
+
+.ag-theme-quartz .ag-header-cell-custom {
+  font-weight: 600;
+  font-size: 13px;
+  color: #1f2937;
+  background-color: #f8fafc;
+  border-right: 1px solid #cbd5e1;
+  padding: 16px 16px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ag-theme-quartz .ag-cell {
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  align-items: center;
+}
+
+.ag-theme-quartz .ag-row {
+  border-bottom: 1px solid #e2e8f0;
+  min-height: 46px;
+}
+
+.ag-theme-quartz .ag-row:hover {
+  background-color: #f8fafc;
+}
+
+.ag-theme-quartz .ag-row-selected {
+  background-color: #dbeafe !important;
+}
+
+/* Pinned columns styling */
+.ag-theme-quartz .ag-pinned-left-cols-container {
+  border-right: 2px solid #cbd5e1;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.ag-theme-quartz .ag-pinned-left-cols-container .ag-cell {
+  border-right: 1px solid #e2e8f0;
+}
+
+/* Numeric column alignment */
+.ag-theme-quartz .ag-cell[col-id="currentYear"],
+.ag-theme-quartz .ag-cell[col-id="previousYear"],
+.ag-theme-quartz .ag-cell[col-id="variance"] {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+/* Group row styling */
+.ag-theme-quartz .ag-row[data-group="true"] {
+  background-color: #fef3c7 !important;
+  font-weight: 600;
+  border-left: 3px solid #f59e0b;
+}
+
+/* Custom row styling */
+.ag-theme-quartz .ag-row[data-custom="true"] {
+  background-color: #f0fdf4 !important;
+  border-left: 3px solid #22c55e;
+}
+
+/* Dragged row styling */
+.ag-theme-quartz .ag-row[data-dragged="true"] {
+  background-color: #eff6ff !important;
+  border-left: 3px solid #3b82f6;
+}
+
+.ag-theme-quartz .ag-row:hover {
+  background-color: #f3f4f6;
+}
+
+.ag-theme-quartz .ag-row-selected {
+  background-color: #dbeafe;
+}
+
+.ag-theme-quartz .ag-cell-focus {
+  border: 2px solid #3b82f6;
+  border-radius: 4px;
+}
+
+.ag-theme-quartz .ag-cell-editing {
+  border: 2px solid #10b981;
+  border-radius: 4px;
+  background-color: #ffffff;
+}
+
+/* Custom row styles */
+.ag-theme-quartz .ag-row.dragged-row {
+  background-color: #eff6ff;
+  border-left: 4px solid #3b82f6;
+}
+
+.ag-theme-quartz .ag-row.custom-row {
+  background-color: #f0fdf4;
+  border-left: 4px solid #22c55e;
+}
+
+.ag-theme-quartz .ag-row.group-row {
+  background-color: #fef3c7;
+  font-weight: bold;
+}
+
+/* Dark mode support */
+.dark .ag-theme-quartz {
+  --ag-header-foreground-color: #f9fafb;
+  --ag-header-background-color: #374151;
+  --ag-header-cell-hover-background-color: #4b5563;
+  --ag-border-color: #4b5563;
+  --ag-row-hover-color: #4b5563;
+  --ag-selected-row-background-color: #1e40af;
+  --ag-odd-row-background-color: #1f2937;
+  --ag-even-row-background-color: #111827;
+  --ag-cell-horizontal-border: solid #4b5563;
+  --ag-cell-vertical-border: solid #4b5563;
+  --ag-background-color: #1f2937;
+  --ag-foreground-color: #f9fafb;
+}
+
+.dark .ag-theme-quartz .ag-header {
+  border-bottom: 2px solid #4b5563;
+}
+
+.dark .ag-theme-quartz .ag-cell {
+  border-right: 1px solid #4b5563;
+  border-bottom: 1px solid #4b5563;
+}
+
+.dark .ag-theme-quartz .ag-row {
+  border-bottom: 1px solid #4b5563;
+}
+
+.dark .ag-theme-quartz .ag-row:hover {
+  background-color: #4b5563;
+}
+
+.dark .ag-theme-quartz .ag-row-selected {
+  background-color: #1e40af;
+}
+
+.dark .ag-theme-quartz .ag-cell-focus {
+  border: 2px solid #60a5fa;
+}
+
+.dark .ag-theme-quartz .ag-cell-editing {
+  border: 2px solid #34d399;
+  background-color: #1f2937;
+}
+
+/* Drag and drop styles */
+.drag-over {
+  background-color: #dbeafe;
+  border: 2px dashed #3b82f6;
+  border-radius: 8px;
+}
+
+.drag-item {
+  cursor: move;
+  transition: all 0.2s ease;
+}
+
+.drag-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Formula editor styles */
+.formula-editor {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Color picker styles */
+.color-picker-container {
+  position: relative;
+  z-index: 1000;
+}
+
+/* Notes and annotations */
+.cell-note {
+  position: relative;
+}
+
+.cell-note::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  background-color: #3b82f6;
+  border-radius: 50%;
+  border: 2px solid white;
+}
+
+/* Conditional formatting indicators */
+.cell-positive {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.cell-negative {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.cell-warning {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+/* Live data indicator */
+.live-indicator {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ag-theme-quartz {
+    --ag-header-height: 35px;
+    --ag-font-size: 12px;
+  }
+  
+  .ag-theme-quartz .ag-cell {
+    padding: 6px 8px;
+  }
+}
+
+/* Custom scrollbar */
+.ag-theme-quartz .ag-body-viewport::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ag-theme-quartz .ag-body-viewport::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.ag-theme-quartz .ag-body-viewport::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.ag-theme-quartz .ag-body-viewport::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark .ag-theme-quartz .ag-body-viewport::-webkit-scrollbar-track {
+  background: #374151;
+}
+
+.dark .ag-theme-quartz .ag-body-viewport::-webkit-scrollbar-thumb {
+  background: #6b7280;
+}
+
+.dark .ag-theme-quartz .ag-body-viewport::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

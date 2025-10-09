@@ -1,0 +1,339 @@
+/* Global reset for fullscreen layout */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+.layout {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.logo {
+  float: left;
+  width: 120px;
+  height: 31px;
+  margin: 16px 24px 16px 0;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+.site-layout-content {
+  min-height: 280px;
+  padding: 24px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] .site-layout-content {
+  background: #141414;
+}
+
+/* GitHub-like header */
+.ant-layout-header {
+  background: #24292f !important;
+  padding: 0 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* GitHub-like menu */
+.ant-menu-dark {
+  background: #24292f !important;
+}
+
+.ant-menu-dark .ant-menu-item:hover {
+  background: #30363d !important;
+}
+
+.ant-menu-dark .ant-menu-item-selected {
+  background: #30363d !important;
+}
+
+/* GitHub-like content area */
+.ant-layout-content {
+  background: #f6f8fa !important;
+  padding: 24px;
+}
+
+/* GitHub-like card */
+.ant-card {
+  border-radius: 6px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e1e4e8;
+  transition: all 0.2s ease;
+}
+
+.ant-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.ant-card-bordered {
+  border: 1px solid #e1e4e8;
+}
+
+/* GitHub-like footer */
+.ant-layout-footer {
+  background: #ffffff !important;
+  border-top: 1px solid #e1e4e8;
+  padding: 16px 24px;
+  color: #586069;
+}
+
+/* Modern button styles */
+.ant-btn-primary {
+  background: linear-gradient(135deg, #2ea44f 0%, #2c974b 100%) !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.ant-btn-primary:hover {
+  background: linear-gradient(135deg, #2c974b 0%, #2a8a47 100%) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.ant-btn-primary:active {
+  transform: translateY(0);
+}
+
+.ant-btn-default {
+  border-radius: 6px !important;
+  transition: all 0.2s ease;
+}
+
+.ant-btn-default:hover {
+  background: #f6f8fa;
+  border-color: #d1d5da;
+}
+
+/* GitHub-like input fields */
+.ant-input,
+.ant-select-selector {
+  border-radius: 6px !important;
+  border: 1px solid #e1e4e8 !important;
+  transition: all 0.2s ease;
+}
+
+.ant-input:hover,
+.ant-select-selector:hover {
+  border-color: #d1d5da !important;
+}
+
+.ant-input:focus,
+.ant-select-selector:focus {
+  border-color: #0366d6 !important;
+  box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.15) !important;
+}
+
+/* GitHub-like table */
+.ant-table {
+  background: #ffffff !important;
+  border-radius: 6px !important;
+  border: 1px solid #e1e4e8;
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  background: #f6f8fa !important;
+  font-weight: 600;
+  color: #24292f;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #eaecef;
+  transition: background 0.2s ease;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #f6f8fa;
+}
+
+/* GitHub-like steps */
+.ant-steps-item-process .ant-steps-item-icon {
+  background: #2ea44f !important;
+  border-color: #2ea44f !important;
+}
+
+.ant-steps-item-finish .ant-steps-item-icon {
+  background: #2ea44f !important;
+  border-color: #2ea44f !important;
+}
+
+.ant-steps-item-finish > .ant-steps-item-container > .ant-steps-item-content > .ant-steps-item-title::after {
+  background-color: #2ea44f;
+}
+
+/* GitHub-like form items */
+.ant-form-item-label > label {
+  font-weight: 600;
+  color: #24292f;
+}
+
+/* GitHub-like tags */
+.ant-tag {
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.ant-tag-success {
+  background: #dcffe4;
+  border-color: #dcffe4;
+  color: #1a7f37;
+}
+
+.ant-tag-processing {
+  background: #dff8ff;
+  border-color: #dff8ff;
+  color: #0969da;
+}
+
+.ant-tag-error {
+  background: #ffebe9;
+  border-color: #ffebe9;
+  color: #cf222e;
+}
+
+/* GitHub-like alerts */
+.ant-alert-success {
+  background: #dcffe4;
+  border: 1px solid #a3d1ae;
+}
+
+.ant-alert-info {
+  background: #dff8ff;
+  border: 1px solid #a7d7f9;
+}
+
+.ant-alert-warning {
+  background: #fff8c5;
+  border: 1px solid #d2d857;
+}
+
+.ant-alert-error {
+  background: #ffebe9;
+  border: 1px solid #f8c1ba;
+}
+
+/* GitHub-like progress bar */
+.ant-progress-bg {
+  border-radius: 6px;
+}
+
+.ant-progress-success-bg {
+  background: #2ea44f;
+}
+
+/* GitHub-like dropdown */
+.ant-dropdown-menu {
+  border-radius: 6px;
+  border: 1px solid #e1e4e8;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+}
+
+.ant-dropdown-menu-item:hover {
+  background: #f6f8fa;
+}
+
+/* GitHub-like avatar */
+.ant-avatar {
+  border-radius: 50%;
+}
+
+/* GitHub-like typography */
+h1, h2, h3, h4, h5, h6 {
+  color: #24292f;
+  font-weight: 600;
+}
+
+/* GitHub-like links */
+a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive design improvements */
+@media (max-width: 768px) {
+  .ant-layout-header {
+    padding: 0 12px;
+  }
+  
+  .ant-layout-content {
+    padding: 12px;
+  }
+  
+  .site-layout-content {
+    padding: 16px;
+  }
+  
+  .ant-card {
+    margin-bottom: 16px;
+  }
+}
+
+/* Animation utilities */
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover effects for interactive elements */
+.interactive-card {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.interactive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Gradient backgrounds */
+.gradient-bg {
+  background: linear-gradient(135deg, #f6f8fa 0%, #eaecef 100%);
+}

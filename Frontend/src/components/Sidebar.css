@@ -1,0 +1,40 @@
+.sidebar-container {
+  height: 100vh;                 /* Full viewport height */
+  overflow-y: auto;              /* Enable vertical scrolling */
+  scrollbar-width: thin;         /* For Firefox */
+  scrollbar-color: #3b82f6 #f1f5f9; /* custom colors */
+
+  /* For smooth scrolling and modern webkit scrollbar styles */
+  -webkit-overflow-scrolling: touch; /* smoother scroll on mobile */
+}
+
+.sidebar-container::-webkit-scrollbar {
+  width: 8px;
+  background: #f1f5f9;           /* Track color */
+}
+
+.sidebar-container::-webkit-scrollbar-thumb {
+  background: #3b82f6;           /* Thumb color */
+  border-radius: 8px;
+}
+
+.sidebar-container::-webkit-scrollbar-thumb:hover {
+  background: #2563eb;           /* Thumb hover color */
+}
+
+/* Dark mode support */
+.dark .sidebar-container {
+  scrollbar-color: #3b82f6 #1e293b; /* dark mode colors */
+}
+
+.dark .sidebar-container::-webkit-scrollbar {
+  background: #1e293b;           /* Dark track color */
+}
+
+.dark .sidebar-container::-webkit-scrollbar-thumb {
+  background: #3b82f6;           /* Thumb color */
+}
+
+.dark .sidebar-container::-webkit-scrollbar-thumb:hover {
+  background: #2563eb;           /* Thumb hover color */
+}

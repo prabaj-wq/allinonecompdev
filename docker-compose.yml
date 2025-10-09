@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: epm_password
+      POSTGRES_DB: epm_tool
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./Backend/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - epm_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d epm_tool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - epm_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    image: allinonecompany-production-backend:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:epm_password@postgres:5432/epm_tool?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DOCKER_ENV=true
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=epm_password
+      - POSTGRES_DB=epm_tool
+      - ALGORITHM=HS256
+      - ENVIRONMENT=development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - epm_network
+    volumes:
+      - ./Backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    image: allinonecompany-production-frontend:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - epm_network
+
+volumes:
+  postgres_data:
+  node_modules:
+
+networks:
+  epm_network:
+    driver: bridge

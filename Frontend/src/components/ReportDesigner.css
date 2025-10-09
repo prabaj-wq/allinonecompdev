@@ -1,0 +1,339 @@
+/* Custom styles for the Report Designer */
+
+/* Hierarchy item styling */
+.htHierarchyItem {
+  background-color: #f0f9ff !important;
+  border-left: 3px solid #3b82f6 !important;
+  font-weight: 600 !important;
+}
+
+.htChildItem {
+  background-color: #f8fafc !important;
+  border-left: 3px solid #94a3b8 !important;
+  color: #64748b !important;
+}
+
+/* Dark mode hierarchy styling */
+.dark .htHierarchyItem {
+  background-color: #1e3a8a !important;
+  border-left: 3px solid #60a5fa !important;
+}
+
+.dark .htChildItem {
+  background-color: #1e293b !important;
+  border-left: 3px solid #64748b !important;
+  color: #94a3b8 !important;
+}
+
+/* Drag and drop visual feedback */
+.drag-over {
+  background-color: #dbeafe !important;
+  border: 2px dashed #3b82f6 !important;
+}
+
+.dark .drag-over {
+  background-color: #1e3a8a !important;
+  border: 2px dashed #60a5fa !important;
+}
+
+/* Handsontable custom styling */
+.handsontable {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.handsontable th {
+  background-color: #f8fafc;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.dark .handsontable th {
+  background-color: #1f2937;
+  color: #f9fafb;
+  border-bottom: 2px solid #374151;
+}
+
+/* Formula cells */
+.htFormula {
+  background-color: #fef3c7 !important;
+  font-style: italic !important;
+}
+
+.dark .htFormula {
+  background-color: #451a03 !important;
+}
+
+/* Selected cell highlighting */
+.handsontable .current {
+  background-color: #3b82f6 !important;
+  color: white !important;
+}
+
+/* Context menu styling */
+.handsontable .htContextMenu {
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Comments styling */
+.handsontable .htComment {
+  background-color: #fef3c7;
+  border: 1px solid #f59e0b;
+}
+
+.dark .handsontable .htComment {
+  background-color: #451a03;
+  border: 1px solid #d97706;
+}
+
+/* Merge cells styling */
+.handsontable .htMerged {
+  background-color: #f3f4f6;
+}
+
+.dark .handsontable .htMerged {
+  background-color: #374151;
+}
+
+/* Filter styling */
+.handsontable .htFilters {
+  background-color: #f8fafc;
+}
+
+.dark .handsontable .htFilters {
+  background-color: #1f2937;
+}
+
+/* Scrollbar styling */
+.handsontable .ht_master .wtHolder {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.handsontable .ht_master .wtHolder::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.handsontable .ht_master .wtHolder::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.handsontable .ht_master .wtHolder::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.handsontable .ht_master .wtHolder::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark .handsontable .ht_master .wtHolder {
+  scrollbar-color: #4b5563 #1f2937;
+}
+
+.dark .handsontable .ht_master .wtHolder::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+.dark .handsontable .ht_master .wtHolder::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+.dark .handsontable .ht_master .wtHolder::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Ensure Handsontable grid is visible and properly sized */
+.hot-container {
+  height: 100% !important;
+  width: 100% !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 8px !important;
+  background: white !important;
+  overflow: hidden !important;
+  position: relative !important;
+  display: block !important;
+}
+
+.dark .hot-container {
+  border: 1px solid #374151 !important;
+  background: #1f2937 !important;
+}
+
+/* Force Handsontable to be visible and constrained */
+.handsontable {
+  border: none !important;
+  background: white !important;
+  height: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  font-size: 13px !important;
+  display: block !important;
+}
+
+.dark .handsontable {
+  background: #1f2937 !important;
+}
+
+.handsontable th {
+  background-color: #f8f9fa !important;
+  border: 1px solid #dee2e6 !important;
+  font-weight: bold !important;
+  padding: 8px !important;
+}
+
+.dark .handsontable th {
+  background-color: #374151 !important;
+  border: 1px solid #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+.handsontable td {
+  border: 1px solid #dee2e6 !important;
+  padding: 4px 8px !important;
+  background: white !important;
+  min-height: 25px !important;
+  height: 25px !important;
+  line-height: 1.2 !important;
+  font-size: 13px !important;
+  vertical-align: middle !important;
+}
+
+.dark .handsontable td {
+  border: 1px solid #4b5563 !important;
+  background: #1f2937 !important;
+  color: #f9fafb !important;
+  min-height: 22px !important;
+  height: 22px !important;
+  line-height: 1.2 !important;
+  font-size: 13px !important;
+}
+
+/* Ensure cells are visible */
+.handsontable .htCore td {
+  border: 1px solid #dee2e6 !important;
+  background: white !important;
+  padding: 4px 8px !important;
+  height: 25px !important;
+  vertical-align: middle !important;
+  line-height: 1.2 !important;
+  font-size: 13px !important;
+  display: table-cell !important;
+  box-sizing: border-box !important;
+  min-width: 50px !important;
+}
+
+.dark .handsontable .htCore td {
+  border: 1px solid #4b5563 !important;
+  background: #1f2937 !important;
+  color: #f9fafb !important;
+}
+
+.handsontable .htCore {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
+.handsontable .htCore tbody tr {
+  height: 25px !important;
+  display: table-row !important;
+}
+
+.handsontable .htCore tbody tr td {
+  height: 25px !important;
+  display: table-cell !important;
+  vertical-align: middle !important;
+}
+
+/* Prevent Handsontable from expanding */
+.handsontable .ht_master {
+  height: 100% !important;
+  overflow: auto !important;
+  display: block !important;
+}
+
+.handsontable .wtHolder {
+  height: 100% !important;
+  overflow: auto !important;
+  display: block !important;
+}
+
+/* Fix the main container height */
+.report-designer-container {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+}
+
+.report-designer-main {
+  height: calc(100vh - 60px) !important;
+  max-height: calc(100vh - 60px) !important;
+  overflow: hidden !important;
+}
+
+/* Ensure the main content area doesn't expand */
+.main-content-area {
+  height: calc(100vh - 120px) !important;
+  max-height: calc(100vh - 120px) !important;
+  overflow: hidden !important;
+}
+
+/* Better alignment for different column types */
+.handsontable .htCore td[data-type="numeric"] {
+  text-align: right !important;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
+.handsontable .htCore td[data-type="text"] {
+  text-align: left !important;
+}
+
+.handsontable .htCore td[data-type="date"] {
+  text-align: center !important;
+}
+
+/* Improved cell content alignment */
+.handsontable .htCore td {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Better header alignment */
+.handsontable .htCore th {
+  text-align: center !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Enhanced scrolling performance */
+.handsontable .ht_master .wtHolder {
+  scroll-behavior: smooth !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Better visual feedback for selected cells */
+.handsontable .htCore td.current {
+  background-color: #3b82f6 !important;
+  color: white !important;
+  border: 2px solid #1d4ed8 !important;
+}
+
+.handsontable .htCore td.area {
+  background-color: #dbeafe !important;
+  border: 1px solid #3b82f6 !important;
+}
+
+/* Improved row hover effect */
+.handsontable .htCore tbody tr:hover td {
+  background-color: #f3f4f6 !important;
+}
+
+.dark .handsontable .htCore tbody tr:hover td {
+  background-color: #374151 !important;
+}

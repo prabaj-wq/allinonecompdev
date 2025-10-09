@@ -1,0 +1,153 @@
+from sqlalchemy import create_engine, Column, Integer, String, Text, Numeric, DateTime, ForeignKey, Boolean, JSON, event, Table, UniqueConstraint
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, scoped_session, Session, relationship
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import text
+from datetime import datetime
+from typing import Optional, Generator
+from config import settings
+import os
+import time
+import logging
+from contextlib import contextmanager
+from urllib.parse import quote_plus
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def get_database_url() -> str:
+    """Get the database URL from environment variables or construct it from individual components."""
+    # Check if DATABASE_URL is explicitly set (from Docker Compose or elsewhere)
+    if os.getenv('DATABASE_URL'):
+        return os.getenv('DATABASE_URL')
+    
+    # Build DATABASE_URL from individual components
+    if os.getenv('DOCKER_ENV', '').lower() in ('true', '1', 't'):
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')  # For docker-compose
+    else:
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')  # For local development
+
+    POSTGRES_PORT = os.getenv('POSTGRES_PORT', '5432')
+    POSTGRES_USER = os.getenv('POSTGRES_USER', 'epm_user')
+    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', 'epm_password')
+    POSTGRES_DB = os.getenv('POSTGRES_DB', 'epm_tool')
+
+    # Create database URL with proper encoding
+    encoded_password = quote_plus(POSTGRES_PASSWORD)
+    return f"postgresql://{POSTGRES_USER}:{encoded_password}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}?sslmode=disable"
+
+def create_db_engine():
+    """Create a database engine with retry logic."""
+    max_retries = 5
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            db_url = get_database_url()
+            logger.info(f"Attempting to connect to database (Attempt {attempt + 1}/{max_retries})")
+            
+            engine = create_engine(
+                db_url,
+                pool_pre_ping=True,
+                pool_recycle=300,  # Recycle connections every 5 minutes
+                pool_size=10,      # Increased pool size
+                max_overflow=20,   # Allow more connections than pool_size when needed
+                echo=settings.DEBUG,  # Only echo in debug mode
+                connect_args={
+                    "connect_timeout": 10,
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5
+                }
+            )
+            
+            # Test the connection
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                
+            logger.info("Successfully connected to the database")
+            return engine
+            
+        except Exception as e:
+            logger.error(f"Error connecting to database (Attempt {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:  # Last attempt
+                logger.error("Max retries reached. Could not connect to database.")
+                raise
+                
+            time.sleep(retry_delay)
+            
+    # This should never be reached due to the raise in the loop
+    raise Exception("Failed to create database engine after multiple attempts")
+
+# Create a scoped session factory
+SessionLocal = sessionmaker(
+    autocommit=False, 
+    autoflush=False, 
+    bind=engine,
+    expire_on_commit=False  # Prevent detached instance errors
+)
+
+# Create a scoped session factory for thread safety
+db_session = scoped_session(
+    sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+        expire_on_commit=False  # Prevent detached instance errors
+    )
+)
+
+# Create base class for models
+Base = declarative_base()
+{{ ... }}
+    # Relationships
+    company = relationship("Company", back_populates="hierarchies")
+
+# Dependency to get DB session
+def get_db():
+
+# Add event listeners for connection handling
+@event.listens_for(engine, 'engine_connect')
+def receive_engine_connect(conn, branch):
+    """Handle connection events."""
+    if branch:
+        # 'branch' refers to a sub-transaction
+        return
+    
+    # Set statement timeout to 30 seconds
+    conn.execute(text('SET statement_timeout = 30000'))
+    
+    # Set search path if needed
+    conn.execute(text('SET search_path TO public'))
+    logger.debug("Database connection established with custom settings")
+
+def init_db():
+    """Initialize the database by creating all tables."""
+    logger.info("Initializing database...")
+    db = None
+    try:
+        # Create all tables
+        logger.info("Dropping all existing tables...")
+        Base.metadata.drop_all(bind=engine)
+        
+        logger.info("Creating database tables...")
+        Base.metadata.create_all(bind=engine)
+        
+        logger.info("Database initialization completed successfully")
+        print("Database initialized successfully with all necessary tables")
+        return True
+    except Exception as e:
+        logger.error(f"Error initializing database: {str(e)}")
+        print(f"Error initializing database: {e}")
+        if db:
+            db.rollback()
+        return False
+    finally:
+        if db:
+            db.close()
+
+if __name__ == "__main__":
+    # Initialize the database when run directly
+    init_db()

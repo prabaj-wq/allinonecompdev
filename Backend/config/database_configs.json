@@ -1,0 +1,30 @@
+{
+  "Test Company": {
+    "host": "localhost",
+    "port": "5432",
+    "username": "epm_user",
+    "password": "epm_password",
+    "database_name": "test_company"
+  },
+  "Backo": {
+    "host": "postgres",
+    "port": "5432",
+    "username": "epm_user",
+    "password": "epm_password",
+    "database_name": "backo"
+  },
+  "FinFusion360": {
+    "host": "postgres",
+    "port": "5432",
+    "username": "epm_user",
+    "password": "epm_password",
+    "database_name": "finfusion360"
+  },
+  "dcd": {
+    "host": "postgres",
+    "port": "5432",
+    "username": "epm_user",
+    "password": "epm_password",
+    "database_name": "dcd"
+  }
+}

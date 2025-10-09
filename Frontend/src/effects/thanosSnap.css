@@ -1,0 +1,76 @@
+/* Thanos Snap Effect Styles */
+.snap-particle {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.snap-particle-container {
+  mask-image: linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 100%);
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 100%);
+  animation: snapMask 1.5s ease-out forwards;
+}
+
+@keyframes snapMask {
+  0% {
+    mask-image: linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 100%);
+    -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 100%);
+  }
+  100% {
+    mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 100%);
+    -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 100%);
+  }
+}
+
+/* Enhanced particle effects */
+.snap-particle {
+  animation: snapDisintegrate 2s ease-out forwards;
+}
+
+@keyframes snapDisintegrate {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3);
+    filter: blur(2px);
+  }
+}
+
+/* Row disintegration effect */
+.row-disintegrating {
+  animation: rowFade 2s ease-out forwards;
+}
+
+@keyframes rowFade {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+/* Particle colors - enhanced palette */
+.snap-color-red { background-color: #FF4136; }
+.snap-color-orange { background-color: #FF851B; }
+.snap-color-yellow { background-color: #FFDC00; }
+.snap-color-green { background-color: #2ECC40; }
+.snap-color-blue { background-color: #0074D9; }
+.snap-color-purple { background-color: #B10DC9; }
+.snap-color-pink { background-color: #FF1493; }
+.snap-color-cyan { background-color: #00CED1; }
+.snap-color-sky { background-color: #7FDBFF; }
+.snap-color-magenta { background-color: #F012BE; }
+.snap-color-lime { background-color: #01FF70; }
+.snap-color-silver { background-color: #DDDDDD; }
+.snap-color-gray { background-color: #AAAAAA; }
