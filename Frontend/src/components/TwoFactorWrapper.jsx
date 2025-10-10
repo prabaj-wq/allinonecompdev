@@ -53,15 +53,7 @@ import GlobalCompliance from '../pages/GlobalCompliance'
 import NarrativeReporting from '../pages/NarrativeReporting'
 import WhatIfAnalysis from '../pages/WhatIfAnalysis'
 import RealTimeAnalytics from '../pages/RealTimeAnalytics'
-import AssetManagement from '../pages/integrations/AssetManagement'
-import ComplianceManagement from '../pages/integrations/ComplianceManagement'
-import CRM from '../pages/integrations/CRM'
-import ESG from '../pages/integrations/ESG'
-import ProjectManagement from '../pages/integrations/ProjectManagement'
-import PurchaseOrderManagement from '../pages/integrations/PurchaseOrderManagement'
-import RevenueAnalytics from '../pages/integrations/RevenueAnalytics'
-import StakeholderManagement from '../pages/integrations/StakeholderManagement'
-import RoleManagement from '../pages/integrations/RoleManagement'
+import HRManagementSuite from '../pages/hrmanagament'
 import CustomAxes from '../pages/CustomAxes'
 import ETLPage from '../components/ETLPage'
 import BusinessValuation from '../pages/BusinessValuation'
@@ -157,6 +149,7 @@ const TwoFactorWrapper = () => {
           <Route path="/documentation" element={<Documentation />} />
           <Route path="/training" element={<Training />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/hr-management" element={<HRManagementSuite />} />
           
           {/* New Advanced Features Routes */}
           <Route path="/workflows" element={<Workflows />} />
@@ -168,15 +161,6 @@ const TwoFactorWrapper = () => {
           {/* Integration App Routes */}
           <Route path="/integration-summary" element={<IntegrationSummary />} />
           <Route path="/integration-hub" element={<IntegrationHub />} />
-          <Route path="/integrations/asset-management" element={<AssetManagement />} />
-          <Route path="/integrations/compliance-management" element={<ComplianceManagement />} />
-          <Route path="/integrations/crm" element={<CRM />} />
-          <Route path="/integrations/esg" element={<ESG />} />
-          <Route path="/integrations/project-management" element={<ProjectManagement />} />
-          <Route path="/integrations/purchase-order-management" element={<PurchaseOrderManagement />} />
-          <Route path="/integrations/revenue-analytics" element={<RevenueAnalytics />} />
-          <Route path="/integrations/stakeholder-management" element={<StakeholderManagement />} />
-          <Route path="/integrations/role-management" element={<RoleManagement />} />
           <Route path="/custom-axes" element={<CustomAxes />} />
           <Route path="/business-valuation" element={<BusinessValuation />} />
           <Route path="/sql-query-console" element={<SQLQueryConsole />} />

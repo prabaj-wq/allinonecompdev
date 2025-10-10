@@ -98,6 +98,12 @@ const Layout = ({ children }) => {
       description: 'Data processing & validation'
     },
     { 
+      name: 'HR Management', 
+      href: '/hr-management', 
+      icon: Users,
+      description: 'People, payroll, benefits, and compliance control center'
+    },
+    { 
       name: 'Trial Balance', 
       href: '/trial-balance', 
       icon: BarChart,

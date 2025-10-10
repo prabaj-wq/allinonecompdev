@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { useCompany } from '../../contexts/CompanyContext'
 import {
@@ -68,6 +68,122 @@ const RoleProfileManagement = () => {
   
   // Use the company from auth context as primary, fallback to company context
   const selectedCompany = authSelectedCompany || companyContextCompany
+  const parseJsonField = (value, fallback = {}) => {
+    if (value === null || value === undefined) {
+      return fallback
+    }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        return parsed ?? fallback
+      } catch (error) {
+        return fallback
+      }
+    }
+    if (typeof value === 'object') {
+      return value
+    }
+    return fallback
+  }
+
+  const normalizePagePermissions = (value) => {
+    const raw = parseJsonField(value, {})
+    if (Array.isArray(raw)) {
+      return raw.reduce((acc, route) => {
+        if (typeof route === 'string') {
+          acc[route] = true
+        }
+        return acc
+      }, {})
+    }
+    if (raw && typeof raw === 'object') {
+      return Object.keys(raw).reduce((acc, key) => {
+        const permissionValue = raw[key]
+        if (typeof permissionValue === 'boolean') {
+          acc[key] = permissionValue
+        } else if (typeof permissionValue === 'string') {
+          acc[key] = ['true', '1', 'yes', 'access', 'allowed', 'full_access'].includes(permissionValue.toLowerCase())
+        } else if (permissionValue && typeof permissionValue === 'object') {
+          acc[key] = Object.values(permissionValue).some(Boolean)
+        } else {
+          acc[key] = Boolean(permissionValue)
+        }
+        return acc
+      }, {})
+    }
+    return {}
+  }
+
+  const normalizeDatabasePermissions = (value) => {
+    const raw = parseJsonField(value, {})
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {}
+    }
+
+    const normalised = {}
+
+    Object.entries(raw).forEach(([database, permissions]) => {
+      const basePermissions = { read: false, write: false, execute: false }
+
+      if (permissions && typeof permissions === 'object' && !Array.isArray(permissions)) {
+        Object.keys(basePermissions).forEach((key) => {
+          const rawValue = permissions[key]
+          if (typeof rawValue === 'boolean') {
+            basePermissions[key] = rawValue
+          } else if (typeof rawValue === 'string') {
+            basePermissions[key] = ['true', '1', 'yes', 'allow', 'allowed'].includes(rawValue.toLowerCase())
+          }
+        })
+
+        if (Array.isArray(permissions.permissions)) {
+          permissions.permissions.forEach((permission) => {
+            const normalisedPermission = String(permission).toLowerCase()
+            if (normalisedPermission === 'full_access') {
+              basePermissions.read = basePermissions.write = basePermissions.execute = true
+            } else if (Object.prototype.hasOwnProperty.call(basePermissions, normalisedPermission)) {
+              basePermissions[normalisedPermission] = true
+            }
+          })
+        }
+      } else if (Array.isArray(permissions)) {
+        const lowered = permissions.map((permission) => String(permission).toLowerCase())
+        if (lowered.includes('full_access')) {
+          basePermissions.read = basePermissions.write = basePermissions.execute = true
+        } else {
+          Object.keys(basePermissions).forEach((key) => {
+            if (lowered.includes(key)) {
+              basePermissions[key] = true
+            }
+          })
+        }
+      } else if (typeof permissions === 'string') {
+        const lowered = permissions.toLowerCase()
+        if (lowered === 'full_access') {
+          basePermissions.read = basePermissions.write = basePermissions.execute = true
+        } else if (Object.prototype.hasOwnProperty.call(basePermissions, lowered)) {
+          basePermissions[lowered] = true
+        }
+      } else if (typeof permissions === 'boolean') {
+        basePermissions.read = permissions
+      }
+
+      normalised[database] = basePermissions
+    })
+
+    return normalised
+  }
+
+  const sanitizeRolePayload = (role) => {
+    if (!role) {
+      return role
+    }
+
+    return {
+      ...role,
+      page_permissions: normalizePagePermissions(role.page_permissions),
+      database_permissions: normalizeDatabasePermissions(role.database_permissions)
+    }
+  }
   
   // ===== STATE MANAGEMENT =====
   const [roles, setRoles] = useState([])
@@ -82,6 +198,14 @@ const RoleProfileManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showRoleDetails, setShowRoleDetails] = useState(false)
   const [selectedRole, setSelectedRole] = useState(null)
+  const [isEditingRole, setIsEditingRole] = useState(false)
+  const [editRoleData, setEditRoleData] = useState({
+    name: '',
+    description: '',
+    page_permissions: {},
+    database_permissions: {}
+  })
+  const [updatingRole, setUpdatingRole] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -92,6 +216,28 @@ const RoleProfileManagement = () => {
   const [currentStep, setCurrentStep] = useState(1) // For multi-step role creation
   const [selectedDatabase, setSelectedDatabase] = useState(null)
   const [loadingTables, setLoadingTables] = useState(false)
+
+  const availableDatabasesForEditing = useMemo(() => {
+    const names = new Set()
+    databases.forEach((database) => {
+      if (typeof database === 'string') {
+        names.add(database)
+      } else if (database && typeof database === 'object' && database.name) {
+        names.add(database.name)
+      }
+    })
+    Object.keys(editRoleData.database_permissions || {}).forEach((database) => {
+      if (database) {
+        names.add(database)
+      }
+    })
+    return Array.from(names)
+  }, [databases, editRoleData.database_permissions])
+
+  const selectedRoleDatabasePermissions = useMemo(
+    () => normalizeDatabasePermissions(selectedRole?.database_permissions),
+    [selectedRole]
+  )
 
   // All available pages from Layout.jsx
   const allPages = [
@@ -181,7 +327,8 @@ const RoleProfileManagement = () => {
       
       if (response.ok) {
         const data = await response.json()
-        setRoles(Array.isArray(data.roles) ? data.roles : [])
+        const parsedRoles = Array.isArray(data.roles) ? data.roles : []
+        setRoles(parsedRoles.map((role) => sanitizeRolePayload(role)))
       } else {
         showToast('Failed to fetch roles', 'error')
         setRoles([])
@@ -261,7 +408,15 @@ const RoleProfileManagement = () => {
       
       if (response.ok) {
         const data = await response.json()
-        setSelectedRole(data.role)
+        const sanitizedRole = sanitizeRolePayload(data.role)
+        setSelectedRole(sanitizedRole)
+        setEditRoleData({
+          name: sanitizedRole?.name || '',
+          description: sanitizedRole?.description || '',
+          page_permissions: sanitizedRole?.page_permissions || {},
+          database_permissions: sanitizedRole?.database_permissions || {}
+        })
+        setIsEditingRole(false)
         setLastActions(data.audit_logs || [])
         setShowRoleDetails(true)
       } else {
@@ -274,6 +429,119 @@ const RoleProfileManagement = () => {
   }
 
   // ===== ROLE MANAGEMENT =====
+  const resetEditRoleData = () => {
+    if (!selectedRole) return
+    setEditRoleData({
+      name: selectedRole.name || '',
+      description: selectedRole.description || '',
+      page_permissions: normalizePagePermissions(selectedRole.page_permissions),
+      database_permissions: normalizeDatabasePermissions(selectedRole.database_permissions)
+    })
+  }
+
+  const startRoleEdit = () => {
+    if (!selectedRole) return
+    resetEditRoleData()
+    setIsEditingRole(true)
+  }
+
+  const toggleEditPagePermission = (pageHref) => {
+    setEditRoleData((prev) => ({
+      ...prev,
+      page_permissions: {
+        ...prev.page_permissions,
+        [pageHref]: !prev.page_permissions?.[pageHref]
+      }
+    }))
+  }
+
+  const toggleEditDatabasePermission = (databaseName, permission) => {
+    setEditRoleData((prev) => {
+      const currentPermissions = {
+        read: false,
+        write: false,
+        execute: false,
+        ...(prev.database_permissions?.[databaseName] || {})
+      }
+
+      const updatedPermissions = {
+        ...currentPermissions,
+        [permission]: !currentPermissions[permission]
+      }
+
+      return {
+        ...prev,
+        database_permissions: {
+          ...prev.database_permissions,
+          [databaseName]: updatedPermissions
+        }
+      }
+    })
+  }
+
+  const handleUpdateRole = async () => {
+    if (!selectedRole || !selectedRole.id || !selectedCompany) {
+      return
+    }
+
+    if (!editRoleData.name.trim()) {
+      showToast('Role name is required', 'error')
+      return
+    }
+
+    if (!editRoleData.description.trim()) {
+      showToast('Role description is required', 'error')
+      return
+    }
+
+    setUpdatingRole(true)
+    try {
+      const response = await fetch(`/api/role-management/roles/${selectedRole.id}?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: editRoleData.name,
+          description: editRoleData.description,
+          page_permissions: editRoleData.page_permissions,
+          database_permissions: editRoleData.database_permissions,
+          company: selectedCompany
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const updatedRole = sanitizeRolePayload(data.role)
+        setSelectedRole(updatedRole)
+        setRoles((prev) => prev.map((role) => (role.id === updatedRole.id ? updatedRole : role)))
+        setEditRoleData({
+          name: updatedRole?.name || '',
+          description: updatedRole?.description || '',
+          page_permissions: updatedRole?.page_permissions || {},
+          database_permissions: updatedRole?.database_permissions || {}
+        })
+        setIsEditingRole(false)
+        showToast('Role updated successfully', 'success')
+        fetchRoles()
+      } else {
+        const error = await response.json().catch(() => ({}))
+        showToast(error.detail || 'Failed to update role', 'error')
+      }
+    } catch (error) {
+      console.error('Error updating role:', error)
+      showToast('Error updating role', 'error')
+    } finally {
+      setUpdatingRole(false)
+    }
+  }
+
+  const handleCancelRoleEdit = () => {
+    resetEditRoleData()
+    setIsEditingRole(false)
+  }
+
   const handleCreateRole = async () => {
     if (!selectedCompany) {
       showToast('No company selected', 'error')
@@ -1066,9 +1334,18 @@ const RoleProfileManagement = () => {
                         <div className={`p-3 rounded-lg ${selectedRole.is_system_role ? 'bg-blue-100 dark:bg-blue-900/20' : 'bg-purple-100 dark:bg-purple-900/20'}`}>
                           <Shield className={`h-6 w-6 ${selectedRole.is_system_role ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'}`} />
                         </div>
-                        <div>
-                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedRole.name}</h2>
-                          <div className="flex items-center space-x-2 mt-1">
+                        <div className="space-y-2">
+                          {isEditingRole ? (
+                            <input
+                              value={editRoleData.name}
+                              onChange={(e) => setEditRoleData((prev) => ({ ...prev, name: e.target.value }))}
+                              className="w-full text-2xl font-bold text-gray-900 dark:text-white bg-transparent border-b border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 pb-1"
+                              placeholder="Role name"
+                            />
+                          ) : (
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedRole.name}</h2>
+                          )}
+                          <div className="flex items-center flex-wrap gap-2">
                             <span className={`px-2 py-1 text-xs font-medium rounded-full ${getRiskLevelColor(selectedRole.risk_level)}`}>
                               {selectedRole.risk_level?.toUpperCase() || 'LOW'} RISK
                             </span>
@@ -1080,19 +1357,57 @@ const RoleProfileManagement = () => {
                           </div>
                         </div>
                       </div>
-                      <button
-                        onClick={() => setShowRoleDetails(false)}
-                        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                      >
-                        <X className="h-6 w-6" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {isEditingRole ? (
+                          <>
+                            <button
+                              onClick={handleUpdateRole}
+                              disabled={updatingRole}
+                              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              {updatingRole ? 'Saving...' : 'Save Changes'}
+                            </button>
+                            <button
+                              onClick={handleCancelRoleEdit}
+                              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={startRoleEdit}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            Edit Role
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setShowRoleDetails(false)
+                            setIsEditingRole(false)
+                          }}
+                          className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="h-6 w-6" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <div className="p-6 space-y-6">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Description</h3>
-                      <p className="text-gray-600 dark:text-gray-300">{selectedRole.description}</p>
+                      {isEditingRole ? (
+                        <textarea
+                          value={editRoleData.description}
+                          onChange={(e) => setEditRoleData((prev) => ({ ...prev, description: e.target.value }))}
+                          className="w-full min-h-[120px] rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          placeholder="Provide a description for this role"
+                        />
+                      ) : (
+                        <p className="text-gray-600 dark:text-gray-300">{selectedRole.description || 'No description provided.'}</p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1127,25 +1442,124 @@ const RoleProfileManagement = () => {
 
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permissions</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {Object.entries(selectedRole.permissions || {}).map(([module, permissions]) => (
-                          <div key={module} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-2 capitalize">
-                              {module.replace('_', ' ')}
-                            </h4>
-                            <div className="flex flex-wrap gap-2">
-                              {Array.isArray(permissions) && permissions.map((permission) => (
-                                <span
-                                  key={permission}
-                                  className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full"
-                                >
-                                  {permission}
-                                </span>
-                              ))}
+                      {isEditingRole ? (
+                        <div className="space-y-4">
+                          {Object.keys(pagesByCategory).length === 0 && (
+                            <p className="text-gray-500 dark:text-gray-400">No pages available.</p>
+                          )}
+                          {Object.entries(pagesByCategory).map(([category, pages]) => (
+                            <div key={category} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">{category}</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {pages.map((page) => (
+                                  <label
+                                    key={page.href}
+                                    className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={!!editRoleData.page_permissions[page.href]}
+                                      onChange={() => toggleEditPagePermission(page.href)}
+                                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                    />
+                                    <span>{page.name}</span>
+                                  </label>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {Object.entries(selectedRole.permissions || {}).map(([module, permissions]) => (
+                            <div key={module} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-2 capitalize">
+                                {module.replace('_', ' ')}
+                              </h4>
+                              <div className="flex flex-wrap gap-2">
+                                {Array.isArray(permissions) && permissions.map((permission) => (
+                                  <span
+                                    key={permission}
+                                    className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full"
+                                  >
+                                    {permission}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          {(!selectedRole.permissions || Object.keys(selectedRole.permissions).length === 0) && (
+                            <p className="text-gray-500 dark:text-gray-400 col-span-full">No page permissions assigned.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Database Access</h3>
+                      {isEditingRole ? (
+                        <div className="space-y-4">
+                          {availableDatabasesForEditing.length === 0 ? (
+                            <p className="text-gray-500 dark:text-gray-400">No databases available.</p>
+                          ) : (
+                            availableDatabasesForEditing.map((database) => {
+                              const permissions = editRoleData.database_permissions?.[database] || { read: false, write: false, execute: false }
+                              return (
+                                <div key={database} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium text-gray-900 dark:text-white">{database}</span>
+                                    <div className="flex items-center gap-4">
+                                      {['read', 'write', 'execute'].map((permission) => (
+                                        <label
+                                          key={`${database}-${permission}`}
+                                          className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={!!permissions[permission]}
+                                            onChange={() => toggleEditDatabasePermission(database, permission)}
+                                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                          />
+                                          <span className="capitalize">{permission}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {Object.keys(selectedRoleDatabasePermissions || {}).length === 0 ? (
+                            <p className="text-gray-500 dark:text-gray-400">No database permissions assigned.</p>
+                          ) : (
+                            Object.entries(selectedRoleDatabasePermissions).map(([database, permissions]) => {
+                              const activePermissions = Object.entries(permissions || {}).filter(([, allowed]) => allowed)
+                              return (
+                                <div key={database} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 flex items-center justify-between">
+                                  <span className="font-medium text-gray-900 dark:text-white">{database}</span>
+                                  <div className="flex flex-wrap gap-2">
+                                    {activePermissions.length > 0 ? (
+                                      activePermissions.map(([permission]) => (
+                                        <span
+                                          key={`${database}-${permission}`}
+                                          className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full capitalize"
+                                        >
+                                          {permission}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded-full">No access</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {lastActions.length > 0 && (

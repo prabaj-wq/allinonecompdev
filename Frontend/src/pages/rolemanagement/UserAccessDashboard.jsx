@@ -36,6 +36,123 @@ const UserAccessDashboard = () => {
   // Use the company from auth context as primary, fallback to company context
   const selectedCompany = authSelectedCompany || companyContextCompany
   
+  const parseJsonField = (value, fallback = {}) => {
+    if (value === null || value === undefined) {
+      return fallback
+    }
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        return parsed ?? fallback
+      } catch (error) {
+        return fallback
+      }
+    }
+    if (typeof value === 'object') {
+      return value
+    }
+    return fallback
+  }
+
+  const normalizePagePermissions = (value) => {
+    const raw = parseJsonField(value, {})
+    if (Array.isArray(raw)) {
+      return raw.reduce((acc, route) => {
+        if (typeof route === 'string') {
+          acc[route] = true
+        }
+        return acc
+      }, {})
+    }
+    if (raw && typeof raw === 'object') {
+      return Object.keys(raw).reduce((acc, key) => {
+        const permissionValue = raw[key]
+        if (typeof permissionValue === 'boolean') {
+          acc[key] = permissionValue
+        } else if (typeof permissionValue === 'string') {
+          acc[key] = ['true', '1', 'yes', 'access', 'allowed', 'full_access'].includes(permissionValue.toLowerCase())
+        } else if (permissionValue && typeof permissionValue === 'object') {
+          acc[key] = Object.values(permissionValue).some(Boolean)
+        } else {
+          acc[key] = Boolean(permissionValue)
+        }
+        return acc
+      }, {})
+    }
+    return {}
+  }
+
+  const normalizeDatabasePermissions = (value) => {
+    const raw = parseJsonField(value, {})
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {}
+    }
+
+    const normalised = {}
+
+    Object.entries(raw).forEach(([database, permissions]) => {
+      const basePermissions = { read: false, write: false, execute: false }
+
+      if (permissions && typeof permissions === 'object' && !Array.isArray(permissions)) {
+        Object.keys(basePermissions).forEach((key) => {
+          const rawValue = permissions[key]
+          if (typeof rawValue === 'boolean') {
+            basePermissions[key] = rawValue
+          } else if (typeof rawValue === 'string') {
+            basePermissions[key] = ['true', '1', 'yes', 'allow', 'allowed'].includes(rawValue.toLowerCase())
+          }
+        })
+
+        if (Array.isArray(permissions.permissions)) {
+          permissions.permissions.forEach((permission) => {
+            const normalisedPermission = String(permission).toLowerCase()
+            if (normalisedPermission === 'full_access') {
+              basePermissions.read = basePermissions.write = basePermissions.execute = true
+            } else if (Object.prototype.hasOwnProperty.call(basePermissions, normalisedPermission)) {
+              basePermissions[normalisedPermission] = true
+            }
+          })
+        }
+      } else if (Array.isArray(permissions)) {
+        const lowered = permissions.map((permission) => String(permission).toLowerCase())
+        if (lowered.includes('full_access')) {
+          basePermissions.read = basePermissions.write = basePermissions.execute = true
+        } else {
+          Object.keys(basePermissions).forEach((key) => {
+            if (lowered.includes(key)) {
+              basePermissions[key] = true
+            }
+          })
+        }
+      } else if (typeof permissions === 'string') {
+        const lowered = permissions.toLowerCase()
+        if (lowered === 'full_access') {
+          basePermissions.read = basePermissions.write = basePermissions.execute = true
+        } else if (Object.prototype.hasOwnProperty.call(basePermissions, lowered)) {
+          basePermissions[lowered] = true
+        }
+      } else if (typeof permissions === 'boolean') {
+        basePermissions.read = permissions
+      }
+
+      normalised[database] = basePermissions
+    })
+
+    return normalised
+  }
+
+  const sanitizeUser = (user) => {
+    if (!user) {
+      return user
+    }
+
+    return {
+      ...user,
+      page_permissions: normalizePagePermissions(user.page_permissions),
+      database_permissions: normalizeDatabasePermissions(user.database_permissions)
+    }
+  }
+
   // ===== STATE MANAGEMENT =====
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
@@ -93,9 +210,12 @@ const UserAccessDashboard = () => {
       
       if (response.ok) {
         const data = await response.json()
-        setUsers(Array.isArray(data.users) ? data.users : [])
+        const cleanedUsers = (data.users || []).map((user) => sanitizeUser(user))
+        setUsers(cleanedUsers)
       } else {
-        showToast('Failed to load users', 'error')
+        const error = await response.json().catch(() => ({}))
+        const errorMessage = error && error.detail ? error.detail : 'Failed to load users'
+        showToast(errorMessage, 'error')
         setUsers([])
       }
     } catch (error) {
@@ -177,7 +297,7 @@ const UserAccessDashboard = () => {
       
       if (response.ok) {
         const data = await response.json()
-        setSelectedUser(data.user)
+        setSelectedUser(data.user ? sanitizeUser(data.user) : null)
         setShowUserDetails(true)
       } else {
         showToast('Failed to fetch user details', 'error')
@@ -727,7 +847,8 @@ const UserAccessDashboard = () => {
           isVisible={showAddUserModal}
           onClose={() => setShowAddUserModal(false)}
           onUserCreated={(newUser) => {
-            setUsers(prev => [newUser, ...prev])
+            const normalizedUser = sanitizeUser(newUser)
+            setUsers(prev => [normalizedUser, ...prev])
             showToast('User created successfully with database access!', 'success')
             setShowAddUserModal(false)
             loadUsers() // Refresh the user list

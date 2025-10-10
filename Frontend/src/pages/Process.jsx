@@ -1,766 +1,812 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useCompany } from '../contexts/CompanyContext'
 import { useAuth } from '../hooks/useAuth'
-import { 
-  Plus, 
-  Edit,
-  Trash2,
-  Search,
-  Filter, 
-  Download, 
+import {
   Upload,
+  Download,
   RefreshCw,
-  DollarSign,
-  BarChart3,
-  Building2,
-  FileText,
-  X,
   Save,
-  Calendar,
-  AlertTriangle,
+  Trash2,
+  Edit,
   CheckCircle,
-  ArrowRight,
-  PieChart,
-  Eye,
-  Folder,
-  FolderPlus
+  AlertCircle,
+  TrendingUp,
+  ArrowUpRight,
+  ArrowDownRight,
+  FileSpreadsheet,
+  Building2,
+  Layers,
+  Plus,
 } from 'lucide-react'
 
+const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4']
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+const entryCategories = [
+  'Manual Entry',
+  'Adjustment',
+  'Reclassification',
+  'Intercompany',
+  'Elimination',
+  'Opening Balance',
+  'Custom',
+  'Imported',
+]
+
+const getDefaultPeriod = () => {
+  const now = new Date()
+  return `Q${Math.floor(now.getMonth() / 3) + 1}`
+}
+
+const getDefaultYear = () => new Date().getFullYear().toString()
+
+const defaultFormState = {
+  entity_code: '',
+  account_code: '',
+  amount: '',
+  entry_type: 'debit',
+  currency: '',
+  entry_category: 'Manual Entry',
+  counterparty: '',
+  description: '',
+}
+
 const Process = () => {
-  const { selectedCompany, ifrsAccounts, entities } = useCompany()
+  const { selectedCompany } = useCompany()
   const { isAuthenticated, getAuthHeaders } = useAuth()
-  
-  const [isLoading, setIsLoading] = useState(false)
-  const [currentPeriod, setCurrentPeriod] = useState('')
-  const [currentYear, setCurrentYear] = useState('')
+
+  const [period, setPeriod] = useState(getDefaultPeriod())
+  const [year, setYear] = useState(getDefaultYear())
+  const [referenceData, setReferenceData] = useState({ accounts: [], entities: [], currencies: [] })
   const [entries, setEntries] = useState([])
-  const [accounts, setAccounts] = useState([])
-  const [localEntities, setLocalEntities] = useState([])
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedStatus, setSelectedStatus] = useState('all')
-  const [selectedCategory, setSelectedCategory] = useState('all')
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [selectedEntry, setSelectedEntry] = useState(null)
-  const [editingId, setEditingId] = useState(null)
-  const [isEditing, setIsEditing] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [isUploading, setIsUploading] = useState(false)
-  const [showFilters, setShowFilters] = useState(false)
-  const [showCopyForwardModal, setShowCopyForwardModal] = useState(false)
-  
-  const fileInputRef = useRef(null)
-  const [dragActive, setDragActive] = useState(false)
-  const [lastEntry, setLastEntry] = useState(null)
-  const [notification, setNotification] = useState({ show: false, message: '', type: 'success' })
+  const [summary, setSummary] = useState({ count: 0, total_debit: 0, total_credit: 0, net_balance: 0 })
 
-  const [copyForwardForm, setCopyForwardForm] = useState({
-    fromPeriod: '',
-    fromYear: '',
-    fromEntity: '',
-    fromCategory: '',
-    toPeriod: '',
-    toYear: ''
-  })
+  const [formState, setFormState] = useState(defaultFormState)
+  const [formMode, setFormMode] = useState('create')
+  const [editingEntry, setEditingEntry] = useState(null)
 
-  const [entryForm, setEntryForm] = useState({
-    entity_code: '',
-    account_code: '',
-    amount: '',
-    currency: '',
-    counterparty: '',
-    entry_category: 'Manual Entry',
-    custom_note: '',
-    period: '',
-    year: ''
-  })
+  const [loadingReference, setLoadingReference] = useState(false)
+  const [loadingEntries, setLoadingEntries] = useState(false)
+  const [submittingEntry, setSubmittingEntry] = useState(false)
+  const [uploadState, setUploadState] = useState({ file: null, uploading: false, errors: [] })
+  const [notification, setNotification] = useState(null)
 
-  const periods = [
-    'Q1', 'Q2', 'Q3', 'Q4',
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ]
+  const periodOptions = useMemo(() => [...QUARTERS, ...MONTHS], [])
 
-  const years = ['2025', '2024', '2023', '2022']
-  const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CHF', 'SGD']
-  
-  const entryCategories = [
-    'Manual Entry',
-    'Adjustment',
-    'Reclassification',
-    'Intercompany',
-    'Elimination',
-    'Opening Balance',
-    'Custom'
-  ]
+  const yearOptions = useMemo(() => {
+    const now = new Date().getFullYear()
+    return Array.from({ length: 6 }).map((_, idx) => (now - idx).toString())
+  }, [])
 
-  // Check authentication status
-  const checkAuth = () => {
-    if (!isAuthenticated) {
-      console.error('❌ User not authenticated')
-      return false
-    }
-    return true
-  }
+  useEffect(() => {
+    if (!selectedCompany || !isAuthenticated) return
+    fetchReferenceData()
+  }, [selectedCompany, isAuthenticated])
 
-  // Show notification
+  useEffect(() => {
+    if (!selectedCompany || !isAuthenticated) return
+    fetchEntries()
+  }, [selectedCompany, isAuthenticated, period, year])
+
   const showNotification = (message, type = 'success') => {
-    setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: '', type: 'success' }), 5000)
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 5000)
   }
 
-  // Load accounts and entities on component mount
-  useEffect(() => {
-    if (isAuthenticated && selectedCompany) {
-      console.log('🔐 User authenticated, loading data for company:', selectedCompany)
-      loadAccountsAndEntities()
-    }
-  }, [isAuthenticated, selectedCompany])
+  const authHeaders = () => getAuthHeaders()
 
-  // Update entries when period/year changes
-  useEffect(() => {
-    if (!currentPeriod || !currentYear) return
-    loadPeriodData()
-  }, [currentPeriod, currentYear])
+  const fetchReferenceData = async () => {
+    if (!selectedCompany) return
 
-
-  const loadAccountsAndEntities = async () => {
-    if (!checkAuth()) {
-      console.error('❌ Authentication check failed, cannot load accounts and entities')
-      return
-    }
-    
-    setIsLoading(true)
+    setLoadingReference(true)
     try {
-      console.log('🔍 Loading accounts and entities for company:', selectedCompany)
-      
-      // Load accounts from API
-      const accountsResponse = await fetch('/api/ifrs-accounts', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      
-      if (accountsResponse.ok) {
-        const accountsData = await accountsResponse.json()
-        const companyAccounts = accountsData.accounts || []
-        setAccounts(companyAccounts)
-        console.log('📊 Loaded accounts from API:', companyAccounts.length)
-      } else {
-        console.error('❌ Failed to load accounts from API:', accountsResponse.status)
-        if (ifrsAccounts && ifrsAccounts.length > 0) {
-          setAccounts(ifrsAccounts)
-          console.log('📊 Using CompanyContext accounts as fallback:', ifrsAccounts.length)
+      const response = await fetch(
+        `/api/process/reference-data?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'GET',
+          headers: authHeaders(),
+          credentials: 'include',
         }
-      }
-      
-      // Load entities from API
-      const entitiesResponse = await fetch('/api/entities', {
-        headers: getAuthHeaders(),
-        credentials: 'include'
+      )
+
+      if (!response.ok) throw new Error(`Failed to load reference data (${response.status})`)
+
+      const data = await response.json()
+      setReferenceData({
+        accounts: data.accounts || [],
+        entities: data.entities || [],
+        currencies: data.currencies || [],
       })
-      
-      if (entitiesResponse.ok) {
-        const entitiesData = await entitiesResponse.json()
-        const companyEntities = entitiesData.entities || []
-        setLocalEntities(companyEntities)
-        console.log('📊 Loaded entities from API:', companyEntities.length)
-      } else {
-        console.error('❌ Failed to load entities from API:', entitiesResponse.status)
-        if (entities && entities.length > 0) {
-          setLocalEntities(entities)
-          console.log('📊 Using CompanyContext entities as fallback:', entities.length)
-        }
-      }
-      
     } catch (error) {
-      console.error('💥 Error in loadAccountsAndEntities:', error)
+      console.error('Process: failed to load reference data', error)
+      showNotification('Unable to load accounts and entities. Please try again.', 'error')
     } finally {
-      setIsLoading(false)
+      setLoadingReference(false)
     }
   }
 
-  const loadPeriodData = async () => {
-    if (!currentPeriod || !currentYear) return
-    
-    setIsLoading(true)
+  const fetchEntries = async () => {
+    if (!selectedCompany || !period || !year) return
+
+    setLoadingEntries(true)
     try {
-      console.log(`🔍 Loading data for ${currentPeriod} ${currentYear}...`)
-      
-      // Load existing data for the selected period/year (process entries only)
-      const response = await fetch(`/api/process/entries?period=${currentPeriod}&year=${currentYear}&source_type=process_entry`, {
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      })
-      console.log('📡 API Response status:', response.status)
-      
-      if (response.ok) {
-        const data = await response.json()
-        console.log('📊 API Response data:', data)
-        
-        let entriesArray = []
-        if (data.entries && Array.isArray(data.entries)) {
-          entriesArray = data.entries
-        } else if (Array.isArray(data)) {
-          entriesArray = data
-        } else {
-          console.log('⚠️ Unexpected data structure:', data)
-          entriesArray = []
+      const response = await fetch(
+        `/api/process/entries?company_name=${encodeURIComponent(selectedCompany)}&period=${encodeURIComponent(
+          period
+        )}&year=${encodeURIComponent(year)}`,
+        {
+          method: 'GET',
+          headers: authHeaders(),
+          credentials: 'include',
         }
-        
-        console.log('📋 Processed entries array:', entriesArray)
-        
-        // Remove duplicates based on entry_id
-        const uniqueEntries = entriesArray.filter((entry, index, self) => 
-          index === self.findIndex(e => e.entry_id === entry.entry_id)
-        )
-        
-        if (uniqueEntries.length !== entriesArray.length) {
-          console.log(`⚠️ Removed ${entriesArray.length - uniqueEntries.length} duplicate entries`)
-        }
-        
-        setEntries(uniqueEntries)
-        
-        if (entriesArray.length > 0) {
-          setLastEntry(entriesArray[entriesArray.length - 1])
-          console.log(`✅ Loaded ${entriesArray.length} entries from SQL`)
-        } else {
-          console.log('ℹ️ No entries found in SQL database')
-          setLastEntry(null)
-        }
-      } else {
-        console.log('❌ API request failed with status:', response.status)
-        const errorData = await response.text()
-        console.log('❌ Error details:', errorData)
-        setEntries([])
-        setLastEntry(null)
-      }
+      )
+
+      if (!response.ok) throw new Error(`Failed to load entries (${response.status})`)
+
+      const data = await response.json()
+      setEntries(data.entries || [])
+      setSummary(data.summary || { count: 0, total_debit: 0, total_credit: 0, net_balance: 0 })
     } catch (error) {
-      console.error('💥 Error loading period data:', error)
+      console.error('Process: failed to load entries', error)
+      showNotification('Unable to load process entries.', 'error')
       setEntries([])
-      setLastEntry(null)
+      setSummary({ count: 0, total_debit: 0, total_credit: 0, net_balance: 0 })
     } finally {
-      setIsLoading(false)
+      setLoadingEntries(false)
     }
   }
 
-  const getEntityCurrency = (entityCode) => {
-    const entity = localEntities.find(e => e.entity_code === entityCode)
-    return entity ? entity.currency : 'USD'
-  }
-
-  const calculateBalance = () => {
-    const total = entries.reduce((sum, entry) => sum + parseFloat(entry.amount || 0), 0)
-    return {
-      total: Math.abs(total),
-      isBalanced: Math.abs(total) < 0.01,
-      type: total > 0 ? 'debit' : 'credit'
-    }
-  }
-
-  // Helper function to get account name
-  const getAccountName = (accountCode) => {
-    const account = accounts.find(acc => acc.account_code === accountCode)
-    return account ? account.account_name : accountCode
-  }
-
-  const handleSaveEntry = async () => {
-    if (!entryForm.entity_code || !entryForm.account_code || !entryForm.amount) {
-      showNotification('Please fill in all required fields', 'error')
-      return
-    }
-
+  const formattedCurrency = (value, currency = 'USD') => {
     try {
-      const entryData = {
-        entity_code: entryForm.entity_code,
-        account_code: entryForm.account_code,
-        amount: parseFloat(entryForm.amount),
-        currency: entryForm.currency,
-        counterparty: entryForm.counterparty,
-        entry_category: entryForm.entry_category,
-        custom_note: entryForm.entry_category === 'Custom' ? entryForm.custom_note : '',
-        period: currentPeriod,
-        year: currentYear
-      }
-
-      if (editingId) {
-        // Update existing entry
-        entryData.entry_id = editingId
-        entryData.is_edit = true
-        
-        const response = await fetch('/api/process/entries', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-          body: JSON.stringify(entryData),
-        })
-
-        if (response.ok) {
-          const result = await response.json()
-          const updatedEntries = entries.map(entry => 
-            entry.entry_id === editingId 
-              ? { ...entry, ...entryData, entry_id: editingId }
-              : entry
-          )
-          setEntries(updatedEntries)
-          setLastEntry({ ...entryData, entry_id: editingId })
-          setShowEditModal(false)
-          setEditingId(null)
-          
-          // Reload data from SQL to ensure consistency
-          await loadPeriodData()
-          console.log('✅ Data reloaded from SQL after edit')
-          
-          showNotification('Entry updated successfully in SQL database!')
-        } else {
-          showNotification('Failed to update entry', 'error')
-        }
-      } else {
-        // Add new entry
-        const response = await fetch('/api/process/entries', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-          body: JSON.stringify(entryData),
-        })
-
-        if (response.ok) {
-          const result = await response.json()
-          const newEntry = {
-            ...entryData,
-            entry_id: result.entry_id,
-            period: currentPeriod,
-            year: currentYear
-          }
-          const updatedEntries = [...entries, newEntry]
-          
-          setEntries(updatedEntries)
-          setLastEntry(newEntry)
-          setShowAddModal(false)
-          
-          console.log('✅ New entry created:', newEntry)
-          
-          // Reload data from SQL to ensure consistency
-          await loadPeriodData()
-          console.log('✅ Data reloaded from SQL after add')
-          
-          showNotification('Entry added successfully to SQL database!')
-        } else {
-          const errorData = await response.json()
-          console.error('❌ Failed to add entry:', errorData)
-          showNotification(`Failed to add entry: ${errorData.detail || 'Unknown error'}`, 'error')
-        }
-      }
-
-      // Reset form
-      setEntryForm({
-        entity_code: '',
-        account_code: '',
-        amount: '',
-        currency: '',
-        counterparty: '',
-        entry_category: 'Manual Entry',
-        custom_note: '',
-        period: '',
-        year: ''
-      })
-    } catch (error) {
-      console.error('Error saving entry:', error)
-      showNotification('Error saving entry. Please try again.', 'error')
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value || 0)
+    } catch {
+      const amount = value?.toFixed ? value.toFixed(2) : value || 0
+      return `${amount} ${currency}`
     }
   }
 
-  const handleDeleteConfirm = async () => {
-    if (!selectedEntry) return
-    
-    try {
-      const response = await fetch(`/api/process/entries/${selectedEntry.entry_id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      })
+  const selectedAccount = useMemo(
+    () => referenceData.accounts.find((acc) => acc.code === formState.account_code),
+    [referenceData.accounts, formState.account_code]
+  )
 
-      if (response.ok) {
-        const updatedEntries = entries.filter(entry => entry.entry_id !== selectedEntry.entry_id)
-        setEntries(updatedEntries)
-        setShowDeleteModal(false)
-        setSelectedEntry(null)
-        
-        // Reload data from SQL to ensure consistency
-        await loadPeriodData()
-        
-        showNotification('Entry deleted successfully from SQL!')
-      } else {
-        showNotification('Failed to delete entry', 'error')
-      }
-    } catch (error) {
-      console.error('Error deleting entry:', error)
-      showNotification('Error deleting entry. Please try again.', 'error')
+  const selectedEntity = useMemo(
+    () => referenceData.entities.find((entity) => entity.code === formState.entity_code),
+    [referenceData.entities, formState.entity_code]
+  )
+
+  useEffect(() => {
+    if (selectedEntity && !formState.currency) {
+      setFormState((prev) => ({
+        ...prev,
+        currency: selectedEntity.currency || 'USD',
+      }))
     }
+  }, [selectedEntity])
+
+  const handleFormChange = (field, value) => {
+    setFormState((prev) => ({ ...prev, [field]: value }))
   }
 
-  const handleExport = () => {
-    if (!currentPeriod || !currentYear) {
-      showNotification('Please select period and year first', 'error')
-      return
-    }
-    
-    if (entries.length === 0) {
-      showNotification('No entries to export', 'error')
-      return
-    }
-
-    const filteredEntries = entries.filter(entry => {
-      const matchesSearch = 
-        (entry.entity_code && typeof entry.entity_code === 'string' && entry.entity_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (entry.account_code && typeof entry.account_code === 'string' && entry.account_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (entry.counterparty && typeof entry.counterparty === 'string' && entry.counterparty.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (entry.entry_category && typeof entry.entry_category === 'string' && entry.entry_category.toLowerCase().includes(searchTerm.toLowerCase()))
-      
-      const matchesStatus = selectedStatus === 'all' || 
-        (selectedStatus === 'ic' && entry.counterparty && entry.counterparty.trim() !== '') ||
-        (selectedStatus === 'non-ic' && (!entry.counterparty || entry.counterparty.trim() === ''))
-      
-      const matchesCategory = selectedCategory === 'all' || 
-        (entry.entry_category && entry.entry_category === selectedCategory)
-      
-      return matchesSearch && matchesStatus && matchesCategory
+  const resetForm = () => {
+    setFormState({
+      ...defaultFormState,
+      currency: selectedEntity?.currency || 'USD',
     })
+    setFormMode('create')
+    setEditingEntry(null)
+  }
 
-    if (filteredEntries.length === 0) {
-      showNotification('No entries match the current filters', 'error')
+  const handleSubmitEntry = async (e) => {
+    e.preventDefault()
+
+    if (!selectedCompany) {
+      showNotification('Please select a company first.', 'error')
       return
     }
 
-    // Convert to CSV format
-    const headers = ['Entry ID', 'Entity Code', 'Account Code', 'Amount', 'Currency', 'Counterparty', 'Entry Category', 'Custom Note', 'Period', 'Year']
-    const csvContent = [
-      headers.join(','),
-      ...filteredEntries.map(entry => [
-        entry.entry_id,
-        `"${entry.entity_code}"`,
-        entry.account_code,
-        entry.amount,
-        entry.currency,
-        `"${entry.counterparty || ''}"`,
-        entry.entry_category,
-        `"${entry.custom_note || ''}"`,
-        entry.period,
-        entry.year
-      ].join(','))
-    ].join('\n')
+    if (!formState.entity_code || !formState.account_code || !formState.amount) {
+      showNotification('Please fill in all required fields before submitting.', 'error')
+      return
+    }
 
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const payload = {
+      period,
+      year,
+      entity_code: formState.entity_code,
+      account_code: formState.account_code,
+      amount: parseFloat(formState.amount),
+      entry_type: formState.entry_type,
+      currency: formState.currency || selectedEntity?.currency || 'USD',
+      entry_category: formState.entry_category,
+      counterparty: formState.counterparty || null,
+      description: formState.description || null,
+      account_name: selectedAccount?.name,
+      entity_name: selectedEntity?.name,
+    }
+
+    const url =
+      formMode === 'edit' && editingEntry
+        ? `/api/process/entries/${editingEntry.id}?company_name=${encodeURIComponent(selectedCompany)}`
+        : `/api/process/entries?company_name=${encodeURIComponent(selectedCompany)}`
+
+    const method = formMode === 'edit' && editingEntry ? 'PUT' : 'POST'
+
+    setSubmittingEntry(true)
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: authHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || 'Failed to save entry')
+      }
+
+      await fetchEntries()
+      resetForm()
+      showNotification(`Entry ${formMode === 'edit' ? 'updated' : 'recorded'} successfully.`)
+    } catch (error) {
+      console.error('Process: failed to submit entry', error)
+      showNotification(error.message || 'Unable to save entry.', 'error')
+    } finally {
+      setSubmittingEntry(false)
+    }
+  }
+
+  const handleEditEntry = (entry) => {
+    setFormState({
+      entity_code: entry.entity_code || '',
+      account_code: entry.account_code || '',
+      amount: entry.amount?.toString() || '',
+      entry_type: entry.entry_type || 'debit',
+      currency: entry.currency || selectedEntity?.currency || 'USD',
+      entry_category: entry.entry_category || 'Manual Entry',
+      counterparty: entry.counterparty || '',
+      description: entry.description || '',
+    })
+    setFormMode('edit')
+    setEditingEntry(entry)
+  }
+
+  const handleDeleteEntry = async (entry) => {
+    if (!selectedCompany) return
+
+    const confirmed = window.confirm(`Delete entry ${entry.account_code} for ${entry.entity_code}?`)
+    if (!confirmed) return
+
+    try {
+      const response = await fetch(
+        `/api/process/entries/${entry.id}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'DELETE',
+          headers: authHeaders(),
+          credentials: 'include',
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || 'Failed to delete entry')
+      }
+
+      showNotification('Entry deleted successfully.')
+      await fetchEntries()
+    } catch (error) {
+      console.error('Process: failed to delete entry', error)
+      showNotification(error.message || 'Unable to delete entry.', 'error')
+    }
+  }
+
+  const handleUploadChange = (event) => {
+    const file = event.target.files?.[0] || null
+    setUploadState({ file, uploading: false, errors: [] })
+  }
+
+  const handleUploadSubmit = async () => {
+    if (!selectedCompany || !uploadState.file) {
+      showNotification('Please choose a file to import.', 'error')
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', uploadState.file)
+    formData.append('period', period)
+    formData.append('year', year)
+
+    const headers = authHeaders()
+    delete headers['Content-Type']
+
+    setUploadState((prev) => ({ ...prev, uploading: true, errors: [] }))
+    try {
+      const response = await fetch(
+        `/api/process/entries/upload?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+          body: formData,
+        }
+      )
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.detail || 'Import failed')
+      }
+
+      cons
+const errorCount = data.errors?.length || 0
+      if (errorCount > 0) {
+        showNotification(`Imported with ${errorCount} warning(s).`, 'error')
+      } else {
+        showNotification(`Imported ${data.inserted || 0} entries successfully.`)
+      }
+
+      await fetchEntries()
+      setUploadState({ file: null, uploading: false, errors: data.errors || [] })
+    } catch (error) {
+      console.error('Process: upload error', error)
+      showNotification(error.message || 'Failed to import file.', 'error')
+      setUploadState((prev) => ({ ...prev, uploading: false }))
+    }
+  }
+
+  const downloadTemplate = () => {
+    const template = [
+      ['entity_code', 'account_code', 'amount', 'entry_type', 'currency', 'entry_category', 'counterparty', 'description'],
+      ['ENT_001', '1000', '120000', 'debit', 'USD', 'Manual Entry', '', 'Period adjustment'],
+      ['ENT_002', '2000', '45000', 'credit', 'USD', 'Intercompany', 'ENT_010', 'Intercompany settlement'],
+    ]
+
+    const csvContent = template.map((row) => row.join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+
     const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', `entries_${currentPeriod}_${currentYear}_filtered_${new Date().toISOString().split('T')[0]}.csv`)
-    link.style.visibility = 'hidden'
+    link.href = url
+    link.setAttribute('download', 'process-import-template.csv')
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    
-    showNotification(`Exported ${filteredEntries.length} filtered entries successfully!`)
   }
 
-
-  if (!selectedCompany) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Building2 className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Company Selected</h3>
-          <p className="text-gray-600">Please select a company from the dropdown to view and manage process entries.</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <AlertTriangle className="h-16 w-16 mx-auto mb-4 text-red-400" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Authentication Required</h3>
-          <p className="text-gray-600">Please log in to access process management.</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-lg text-gray-600">Loading process module...</p>
-        </div>
-      </div>
-    )
+  const refreshAll = () => {
+    fetchReferenceData()
+    fetchEntries()
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 space-y-4">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm uppercase tracking-wide text-blue-600 dark:text-blue-300">
+            <Layers className="h-4 w-4" />
+            Process Workspace
+          </div>
+          <h1 className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">Trial Balance Processing</h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            Record manual adjustments or import balances for {selectedCompany || 'your selected company'}.
+          </p>
+        </div>
 
-      {/* Period and Year Selection */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-        <div className="flex flex-col sm:flex-row items-end gap-4">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Period</label>
-            <select
-              value={currentPeriod}
-              onChange={(e) => setCurrentPeriod(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-sm"
-            >
-              <option value="">Select Period</option>
-              {periods.map(period => (
-                <option key={period} value={period}>{period}</option>
-              ))}
-            </select>
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+          >
+            {periodOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+          >
+            {yearOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={refreshAll}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+            <span>Entries this period</span>
+            <TrendingUp className="h-4 w-4" />
           </div>
-          
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-700 mb-1">Year</label>
-            <select
-              value={currentYear}
-              onChange={(e) => setCurrentYear(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors text-sm"
-            >
-              <option value="">Select Year</option>
-              {years.map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
+          <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{summary.count}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Manual &amp; imported adjustments</p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+            <span>Total debits</span>
+            <ArrowUpRight className="h-4 w-4 text-emerald-500" />
           </div>
-          
-          <div className="flex-shrink-0">
+          <p className="mt-2 text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
+            {formattedCurrency(summary.total_debit, formState.currency || 'USD')}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Captured against selected period</p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+            <span>Total credits</span>
+            <ArrowDownRight className="h-4 w-4 text-rose-500" />
+          </div>
+          <p className="mt-2 text-2xl font-semibold text-rose-600 dark:text-rose-400">
+            {formattedCurrency(summary.total_credit, formState.currency || 'USD')}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Net balance {formattedCurrency(summary.net_balance, formState.currency || 'USD')}
+          </p>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {formMode === 'edit' ? 'Edit entry' : 'Create manual entry'}
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Capture adjustments directly into the trial balance.
+              </p>
+            </div>
+            {formMode === 'edit' && (
+              <button
+                onClick={resetForm}
+                type="button"
+                className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-300"
+              >
+                <Plus className="h-4 w-4" />
+                New entry
+              </button>
+            )}
+          </div>
+
+          <form onSubmit={handleSubmitEntry} className="mt-6 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Entity</label>
+                <div className="relative">
+                  <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <select
+                    value={formState.entity_code}
+                    onChange={(e) => handleFormChange('entity_code', e.target.value)}
+                    className="form-select pl-10"
+                    required
+                  >
+                    <option value="" disabled>
+                      Select entity
+                    </option>
+                    {referenceData.entities.map((entity) => (
+                      <option key={entity.code} value={entity.code}>
+                        {entity.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Account</label>
+                <div className="relative">
+                  <Layers className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <select
+                    value={formState.account_code}
+                    onChange={(e) => handleFormChange('account_code', e.target.value)}
+                    className="form-select pl-10"
+                    required
+                  >
+                    <option value="" disabled>
+                      Select account
+                    </option>
+                    {referenceData.accounts.map((account) => (
+                      <option key={account.code} value={account.code}>
+                        {account.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formState.amount}
+                  onChange={(e) => handleFormChange('amount', e.target.value)}
+                  className="form-input"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">Entry type</label>
+                <div className="flex rounded-lg border border-gray-300 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-800">
+                  {['debit', 'credit'].map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleFormChange('entry_type', type)}
+                      className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${
+                        formState.entry_type === type
+                          ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white'
+                          : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                      }`}
+                    >
+                      {type === 'debit' ? 'Debit' : 'Credit'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="label">Currency</label>
+                <select
+                  value={formState.currency || ''}
+                  onChange={(e) => handleFormChange('currency', e.target.value)}
+                  className="form-select"
+                >
+                  <option value="">Default ({selectedEntity?.currency || 'USD'})</option>
+                  {[...(referenceData.currencies || []), 'USD', 'EUR', 'GBP'].map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Category</label>
+                <select
+                  value={formState.entry_category}
+                  onChange={(e) => handleFormChange('entry_category', e.target.value)}
+                  className="form-select"
+                >
+                  {entryCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">Counterparty (optional)</label>
+                <input
+                  type="text"
+                  value={formState.counterparty}
+                  onChange={(e) => handleFormChange('counterparty', e.target.value)}
+                  className="form-input"
+                  placeholder="Intercompany entity code"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Narrative</label>
+              <textarea
+                value={formState.description}
+                onChange={(e) => handleFormChange('description', e.target.value)}
+                rows={3}
+                className="form-input resize-none"
+                placeholder="Add context for this entry"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              {formMode === 'edit' && (
+                <button type="button" onClick={resetForm} className="btn-secondary" disabled={submittingEntry}>
+                  Cancel
+                </button>
+              )}
+              <button type="submit" className="btn-primary inline-flex items-center gap-2" disabled={submittingEntry}>
+                <Save className="h-4 w-4" />
+                {submittingEntry ? 'Saving...' : formMode === 'edit' ? 'Save changes' : 'Add entry'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Bulk import</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Upload CSV or XLSX files using the standard template.
+              </p>
+            </div>
             <button
-              onClick={() => loadPeriodData()}
-              disabled={!currentPeriod || !currentYear || !isAuthenticated}
-              className="px-6 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+              type="button"
+              onClick={downloadTemplate}
+              className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-300"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Load Data
+              <Download className="h-4 w-4" />
+              Template
             </button>
           </div>
-        </div>
-      </div>
 
-      {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500">Entries</p>
-              <p className="text-lg font-bold text-gray-900">{entries.length}</p>
-            </div>
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <FileText className="h-4 w-4 text-blue-600" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500">Total Amount</p>
-              <p className="text-lg font-bold text-gray-900">
-                ${entries.reduce((sum, entry) => sum + parseFloat(entry.amount || 0), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <div className="mt-6 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center dark:border-gray-600 dark:bg-gray-800">
+            <FileSpreadsheet className="mx-auto h-10 w-10 text-indigo-500" />
+            <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-200">
+              Drag a CSV/XLSX file here, or click to browse.
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Required columns: entity_code, account_code, amount. Optional: entry_type, currency, description.
+            </p>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xlsm"
+              onChange={handleUploadChange}
+              className="mt-4 w-full text-sm text-gray-600 file:mr-4 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-100 dark:text-gray-300 dark:file:border-gray-600 dark:file:bg-gray-900 dark:file:text-gray-200"
+            />
+            {uploadState.file && (
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                Selected file: <span className="font-medium">{uploadState.file.name}</span>
               </p>
-            </div>
-            <div className="p-2 bg-green-50 rounded-lg">
-              <DollarSign className="h-4 w-4 text-green-600" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500">Entities</p>
-              <p className="text-lg font-bold text-gray-900">
-                {new Set(entries.map(entry => entry.entity_code)).size}
-              </p>
-            </div>
-            <div className="p-2 bg-purple-50 rounded-lg">
-              <Building2 className="h-4 w-4 text-purple-600" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-gray-500">Status</p>
-              <p className={`text-lg font-bold ${calculateBalance().isBalanced ? 'text-green-600' : 'text-red-600'}`}>
-                {calculateBalance().isBalanced ? '✓ Balanced' : '✗ Unbalanced'}
-              </p>
-            </div>
-            <div className={`p-2 rounded-lg ${calculateBalance().isBalanced ? 'bg-green-50' : 'bg-red-50'}`}>
-              {calculateBalance().isBalanced ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-red-600" />
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Entries Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Process Amounts</h3>
-              <p className="text-sm text-gray-500">
-                {currentPeriod && currentYear 
-                  ? `${currentPeriod} ${currentYear} • Auto-saved to SQL` 
-                  : 'Select period and year to view entries'
-                }
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowAddModal(true)}
-                className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors flex items-center"
+            )}
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={handleUploadSubmit}
+                className="btn-primary inline-flex items-center gap-2"
+                disabled={!uploadState.file || uploadState.uploading}
               >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Entry
-              </button>
-              <button onClick={handleExport} className="btn-secondary text-sm py-1 px-3">
-                <Download className="h-3 w-3 mr-1" />
-                Export
+                <Upload className="h-4 w-4" />
+                {uploadState.uploading ? 'Importing...' : 'Import balances'}
               </button>
             </div>
+            {uploadState.errors.length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-400 bg-amber-50 p-3 text-left text-xs text-amber-700 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200">
+                <p className="font-semibold">Import warnings:</p>
+                <ul className="mt-1 space-y-1">
+                  {uploadState.errors.slice(0, 5).map((error, idx) => (
+                    <li key={idx}>� {error}</li>
+                  ))}
+                  {uploadState.errors.length > 5 && (
+                    <li>� {uploadState.errors.length - 5} additional warning(s)...</li>
+                  )}
+                </ul>
+              </div>
+            )}
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Processed entries</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {period} � {year} � {summary.count} record{summary.count === 1 ? '' : 's'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchEntries}
+            className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-300"
+          >
+            <RefreshCw className={`h-4 w-4 ${loadingEntries ? 'animate-spin' : ''}`} />
+            Refresh data
+          </button>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entry ID</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entity</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Counterparty</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-800">
+              <tr className="text-left">
+                <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Entity</th>
+                <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Account</th>
+                <th className="px-6 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
+                <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Type</th>
+                <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Category</th>
+                <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Counterparty</th>
+                <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Narrative</th>
+                <th className="px-6 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {entries.length === 0 ? (
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {loadingEntries ? (
                 <tr>
-                  <td colSpan="8" className="px-4 py-3 text-center text-gray-500">
-                    <div className="text-center py-4">
-                      <Calendar className="text-3xl text-gray-300 mx-auto mb-2" />
-                      <p className="text-sm font-medium text-gray-500">
-                        {currentPeriod && currentYear 
-                          ? 'No entries found' 
-                          : 'Select Period and Year'
-                        }
-                      </p>
-                      <p className="text-xs text-gray-400 mb-3">
-                        {currentPeriod && currentYear 
-                          ? `No entries found for ${currentPeriod} ${currentYear}` 
-                          : 'Choose a period and year to view or manage entries'
-                        }
-                      </p>
-                      {currentPeriod && currentYear && (
-                        <button 
-                          onClick={() => setShowAddModal(true)}
-                          className="inline-block px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
-                        >
-                          Add First Entry
-                        </button>
-                      )}
-                    </div>
+                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                    Loading entries...
+                  </td>
+                </tr>
+              ) : entries.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No entries captured for {period} {year}. Use the form above or import a file to get started.
                   </td>
                 </tr>
               ) : (
                 entries.map((entry) => (
-                  <tr key={entry.entry_id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      {entry.entry_id}
+                  <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-gray-900 dark:text-white">{entry.entity_code}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{entry.entity_name}</div>
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-6 w-6">
-                          <div className="h-6 w-6 rounded-full bg-indigo-100 flex items-center justify-center">
-                            <Building2 className="h-3 w-3 text-indigo-600" />
-                          </div>
-                        </div>
-                        <div className="ml-2">
-                          <div className="text-sm font-medium text-gray-900">{entry.entity_code}</div>
-                        </div>
-                      </div>
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-gray-900 dark:text-white">{entry.account_code}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{entry.account_name}</div>
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      {entry.account_code}
+                    <td className="px-6 py-4 text-right font-semibold text-gray-900 dark:text-white">
+                      {formattedCurrency(entry.amount, entry.currency || 'USD')}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                      {entry.currency === 'EUR' ? '€' : 
-                       entry.currency === 'GBP' ? '£' : 
-                       entry.currency === 'CAD' ? 'C$' : 
-                       entry.currency === 'AUD' ? 'A$' : 
-                       entry.currency === 'JPY' ? '¥' : 
-                       entry.currency === 'CHF' ? 'CHF' : 
-                       entry.currency === 'SGD' ? 'S$' : '$'}
-                      {parseFloat(entry.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-4 py-2 whitespace-nowrap">
-                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                        {entry.currency}
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          entry.entry_type === 'debit'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                            : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                        }`}
+                      >
+                        {entry.entry_type}
                       </span>
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
-                      {entry.counterparty || '-'}
+                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {entry.entry_category || 'Manual Entry'}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        entry.entry_category === 'Intercompany' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                        entry.entry_category === 'Adjustment' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
-                        entry.entry_category === 'Opening Balance' ? 'bg-green-50 text-green-700 border border-green-200' :
-                        entry.entry_category === 'Elimination' ? 'bg-red-50 text-red-700 border border-red-200' :
-                        'bg-gray-50 text-gray-700 border border-gray-200'
-                      }`}>
-                        {entry.entry_category || 'Manual Entry'}
-                      </span>
+                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {entry.counterparty || '�'}
                     </td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
+                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      {entry.description || '�'}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => {
-                            setEditingId(entry.entry_id)
-                            setSelectedEntry(entry)
-                            setEntryForm({
-                              entity_code: entry.entity_code,
-                              account_code: entry.account_code,
-                              amount: entry.amount,
-                              currency: entry.currency,
-                              counterparty: entry.counterparty || '',
-                              entry_category: entry.entry_category || 'Manual Entry',
-                              custom_note: entry.custom_note || '',
-                              period: entry.period,
-                              year: entry.year
-                            })
-                            setShowEditModal(true)
-                          }}
-                          className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
-                          title="Edit Entry"
+                          type="button"
+                          onClick={() => handleEditEntry(entry)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50"
+                          title="Edit entry"
                         >
-                          <Edit className="h-3 w-3" />
+                          <Edit className="h-4 w-4" />
                         </button>
-                        <button 
-                          onClick={() => {
-                            setSelectedEntry(entry)
-                            setShowDeleteModal(true)
-                          }}
-                          className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
-                          title="Delete Entry"
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEntry(entry)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 dark:hover:bg-rose-900/50"
+                          title="Delete entry"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
@@ -770,223 +816,25 @@ const Process = () => {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* Add/Edit Entry Modal */}
-      {(showAddModal || showEditModal) && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">
-                  {showAddModal ? 'Add New Entry' : 'Edit Entry'}
-                </h3>
-                <button
-                  onClick={() => {
-                    setShowAddModal(false)
-                    setShowEditModal(false)
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              
-              <form className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Entity</label>
-                    <select
-                      value={entryForm.entity_code}
-                      onChange={(e) => {
-                        const entity = e.target.value
-                        setEntryForm({
-                          ...entryForm,
-                          entity_code: entity,
-                          currency: getEntityCurrency(entity)
-                        })
-                      }}
-                      className="form-select"
-                      required
-                    >
-                      <option value="">Select Entity</option>
-                      {localEntities.length > 0 ? (
-                        localEntities.map((entity, index) => (
-                          <option key={`${entity.entity_code}-${index}`} value={entity.entity_code}>
-                            {entity.entity_code} - {entity.entity_name}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>No entities available</option>
-                      )}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">IFRS Account</label>
-                    <select
-                      value={entryForm.account_code}
-                      onChange={(e) => setEntryForm({...entryForm, account_code: e.target.value})}
-                      className="form-select"
-                      required
-                    >
-                      <option value="">Select Account</option>
-                      {accounts.length > 0 ? (
-                        accounts.map(account => (
-                          <option key={account.account_code} value={account.account_code}>
-                            {account.account_code} - {account.account_name || account.description || 'No Name'}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="" disabled>No accounts available</option>
-                      )}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={entryForm.amount}
-                      onChange={(e) => setEntryForm({...entryForm, amount: e.target.value})}
-                      className="form-input"
-                      placeholder="Enter amount"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-                    <select
-                      value={entryForm.currency}
-                      onChange={(e) => setEntryForm({...entryForm, currency: e.target.value})}
-                      className="form-select"
-                      required
-                    >
-                      {currencies.map(currency => (
-                        <option key={currency} value={currency}>{currency}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Entry Category</label>
-                    <select
-                      value={entryForm.entry_category}
-                      onChange={(e) => setEntryForm({...entryForm, entry_category: e.target.value})}
-                      className="form-select"
-                      required
-                    >
-                      {entryCategories.map(category => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Counterparty (Optional)</label>
-                    <input
-                      type="text"
-                      value={entryForm.counterparty}
-                      onChange={(e) => setEntryForm({...entryForm, counterparty: e.target.value})}
-                      className="form-input"
-                      placeholder="Enter counterparty for intercompany transactions"
-                    />
-                  </div>
-                  {entryForm.entry_category === 'Custom' && (
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Custom Note</label>
-                      <input
-                        type="text"
-                        value={entryForm.custom_note}
-                        onChange={(e) => setEntryForm({...entryForm, custom_note: e.target.value})}
-                        className="form-input"
-                        placeholder="Enter custom note for this entry"
-                        required
-                      />
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex justify-end space-x-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddModal(false)
-                      setShowEditModal(false)
-                    }}
-                    className="btn-secondary"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveEntry}
-                    className="btn-primary"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {showAddModal ? 'Add Entry' : 'Save Changes'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div className="mt-3 text-center">
-              <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Delete Entry</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Are you sure you want to delete entry <span className="font-semibold">{selectedEntry?.entry_id}</span>? 
-                This action cannot be undone.
-              </p>
-              <div className="flex justify-center space-x-3">
-                <button
-                  onClick={() => setShowDeleteModal(false)}
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteConfirm}
-                  className="btn-danger"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Notification */}
-      {notification.show && (
-        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${
-          notification.type === 'success' 
-            ? 'bg-green-100 border-l-4 border-green-500 text-green-700' 
-            : 'bg-red-100 border-l-4 border-red-500 text-red-700'
-        }`}>
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              {notification.type === 'success' ? (
-                <CheckCircle className="h-5 w-5 text-green-500" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-              )}
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium">{notification.message}</p>
-            </div>
-            <div className="ml-auto pl-3">
-              <button
-                onClick={() => setNotification({ show: false, message: '', type: 'success' })}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+      {notification && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border px-5 py-3 shadow-lg ${
+            notification.type === 'success'
+              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-200'
+              : 'border-rose-500 bg-rose-50 text-rose-700 dark:border-rose-400 dark:bg-rose-900/30 dark:text-rose-200'
+          }`}
+        >
+          {notification.type === 'success' ? (
+            <CheckCircle className="h-5 w-5" />
+          ) : (
+            <AlertCircle className="h-5 w-5" />
+          )}
+          <span className="text-sm font-medium">{notification.message}</span>
+          <button onClick={() => setNotification(null)} className="text-xs uppercase tracking-wide">
+            Dismiss
+          </button>
         </div>
       )}
     </div>
