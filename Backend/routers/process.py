@@ -1519,10 +1519,7 @@ class RollforwardRequest(BaseModel):
     target_year: str
 
 
-ProcessDefinitionCreate.update_forward_refs(
-    WorkflowStepDefinition=WorkflowStepDefinition,
-    RestrictionDefinition=RestrictionDefinition,
-)
+ProcessDefinitionCreate.model_rebuild()
 
 
 # ---------------------------------------------------------------------------
