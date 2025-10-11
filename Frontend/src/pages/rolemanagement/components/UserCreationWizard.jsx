@@ -66,18 +66,20 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
 
   const normalizeDatabasePermissions = (value) => {
     const raw = parseJsonField(value, {})
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    
+    if (!raw || typeof raw !== 'object') {
       return {}
     }
 
     const normalised = {}
-
-    Object.entries(raw).forEach(([database, permissions]) => {
+    Object.keys(raw).forEach((database) => {
       const basePermissions = { read: false, write: false, execute: false }
+      const rawPermissions = raw[database]
 
-      if (permissions && typeof permissions === 'object' && !Array.isArray(permissions)) {
+      if (typeof rawPermissions === 'object' && rawPermissions !== null) {
+        // Handle object with read/write/execute properties
         Object.keys(basePermissions).forEach((key) => {
-          const rawValue = permissions[key]
+          const rawValue = rawPermissions[key]
           if (typeof rawValue === 'boolean') {
             basePermissions[key] = rawValue
           } else if (typeof rawValue === 'string') {
@@ -85,8 +87,9 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
           }
         })
 
-        if (Array.isArray(permissions.permissions)) {
-          permissions.permissions.forEach((permission) => {
+        // Handle permissions array within the object
+        if (Array.isArray(rawPermissions.permissions)) {
+          rawPermissions.permissions.forEach((permission) => {
             const normalisedPermission = String(permission).toLowerCase()
             if (normalisedPermission === 'full_access') {
               basePermissions.read = basePermissions.write = basePermissions.execute = true
@@ -95,8 +98,8 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
             }
           })
         }
-      } else if (Array.isArray(permissions)) {
-        const lowered = permissions.map((permission) => String(permission).toLowerCase())
+      } else if (Array.isArray(rawPermissions)) {
+        const lowered = rawPermissions.map((permission) => String(permission).toLowerCase())
         if (lowered.includes('full_access')) {
           basePermissions.read = basePermissions.write = basePermissions.execute = true
         } else {
@@ -106,15 +109,15 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
             }
           })
         }
-      } else if (typeof permissions === 'string') {
-        const lowered = permissions.toLowerCase()
+      } else if (typeof rawPermissions === 'string') {
+        const lowered = rawPermissions.toLowerCase()
         if (lowered === 'full_access') {
           basePermissions.read = basePermissions.write = basePermissions.execute = true
         } else if (Object.prototype.hasOwnProperty.call(basePermissions, lowered)) {
           basePermissions[lowered] = true
         }
-      } else if (typeof permissions === 'boolean') {
-        basePermissions.read = permissions
+      } else if (typeof rawPermissions === 'boolean') {
+        basePermissions.read = rawPermissions
       }
 
       normalised[database] = basePermissions

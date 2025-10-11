@@ -1,293 +1,232 @@
-"""
-Initialize Role Management Database Schema
-Run this script to create all necessary tables and initial data for role management
+"""Role management schema initialisation helper.
+
+Run this script to apply the role management schema to the primary
+`epm_tool` database. Demo data seeding is disabled by default to keep
+production environments clean. Set ROLE_MGMT_SEED_DATA=true if you
+explicitly want to insert sample data for manual testing.
 """
 
+from __future__ import annotations
+
+import json
 import os
+from pathlib import Path
+from typing import Iterable
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import json
-from datetime import datetime
 
-def get_db_connection():
-    """Get database connection using environment variables"""
+SCHEMA_PATH = Path(__file__).parent / "database" / "role_management_schema.sql"
+
+
+def _log(level: str, message: str) -> None:
+    print(f"[{level}] {message}")
+
+
+def log_info(message: str) -> None:
+    _log("INFO", message)
+
+
+def log_success(message: str) -> None:
+    _log("SUCCESS", message)
+
+
+def log_warning(message: str) -> None:
+    _log("WARN", message)
+
+
+def log_error(message: str) -> None:
+    _log("ERROR", message)
+
+
+def get_db_connection() -> psycopg2.extensions.connection:
+    """Create a PostgreSQL connection using standard environment variables."""
     return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST', 'localhost'),
-        port=int(os.getenv('POSTGRES_PORT', 5432)),
-        user=os.getenv('POSTGRES_USER', 'postgres'),
-        password=os.getenv('POSTGRES_PASSWORD', 'epm_password'),
-        database=os.getenv('POSTGRES_DB', 'epm_tool')
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        port=int(os.getenv("POSTGRES_PORT", 5432)),
+        user=os.getenv("POSTGRES_USER", "postgres"),
+        password=os.getenv("POSTGRES_PASSWORD", "epm_password"),
+        database=os.getenv("POSTGRES_DB", "epm_tool"),
     )
 
-def execute_sql_file(cursor, file_path):
-    """Execute SQL commands from a file"""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            sql_content = file.read()
-            
-        # Split by semicolon and execute each statement
-        statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
-        
-        for statement in statements:
-            if statement:
-                cursor.execute(statement)
-                
-        print(f"✅ Successfully executed SQL file: {file_path}")
-        return True
-    except Exception as e:
-        print(f"❌ Error executing SQL file {file_path}: {e}")
-        return False
 
-def initialize_role_management_schema():
-    """Initialize the role management database schema"""
+def execute_sql_file(cursor: psycopg2.extensions.cursor, sql_path: Path) -> None:
+    """Execute the full SQL script contained in `sql_path`."""
+    if not sql_path.exists():
+        raise FileNotFoundError(f"Schema file not found: {sql_path}")
+
+    sql_text = sql_path.read_text(encoding="utf-8")
+    cursor.execute(sql_text)
+
+
+def initialize_role_management_schema() -> bool:
+    """Apply the latest role management schema to the database."""
+    log_info("Applying role management database schema...")
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        print("🚀 Initializing Role Management Database Schema...")
-        
-        # Execute the schema file
-        schema_file = os.path.join(os.path.dirname(__file__), 'database', 'role_management_schema.sql')
-        
-        if not os.path.exists(schema_file):
-            print(f"❌ Schema file not found: {schema_file}")
-            return False
-            
-        success = execute_sql_file(cursor, schema_file)
-        
-        if success:
-            conn.commit()
-            print("✅ Role Management schema initialized successfully!")
-            
-            # Verify tables were created
-            cursor.execute("""
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name IN ('roles', 'role_users', 'permissions', 'role_permissions', 
-                                  'audit_logs', 'access_requests', 'system_integrations')
-                ORDER BY table_name
-            """)
-            
-            tables = cursor.fetchall()
-            print(f"📊 Created {len(tables)} role management tables:")
-            for table in tables:
-                print(f"   - {table[0]}")
-                
-            return True
-        else:
-            conn.rollback()
-            return False
-            
-    except Exception as e:
-        print(f"❌ Error initializing role management schema: {e}")
-        return False
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'conn' in locals():
-            conn.close()
-
-def add_sample_data():
-    """Add sample data for testing"""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        print("📝 Adding sample data...")
-        
-        # Add sample users
-        sample_users = [
-            {
-                'username': 'admin',
-                'email': 'admin@company.com',
-                'full_name': 'System Administrator',
-                'company_id': 'Default Company',
-                'role_id': 1  # Super Admin
-            },
-            {
-                'username': 'john.doe',
-                'email': 'john.doe@company.com',
-                'full_name': 'John Doe',
-                'company_id': 'Default Company',
-                'role_id': 2  # Admin
-            },
-            {
-                'username': 'jane.smith',
-                'email': 'jane.smith@company.com',
-                'full_name': 'Jane Smith',
-                'company_id': 'Default Company',
-                'role_id': 3  # Manager
-            }
-        ]
-        
-        for user in sample_users:
-            cursor.execute("""
-                INSERT INTO role_users (username, email, full_name, company_id, role_id)
-                VALUES (%(username)s, %(email)s, %(full_name)s, %(company_id)s, %(role_id)s)
-                ON CONFLICT (username, company_id) DO NOTHING
-            """, user)
-        
-        # Add sample audit logs
-        sample_logs = [
-            {
-                'username': 'admin',
-                'action': 'User Login',
-                'resource': 'Authentication',
-                'details': 'Successful login from web interface',
-                'company_id': 'Default Company',
-                'status': 'success'
-            },
-            {
-                'username': 'john.doe',
-                'action': 'Role Updated',
-                'resource': 'Role: Manager',
-                'details': 'Updated role permissions',
-                'company_id': 'Default Company',
-                'status': 'success'
-            },
-            {
-                'username': 'jane.smith',
-                'action': 'Database Access',
-                'resource': 'Database: epm_tool',
-                'details': 'Accessed financial data for reporting',
-                'company_id': 'Default Company',
-                'status': 'success'
-            }
-        ]
-        
-        for log in sample_logs:
-            cursor.execute("""
-                INSERT INTO audit_logs (username, action, resource, details, company_id, status, timestamp)
-                VALUES (%(username)s, %(action)s, %(resource)s, %(details)s, %(company_id)s, %(status)s, %s)
-            """, (*log.values(), datetime.now()))
-        
-        # Add sample access requests
-        sample_requests = [
-            {
-                'requester_username': 'jane.smith',
-                'requested_role_id': 2,  # Admin
-                'current_role_id': 3,    # Manager
-                'reason': 'Need admin access for quarterly reporting tasks',
-                'company_id': 'Default Company',
-                'status': 'pending'
-            }
-        ]
-        
-        for request in sample_requests:
-            cursor.execute("""
-                INSERT INTO access_requests (requester_username, requested_role_id, current_role_id, reason, company_id, status)
-                VALUES (%(requester_username)s, %(requested_role_id)s, %(current_role_id)s, %(reason)s, %(company_id)s, %(status)s)
-            """, request)
-        
+        execute_sql_file(cursor, SCHEMA_PATH)
         conn.commit()
-        print("✅ Sample data added successfully!")
+        log_success("Schema applied successfully.")
         return True
-        
-    except Exception as e:
-        print(f"❌ Error adding sample data: {e}")
-        conn.rollback()
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        log_error(f"Schema initialization failed: {exc}")
         return False
     finally:
-        if 'cursor' in locals():
+        if cursor:
             cursor.close()
-        if 'conn' in locals():
+        if conn:
             conn.close()
 
-def verify_installation():
-    """Verify the installation by checking data"""
+
+def _table_exists(cursor: psycopg2.extensions.cursor, table_name: str) -> bool:
+    cursor.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = %s
+        )
+        """,
+        (table_name,),
+    )
+    return bool(cursor.fetchone()[0])
+
+
+def verify_installation() -> bool:
+    """Confirm that all required tables exist."""
+    required_tables: Iterable[str] = (
+        "custom_roles",
+        "role_permissions_detailed",
+        "user_profiles",
+        "role_management_audit_logs",
+        "access_requests",
+        "system_integrations",
+    )
+
+    log_info("Verifying role management tables...")
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        missing: list[str] = []
+        for table in required_tables:
+            exists = _table_exists(cursor, table)
+            status = "present" if exists else "missing"
+            log_info(f" - {table}: {status}")
+            if not exists:
+                missing.append(table)
+
+        if missing:
+            log_warning(
+                "Verification completed with missing tables: "
+                + ", ".join(missing)
+            )
+            return False
+
+        log_success("Verification complete. All required tables are present.")
+        return True
+    except Exception as exc:
+        log_error(f"Verification failed: {exc}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+def seed_sample_data() -> bool:
+    """Insert optional sample data for manual testing."""
+    log_info("Seeding sample role management data (ROLE_MGMT_SEED_DATA enabled)...")
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        print("🔍 Verifying installation...")
-        
-        # Check roles
-        cursor.execute("SELECT COUNT(*) as count FROM roles WHERE company_id = 'Default Company'")
-        roles_count = cursor.fetchone()['count']
-        print(f"   📋 Roles: {roles_count}")
-        
-        # Check permissions
-        cursor.execute("SELECT COUNT(*) as count FROM permissions WHERE company_id = 'Default Company'")
-        permissions_count = cursor.fetchone()['count']
-        print(f"   🔐 Permissions: {permissions_count}")
-        
-        # Check users
-        cursor.execute("SELECT COUNT(*) as count FROM role_users WHERE company_id = 'Default Company'")
-        users_count = cursor.fetchone()['count']
-        print(f"   👥 Users: {users_count}")
-        
-        # Check audit logs
-        cursor.execute("SELECT COUNT(*) as count FROM audit_logs WHERE company_id = 'Default Company'")
-        logs_count = cursor.fetchone()['count']
-        print(f"   📊 Audit Logs: {logs_count}")
-        
-        # Check system integrations
-        cursor.execute("SELECT COUNT(*) as count FROM system_integrations WHERE company_id = 'Default Company'")
-        integrations_count = cursor.fetchone()['count']
-        print(f"   🔗 System Integrations: {integrations_count}")
-        
-        if all([roles_count > 0, permissions_count > 0, integrations_count > 0]):
-            print("✅ Role Management system is ready!")
-            return True
-        else:
-            print("❌ Some data is missing. Please check the installation.")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Error verifying installation: {e}")
+
+        sample_page_permissions = {
+            "/rolemanagement/user-access-dashboard": True,
+            "/rolemanagement/role-profile-management": True,
+        }
+        sample_database_permissions = {
+            "epm_tool": {"read": True, "write": False, "execute": False, "admin": False}
+        }
+
+        cursor.execute(
+            """
+            INSERT INTO custom_roles (
+                name,
+                description,
+                company_id,
+                page_permissions,
+                database_permissions,
+                risk_level,
+                created_by
+            )
+            VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
+            ON CONFLICT (name, company_id) DO NOTHING
+            """,
+            (
+                "Sample Administrator",
+                "Example role created for testing. Remove ROLE_MGMT_SEED_DATA to disable.",
+                "Default Company",
+                json.dumps(sample_page_permissions),
+                json.dumps(sample_database_permissions),
+                "medium",
+                "system",
+            ),
+        )
+
+        conn.commit()
+        log_success("Sample role inserted successfully.")
+        return True
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        log_error(f"Sample data seeding failed: {exc}")
         return False
     finally:
-        if 'cursor' in locals():
+        if cursor:
             cursor.close()
-        if 'conn' in locals():
+        if conn:
             conn.close()
 
-def main():
-    """Main initialization function"""
+
+def main() -> bool:
     print("=" * 60)
-    print("🚀 ROLE MANAGEMENT SYSTEM INITIALIZATION")
+    print("ROLE MANAGEMENT SETUP")
     print("=" * 60)
-    
-    # Step 1: Initialize schema
+
     if not initialize_role_management_schema():
-        print("❌ Failed to initialize schema. Exiting.")
         return False
-    
-    print()
-    
-    # Step 2: Add sample data
-    if not add_sample_data():
-        print("❌ Failed to add sample data. Exiting.")
-        return False
-    
-    print()
-    
-    # Step 3: Verify installation
-    if not verify_installation():
-        print("❌ Installation verification failed.")
-        return False
-    
-    print()
+
+    seed_requested = os.getenv("ROLE_MGMT_SEED_DATA", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if seed_requested:
+        if not seed_sample_data():
+            return False
+    else:
+        log_info("Sample data seeding skipped (ROLE_MGMT_SEED_DATA not enabled).")
+
+    verify_installation()
+
     print("=" * 60)
-    print("🎉 ROLE MANAGEMENT SYSTEM READY!")
+    log_success("Role management setup complete.")
     print("=" * 60)
-    print("📍 API Endpoints available at:")
-    print("   - GET  /api/role-management/roles")
-    print("   - POST /api/role-management/roles")
-    print("   - GET  /api/role-management/users")
-    print("   - GET  /api/role-management/audit-logs")
-    print("   - GET  /api/role-management/permission-matrix")
-    print("   - GET  /api/role-management/system-integrations")
-    print()
-    print("🔐 Default Admin User:")
-    print("   - Username: admin")
-    print("   - Email: admin@company.com")
-    print("   - Role: Super Admin")
-    print()
-    print("🎯 Ready for production use!")
-    
     return True
+
 
 if __name__ == "__main__":
     main()

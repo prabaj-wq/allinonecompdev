@@ -109,6 +109,32 @@ def create_company_tables(database_name: str):
         from company_database import create_company_database_schema
         create_company_database_schema(engine)
         
+        # Also create role management tables in epm_tool database
+        if database_name != "epm_tool":
+            print("Creating role management tables in epm_tool database...")
+            epm_db_url = f"postgresql://{db_params['user']}:{encoded_password}@{db_params['host']}:{db_params['port']}/epm_tool"
+            epm_engine = create_engine(epm_db_url, echo=True)
+            
+            # Import the ensure function from role_management
+            from routers.role_management import ensure_role_management_tables
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            
+            # Create connection and ensure tables
+            epm_conn = psycopg2.connect(
+                host=db_params['host'],
+                database="epm_tool",
+                user=db_params['user'],
+                password=db_params['password'],
+                port=db_params['port']
+            )
+            epm_cur = epm_conn.cursor(cursor_factory=RealDictCursor)
+            ensure_role_management_tables(epm_cur)
+            epm_conn.commit()
+            epm_cur.close()
+            epm_conn.close()
+            print("Role management tables created in epm_tool database")
+        
         print(f"Successfully created all company tables in database '{database_name}'")
         
     except Exception as e:

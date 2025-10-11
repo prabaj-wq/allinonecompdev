@@ -9,21 +9,18 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2.extensions import connection as PGConnection
 import json
 import os
 import secrets
 import string
+import bcrypt
 
 router = APIRouter(prefix="/api/role-management", tags=["role-management"])
 
 # Import database dependencies
 from database import get_db, User, Company
 from sqlalchemy.orm import Session
-
-# Mock function to replace get_company_connection for now
-def get_company_connection(company_name):
-    """Mock database connection - not used in updated endpoints"""
-    pass
 
 # Pydantic Models
 class RoleCreate(BaseModel):
@@ -48,10 +45,13 @@ class UserCreate(BaseModel):
     role_id: Optional[int] = None  # Allow role assignment during user creation
     database_access: List[str] = Field(default_factory=list)  # List of database names
     permissions: Dict[str, List[str]] = Field(default_factory=dict)  # Custom permissions
+    page_permissions: Dict[str, Any] = Field(default_factory=dict)
+    database_permissions: Dict[str, Any] = Field(default_factory=dict)
     department: Optional[str] = None
     position: Optional[str] = None
     phone: Optional[str] = None
     temporary_password: Optional[str] = None
+    company_name: Optional[str] = None
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -83,6 +83,451 @@ class SystemIntegrationUpdate(BaseModel):
     status: str = Field(pattern=r'^(connected|warning|error|disconnected)$')
     health_percentage: int = Field(ge=0, le=100)
     config: Optional[Dict[str, Any]] = None
+
+# ===== Shared Role Management Helpers =====
+
+def parse_json_field(value: Any, default: Any):
+    """Safely parse JSON-like fields that may arrive as strings or python objects."""
+    if value is None:
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if parsed is not None else default
+        except (ValueError, TypeError):
+            return default
+    return default
+
+
+def normalize_page_permissions(value: Any) -> Dict[str, bool]:
+    """Convert stored page permission payloads into a flat map of route -> bool."""
+    raw = parse_json_field(value, {})
+    result: Dict[str, bool] = {}
+
+    if isinstance(raw, dict):
+        for route, perm_value in raw.items():
+            if isinstance(perm_value, dict):
+                result[route] = any(bool(inner) for inner in perm_value.values())
+            elif isinstance(perm_value, str):
+                result[route] = perm_value.lower() in {"true", "1", "yes", "access", "allowed", "full_access"}
+            else:
+                result[route] = bool(perm_value)
+    elif isinstance(raw, (list, tuple, set)):
+        for entry in raw:
+            if isinstance(entry, str):
+                result[entry] = True
+
+    return result
+
+
+def normalize_database_permissions(value: Any) -> Dict[str, Dict[str, bool]]:
+    """Convert stored database permission payloads into explicit read/write/execute flags."""
+    raw = parse_json_field(value, {})
+    normalised: Dict[str, Dict[str, bool]] = {}
+
+    if isinstance(raw, dict):
+        for db_name, permissions in raw.items():
+            base = {"read": False, "write": False, "execute": False, "admin": False}
+
+            if isinstance(permissions, dict):
+                for key in base:
+                    raw_value = permissions.get(key)
+                    if isinstance(raw_value, bool):
+                        base[key] = raw_value
+                    elif isinstance(raw_value, str):
+                        base[key] = raw_value.lower() in {"true", "1", "yes", "allow", "allowed"}
+
+                extras = permissions.get("permissions")
+                if isinstance(extras, (list, tuple, set)):
+                    for entry in extras:
+                        lowered = str(entry).lower()
+                        if lowered == "full_access":
+                            base = {perm: True for perm in base}
+                        elif lowered in base:
+                            base[lowered] = True
+            elif isinstance(permissions, (list, tuple, set)):
+                lowered = {str(entry).lower() for entry in permissions}
+                if "full_access" in lowered:
+                    base = {perm: True for perm in base}
+                else:
+                    for perm in base:
+                        if perm in lowered:
+                            base[perm] = True
+            elif isinstance(permissions, str):
+                lowered = permissions.lower()
+                if lowered == "full_access":
+                    base = {perm: True for perm in base}
+                elif lowered in base:
+                    base[lowered] = True
+            elif isinstance(permissions, bool):
+                base["read"] = permissions
+
+            if base.get("admin"):
+                base["read"] = True
+                base["write"] = True
+                base["execute"] = True
+
+            normalised[db_name] = base
+
+    return normalised
+
+
+def merge_page_permissions(base: Dict[str, bool], overrides: Dict[str, bool]) -> Dict[str, bool]:
+    """Combine role-derived page permissions with user overrides."""
+    merged = dict(base or {})
+    for route, allowed in (overrides or {}).items():
+        merged[route] = bool(allowed)
+    return merged
+
+
+def merge_database_permissions(base: Dict[str, Dict[str, bool]], overrides: Dict[str, Dict[str, bool]]) -> Dict[str, Dict[str, bool]]:
+    """Merge role database permissions with user overrides, preserving explicit flags."""
+    merged: Dict[str, Dict[str, bool]] = {}
+
+    all_db_names = set((base or {}).keys()) | set((overrides or {}).keys())
+    for db_name in all_db_names:
+        base_perms = (base or {}).get(db_name, {})
+        override_perms = (overrides or {}).get(db_name, {})
+        merged_permissions = {}
+        for perm in ("read", "write", "execute", "admin"):
+            merged_permissions[perm] = bool(base_perms.get(perm)) or bool(override_perms.get(perm))
+        if merged_permissions.get("admin"):
+            merged_permissions["read"] = True
+            merged_permissions["write"] = True
+            merged_permissions["execute"] = True
+        merged[db_name] = merged_permissions
+    return merged
+
+
+def ensure_role_management_tables(cursor):
+    """Ensure core role-management tables exist before executing operations."""
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS custom_roles (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            company_id VARCHAR(255) NOT NULL,
+            page_permissions JSONB DEFAULT '{}'::jsonb,
+            database_permissions JSONB DEFAULT '{}'::jsonb,
+            permissions JSONB DEFAULT '{}'::jsonb,
+            is_active BOOLEAN DEFAULT TRUE,
+            is_system_role BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(255),
+            last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            risk_level VARCHAR(20) DEFAULT 'low',
+            UNIQUE(name, company_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS role_permissions_detailed (
+            id SERIAL PRIMARY KEY,
+            role_id INTEGER REFERENCES custom_roles(id) ON DELETE CASCADE,
+            permission_type VARCHAR(50) NOT NULL,
+            resource_name VARCHAR(255) NOT NULL,
+            parent_resource VARCHAR(255),
+            permission_level VARCHAR(50) NOT NULL,
+            granted BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(255)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            role_id INTEGER,
+            company_id VARCHAR(255) NOT NULL,
+            permissions JSONB DEFAULT '{}'::jsonb,
+            database_access JSONB DEFAULT '{}'::jsonb,
+            metadata JSONB DEFAULT '{}'::jsonb,
+            username VARCHAR(255),
+            created_by VARCHAR(255),
+            last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, company_id)
+        )
+    """)
+
+    cursor.execute("""
+        ALTER TABLE user_profiles
+            ADD COLUMN IF NOT EXISTS database_access JSONB DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb,
+            ADD COLUMN IF NOT EXISTS username VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS created_by VARCHAR(255),
+            ADD COLUMN IF NOT EXISTS last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
+            ADD COLUMN IF NOT EXISTS role_id INTEGER
+    """)
+
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.table_constraints
+                WHERE constraint_type = 'FOREIGN KEY'
+                  AND constraint_name = 'user_profiles_role_id_fkey'
+                  AND table_name = 'user_profiles'
+            ) THEN
+                ALTER TABLE user_profiles
+                    ADD CONSTRAINT user_profiles_role_id_fkey
+                    FOREIGN KEY (role_id) REFERENCES custom_roles(id)
+                    ON DELETE SET NULL;
+            END IF;
+        END;
+        $$;
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS role_management_audit_logs (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(255) NOT NULL,
+            action VARCHAR(255) NOT NULL,
+            resource VARCHAR(255),
+            resource_id VARCHAR(255),
+            details TEXT,
+            ip_address INET,
+            user_agent TEXT,
+            device_type VARCHAR(100),
+            company_id VARCHAR(255) NOT NULL,
+            status VARCHAR(50) DEFAULT 'success',
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            session_id VARCHAR(255),
+            risk_level VARCHAR(20) DEFAULT 'low'
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS access_requests (
+            id SERIAL PRIMARY KEY,
+            requester_username VARCHAR(255) NOT NULL,
+            company_id VARCHAR(255) NOT NULL,
+            requested_module VARCHAR(255) NOT NULL,
+            requested_page VARCHAR(255),
+            requested_permissions JSONB DEFAULT '[]'::jsonb,
+            reason TEXT NOT NULL,
+            urgency VARCHAR(20) DEFAULT 'normal',
+            business_justification TEXT,
+            status VARCHAR(20) DEFAULT 'pending',
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TIMESTAMP,
+            reviewer_username VARCHAR(255),
+            review_reason TEXT,
+            ip_address INET,
+            user_agent TEXT,
+            auto_approved BOOLEAN DEFAULT FALSE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS system_integrations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            type VARCHAR(50) NOT NULL,
+            description TEXT,
+            connection_string TEXT,
+            status VARCHAR(20) DEFAULT 'disconnected',
+            health_percentage INTEGER DEFAULT 0,
+            last_sync TIMESTAMP,
+            company_id VARCHAR(255) NOT NULL,
+            config JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(name, company_id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE OR REPLACE FUNCTION update_updated_at_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = CURRENT_TIMESTAMP;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+
+    cursor.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger WHERE tgname = 'trg_custom_roles_updated_at'
+            ) THEN
+                CREATE TRIGGER trg_custom_roles_updated_at
+                BEFORE UPDATE ON custom_roles
+                FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger WHERE tgname = 'trg_user_profiles_updated_at'
+            ) THEN
+                CREATE TRIGGER trg_user_profiles_updated_at
+                BEFORE UPDATE ON user_profiles
+                FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_trigger WHERE tgname = 'trg_system_integrations_updated_at'
+            ) THEN
+                CREATE TRIGGER trg_system_integrations_updated_at
+                BEFORE UPDATE ON system_integrations
+                FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+            END IF;
+        END;
+        $$;
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_custom_roles_company ON custom_roles(company_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions_detailed(role_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_user_profiles_company_username ON user_profiles(company_id, username)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_role_management_audit_company ON role_management_audit_logs(company_id)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_access_requests_company_status ON access_requests(company_id, status)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_system_integrations_company ON system_integrations(company_id)
+    """)
+
+
+def ensure_company_record(cursor: RealDictCursor, company_name: str) -> Dict[str, Any]:
+    """Ensure a company exists and return its record."""
+    cursor.execute(
+        "SELECT id, name, code FROM companies WHERE name = %s",
+        (company_name,)
+    )
+    existing = cursor.fetchone()
+    if existing:
+        return dict(existing)
+
+    base_code = "".join(ch.lower() for ch in company_name if ch.isalnum())
+    base_code = base_code[:20] or "company"
+    candidate_code = base_code
+
+    attempt = 0
+    while True:
+        cursor.execute(
+            "SELECT 1 FROM companies WHERE code = %s",
+            (candidate_code,)
+        )
+        if not cursor.fetchone():
+            break
+        attempt += 1
+        candidate_code = f"{base_code}-{secrets.token_hex(2)}"
+
+    cursor.execute(
+        """
+        INSERT INTO companies (name, code, environment_type, industry, status, created_at, updated_at)
+        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id, name, code
+        """,
+        (company_name, candidate_code, "production", "General", "active")
+    )
+    return dict(cursor.fetchone())
+
+
+def fetch_users_for_company(company_name: str, role_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Fetch users and attached role metadata for a company."""
+    conn = psycopg2.connect(
+        host=os.getenv("DB_HOST", "postgres"),
+        database=os.getenv("DB_NAME", "epm_tool"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASSWORD", "epm_password"),
+        port=os.getenv("DB_PORT", "5432")
+    )
+
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+        conn.commit()
+
+        query = """
+            SELECT 
+                u.id,
+                u.username,
+                u.email,
+                u.is_active,
+                u.last_login,
+                u.created_at,
+                u.updated_at,
+                c.id AS company_id,
+                c.name AS company_name,
+                up.role_id,
+                up.permissions,
+                up.database_access,
+                up.metadata,
+                up.is_active AS profile_active,
+                up.last_action,
+                r.name AS role_name,
+                r.description AS role_description
+            FROM users u
+            INNER JOIN companies c ON u.company_id = c.id
+            LEFT JOIN user_profiles up 
+                ON up.user_id = u.id 
+               AND up.company_id = c.name
+            LEFT JOIN custom_roles r 
+                ON up.role_id = r.id
+               AND r.company_id = c.name
+            WHERE c.name = %s
+            ORDER BY u.created_at DESC
+        """
+        params: List[Any] = [company_name]
+
+        cur.execute(query, params)
+        users = cur.fetchall()
+
+        safe_users: List[Dict[str, Any]] = []
+        for user_row in users:
+            if role_id and user_row.get("role_id") not in {role_id, str(role_id)}:
+                continue
+
+            permissions_payload = parse_json_field(user_row.get("permissions"), {})
+            metadata_payload = parse_json_field(user_row.get("metadata"), {})
+
+            page_permissions = normalize_page_permissions(permissions_payload.get("page_permissions"))
+            database_permissions = normalize_database_permissions(permissions_payload.get("database_permissions"))
+
+            user_dict = {
+                "id": user_row.get("id"),
+                "username": user_row.get("username"),
+                "email": user_row.get("email"),
+                "is_active": bool(user_row.get("is_active") and user_row.get("profile_active", True)),
+                "last_login": user_row.get("last_login"),
+                "created_at": user_row.get("created_at"),
+                "updated_at": user_row.get("updated_at"),
+                "company_id": user_row.get("company_id"),
+                "company": user_row.get("company_name"),
+                "role_id": user_row.get("role_id"),
+                "role_name": user_row.get("role_name"),
+                "role_description": user_row.get("role_description"),
+                "last_action": user_row.get("last_action"),
+                "page_permissions": page_permissions,
+                "database_permissions": database_permissions,
+                "metadata": metadata_payload,
+                "full_name": metadata_payload.get("full_name", ""),
+                "department": metadata_payload.get("department", ""),
+                "position": metadata_payload.get("position", ""),
+                "phone": metadata_payload.get("phone", ""),
+            }
+
+            safe_users.append(user_dict)
+
+        return safe_users
+    finally:
+        conn.close()
 
 # Helper Functions
 def log_audit_event(company_name: str, username: str, action: str, resource: str = None, 
@@ -266,97 +711,10 @@ async def get_roles(company_name: str = Query(...),
             return {"roles": []}
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Create roles table if not exists
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS custom_roles (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                company_id VARCHAR(255) NOT NULL,
-                page_permissions JSONB DEFAULT '{}',
-                database_permissions JSONB DEFAULT '{}',
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                is_system_role BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255),
-                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                risk_level VARCHAR(20) DEFAULT 'low',
-                UNIQUE(name, company_id)
-            )
-        """)
-        
-        # Create role permissions detailed table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS role_permissions_detailed (
-                id SERIAL PRIMARY KEY,
-                role_id INTEGER REFERENCES custom_roles(id) ON DELETE CASCADE,
-                permission_type VARCHAR(50) NOT NULL, -- 'page' or 'database' or 'table'
-                resource_name VARCHAR(255) NOT NULL, -- page path, database name, or table name
-                parent_resource VARCHAR(255), -- database name for tables
-                permission_level VARCHAR(50) NOT NULL, -- 'read', 'write', 'execute', 'full_access', 'access'
-                granted BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255)
-            )
-        """)
-        
-        # Create user profiles table for role assignment
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                company_id VARCHAR(255) NOT NULL,
-                role_id INTEGER REFERENCES custom_roles(id),
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                login_count INTEGER DEFAULT 0,
-                UNIQUE(user_id, company_id)
-            )
-        """)
-        
-        # Insert default roles if none exist
-        cur.execute("SELECT COUNT(*) as count FROM custom_roles WHERE company_id = %s", [company_name])
-        if cur.fetchone()['count'] == 0:
-            default_roles = [
-                {
-                    "name": "Super Admin",
-                    "description": "Full system access with all permissions",
-                    "permissions": {"core_system": ["dashboard", "user_management", "company_settings", "system_logs"], "financial_planning": ["budget_planning", "forecasting", "variance_analysis"], "entity_management": ["entity_hierarchy", "entity_data", "consolidation_rules"], "account_management": ["chart_of_accounts", "account_mapping", "account_reconciliation"], "reporting": ["financial_reports", "custom_reports", "analytics_dashboard"], "workflow": ["approval_workflows", "task_management", "notification_center"]},
-                    "database_permissions": {"epm_tool": ["read", "write", "execute"], "axes_entity": ["read", "write", "execute"], "axes_account": ["read", "write", "execute"], "reporting_db": ["read", "execute"], "audit_db": ["read"]},
-                    "is_system_role": True,
-                    "risk_level": "high"
-                },
-                {
-                    "name": "Finance Manager", 
-                    "description": "Financial planning and reporting access",
-                    "permissions": {"core_system": ["dashboard"], "financial_planning": ["budget_planning", "forecasting", "variance_analysis"], "reporting": ["financial_reports", "custom_reports", "analytics_dashboard"]},
-                    "database_permissions": {"epm_tool": ["read", "write"], "reporting_db": ["read", "execute"]},
-                    "is_system_role": True,
-                    "risk_level": "medium"
-                },
-                {
-                    "name": "Analyst",
-                    "description": "Read-only access to reports and analytics",
-                    "permissions": {"core_system": ["dashboard"], "reporting": ["financial_reports", "analytics_dashboard"]},
-                    "database_permissions": {"epm_tool": ["read"], "reporting_db": ["read"]},
-                    "is_system_role": True,
-                    "risk_level": "low"
-                }
-            ]
-            
-            for role in default_roles:
-                cur.execute("""
-                    INSERT INTO custom_roles (name, description, company_id, permissions, database_permissions, is_system_role, risk_level, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (role["name"], role["description"], company_name, json.dumps(role["permissions"]), 
-                      json.dumps(role["database_permissions"]), role["is_system_role"], role["risk_level"], "system"))
-        
+
+        ensure_role_management_tables(cur)
+        conn.commit()
+
         # Build query with filters
         query = """
             SELECT r.*, 
@@ -430,61 +788,8 @@ async def create_role(role: RoleCreate, company_name: str = Query(...),
                 )
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Create tables if they don't exist (same as in get_roles)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS custom_roles (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                company_id VARCHAR(255) NOT NULL,
-                page_permissions JSONB DEFAULT '{}',
-                database_permissions JSONB DEFAULT '{}',
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                is_system_role BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255),
-                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                risk_level VARCHAR(20) DEFAULT 'low',
-                UNIQUE(name, company_id)
-            )
-        """)
-        
-        # Create role permissions detailed table
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS role_permissions_detailed (
-                id SERIAL PRIMARY KEY,
-                role_id INTEGER REFERENCES custom_roles(id) ON DELETE CASCADE,
-                permission_type VARCHAR(50) NOT NULL, -- 'page' or 'database' or 'table'
-                resource_name VARCHAR(255) NOT NULL, -- page path, database name, or table name
-                parent_resource VARCHAR(255), -- database name for tables
-                permission_level VARCHAR(50) NOT NULL, -- 'read', 'write', 'execute', 'full_access', 'access'
-                granted BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255)
-            )
-        """)
-        
-        # Create user profiles table for role assignment
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                company_id VARCHAR(255) NOT NULL,
-                role_id INTEGER REFERENCES custom_roles(id),
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                login_count INTEGER DEFAULT 0,
-                UNIQUE(user_id, company_id)
-            )
-        """)
-        
-        # Commit table creation
+
+        ensure_role_management_tables(cur)
         conn.commit()
         
         # Check if role name already exists
@@ -823,43 +1128,8 @@ async def get_role_details(role_id: int, company_name: str = Query(...)):
         )
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Create tables if they don't exist
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS custom_roles (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                company_id VARCHAR(255) NOT NULL,
-                page_permissions JSONB DEFAULT '{}',
-                database_permissions JSONB DEFAULT '{}',
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                is_system_role BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255),
-                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                risk_level VARCHAR(20) DEFAULT 'low',
-                UNIQUE(name, company_id)
-            )
-        """)
-        
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                company_id VARCHAR(255) NOT NULL,
-                role_id INTEGER REFERENCES custom_roles(id),
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                login_count INTEGER DEFAULT 0,
-                UNIQUE(user_id, company_id)
-            )
-        """)
+        ensure_role_management_tables(cur)
+        conn.commit()
         
         conn.commit()
         
@@ -915,28 +1185,7 @@ async def update_role(role_id: int, role: RoleCreate, company_name: str = Query(
         )
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Create tables if they don't exist
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS custom_roles (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                company_id VARCHAR(255) NOT NULL,
-                page_permissions JSONB DEFAULT '{}',
-                database_permissions JSONB DEFAULT '{}',
-                permissions JSONB DEFAULT '{}',
-                is_active BOOLEAN DEFAULT TRUE,
-                is_system_role BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255),
-                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                risk_level VARCHAR(20) DEFAULT 'low',
-                UNIQUE(name, company_id)
-            )
-        """)
-        
+        ensure_role_management_tables(cur)
         conn.commit()
         
         # Check if role exists
@@ -1004,50 +1253,6 @@ async def update_role(role_id: int, role: RoleCreate, company_name: str = Query(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
-
-@router.delete("/roles/{role_id}")
-async def delete_role(role_id: int, company_name: str = Query(...), 
-                     username: str = Query("admin"), request: Request = None):
-    """Delete a role (soft delete)"""
-    try:
-        ip_address, user_agent = get_client_info(request)
-        
-        with get_company_connection(company_name) as conn:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Check if role exists
-            cur.execute("SELECT * FROM roles WHERE id = %s AND company_id = %s", 
-                       (role_id, company_name))
-            role = cur.fetchone()
-            if not role:
-                raise HTTPException(status_code=404, detail="Role not found")
-            
-            # Check if role is in use
-            cur.execute("SELECT COUNT(*) as count FROM role_users WHERE role_id = %s AND is_active = true", 
-                       (role_id,))
-            user_count = cur.fetchone()['count']
-            if user_count > 0:
-                raise HTTPException(status_code=400, 
-                                  detail=f"Cannot delete role. {user_count} users are assigned to this role.")
-            
-            # Soft delete role
-            cur.execute("""
-                UPDATE roles 
-                SET is_active = false, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s AND company_id = %s
-            """, (role_id, company_name))
-            conn.commit()
-            
-            # Log audit event
-            log_audit_event(company_name, username, "Role Deleted", "Role", 
-                          str(role_id), f"Deleted role: {role['name']}", 
-                          "success", ip_address, user_agent)
-            
-            return {"message": "Role deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete role: {str(e)}")
 
 @router.delete("/roles/{role_id}")
 async def delete_role_enhanced(role_id: int, company_name: str = Query(...), username: str = Query("admin"), request: Request = None):
@@ -1126,36 +1331,75 @@ async def delete_role_enhanced(role_id: int, company_name: str = Query(...), use
 async def get_users(company_name: str = Query(...), role_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
     """Get all users for a company"""
     try:
-        # Query users from the existing users table
-        query = db.query(User).filter(User.company == company_name)
-        
-        if role_id:
-            # Filter by role if specified
-            query = query.filter(User.role == str(role_id))
-        
-        users = query.all()
-        
-        # Convert to dict format
-        users_data = []
-        for user in users:
-            user_dict = {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name,
-                "company": user.company,
-                "role": user.role,
-                "role_name": user.role,  # Use role as role_name for now
-                "is_active": user.is_active,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-                "last_login": user.last_login.isoformat() if user.last_login else None
-            }
-            users_data.append(user_dict)
-        
-        return {"users": users_data}
-            
+        users = fetch_users_for_company(company_name, role_id=role_id)
+        return {"users": users}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+
+
+@router.get("/users/{user_id}")
+async def get_user_detail(user_id: int, company_name: str = Query(...)):
+    """Get detailed information for a single user."""
+    try:
+        users = fetch_users_for_company(company_name)
+        for user in users:
+            if str(user.get("id")) == str(user_id):
+                return {"user": user}
+        raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch user: {str(e)}")
+
+
+@router.get("/user-activity/{user_id}")
+async def get_user_activity(
+    user_id: int,
+    company_name: str = Query(...),
+    limit: int = Query(25, ge=1, le=200)
+):
+    """Return recent audit activity for a specific user."""
+    conn: Optional[PGConnection] = None
+    cur: Optional[RealDictCursor] = None
+    try:
+        users = fetch_users_for_company(company_name)
+        target_user = next((user for user in users if str(user.get("id")) == str(user_id)), None)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "postgres"),
+            database=os.getenv("DB_NAME", "epm_tool"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "epm_password"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT *
+            FROM role_management_audit_logs
+            WHERE company_id = %s AND username = %s
+            ORDER BY timestamp DESC
+            LIMIT %s
+            """,
+            (company_name, target_user["username"], limit)
+        )
+        records = cur.fetchall()
+
+        return {
+            "user": target_user,
+            "activity": [dict(entry) for entry in records]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load user activity: {str(e)}")
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @router.get("/databases")
 async def get_available_databases(company_name: str = Query(...)):
@@ -1345,155 +1589,41 @@ async def get_database_tables(database_name: str, company_name: str = Query(...)
         return {"tables": ["entities", "accounts", "reports"]}
 
 @router.post("/users")
-async def create_user(user: UserCreate, company_name: str = Query(...), 
+async def create_user(user: UserCreate, company_name: Optional[str] = Query(None), 
                      username: str = Query("admin"), request: Request = None, db: Session = Depends(get_db)):
-    """Create a new user with comprehensive access control"""
+    """Create a new user and provision permissions using the shared provisioning logic."""
     try:
-        ip_address, user_agent = get_client_info(request)
-        
-        # Check if username or email already exists in main users table
-        existing_user = db.query(User).filter(
-            (User.username == user.username) | (User.email == user.email),
-            User.company == company_name
-        ).first()
-        
-        if existing_user:
-            if existing_user.username == user.username:
-                raise HTTPException(status_code=400, detail="Username already exists")
-            else:
-                raise HTTPException(status_code=400, detail="Email already exists")
-        
-        # Generate temporary password if not provided
-        temp_password = user.temporary_password or ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
-        
-        # Create user in main users table
-        new_user = User(
-            username=user.username,
-            email=user.email,
-            full_name=user.full_name,
-            company=company_name,
-            role=str(user.role_id) if user.role_id else "user",
-            is_active=True,
-            password_hash="temp_hash_" + temp_password  # Will be changed on first login
+        user_payload = user.dict()
+        if company_name:
+            user_payload.setdefault("company_name", company_name)
+        resolved_company = user_payload.get("company_name")
+        if not resolved_company:
+            raise HTTPException(status_code=400, detail="company_name is required")
+
+        # Backwards compatibility: promote legacy permission payloads if present
+        if not user_payload.get("page_permissions") and user_payload.get("permissions"):
+            legacy_permissions = user_payload.get("permissions", {})
+            user_payload["page_permissions"] = {
+                permission: True
+                for module_permissions in legacy_permissions.values()
+                for permission in module_permissions
+            }
+
+        if not user_payload.get("database_permissions") and user_payload.get("database_access"):
+            user_payload["database_permissions"] = {
+                db_name: {"read": True, "write": False, "execute": False}
+                for db_name in user_payload.get("database_access", [])
+            }
+
+        # Delegate to the comprehensive provisioning routine
+        return await create_user_with_db_access(
+            user_payload,
+            company_name=resolved_company,
+            username=username,
+            request=request
         )
-        
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-        
-        # Create extended user profile in role management system
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "postgres"),
-            database=os.getenv("DB_NAME", "epm_tool"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "epm_password"),
-            port=os.getenv("DB_PORT", "5432")
-        )
-        
-        cur = conn.cursor()
-        
-        # Create user_profiles table if not exists
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id),
-                username VARCHAR(255) NOT NULL,
-                company_id VARCHAR(255) NOT NULL,
-                role_id INTEGER,
-                database_access JSONB DEFAULT '[]',
-                custom_permissions JSONB DEFAULT '{}',
-                department VARCHAR(255),
-                position VARCHAR(255),
-                phone VARCHAR(50),
-                last_login TIMESTAMP,
-                login_count INTEGER DEFAULT 0,
-                failed_login_attempts INTEGER DEFAULT 0,
-                account_locked BOOLEAN DEFAULT FALSE,
-                password_expires_at TIMESTAMP,
-                must_change_password BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255)
-            )
-        """)
-        
-        # Insert user profile
-        cur.execute("""
-            INSERT INTO user_profiles 
-            (user_id, username, company_id, role_id, database_access, custom_permissions, 
-             department, position, phone, created_by, password_expires_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING *
-        """, (
-            new_user.id, user.username, company_name, user.role_id,
-            json.dumps(user.database_access), json.dumps(user.permissions),
-            user.department, user.position, user.phone, username,
-            datetime.now() + timedelta(days=30)  # Password expires in 30 days
-        ))
-        
-        user_profile = cur.fetchone()
-        
-        # If role_id is provided, apply role permissions
-        role_permissions_applied = {}
-        if user.role_id:
-            # Get role details and apply permissions
-            cur.execute("""
-                SELECT * FROM custom_roles WHERE id = %s AND company_id = %s
-            """, (user.role_id, company_name))
-            
-            role = cur.fetchone()
-            if role:
-                # Update user profile with role permissions
-                cur.execute("""
-                    UPDATE user_profiles 
-                    SET permissions = %s, updated_at = %s
-                    WHERE user_id = %s AND company_id = %s
-                """, (
-                    json.dumps({
-                        "page_permissions": role[4] if role[4] else {},  # page_permissions column
-                        "database_permissions": role[5] if role[5] else {}  # database_permissions column
-                    }),
-                    datetime.now(),
-                    new_user.id,
-                    company_name
-                ))
-                
-                role_permissions_applied = {
-                    "role_name": role[1],  # name column
-                    "role_description": role[2],  # description column
-                    "pages": list(role[4].keys()) if role[4] else [],
-                    "databases": list(role[5].keys()) if role[5] else []
-                }
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        # Log audit event
-        log_audit_event(
-            company_name, username, "User Created", "User", 
-            str(new_user.id), 
-            f"Created user: {user.username} with databases: {', '.join(user.database_access)}", 
-            "success", ip_address, user_agent
-        )
-        
-        return {
-            "user": {
-                "id": new_user.id,
-                "username": user.username,
-                "email": user.email,
-                "full_name": user.full_name,
-                "company": company_name,
-                "role_id": user.role_id,
-                "database_access": user.database_access,
-                "is_active": True,
-                "must_change_password": True
-            },
-            "role_permissions_applied": role_permissions_applied,
-            "temporary_password": temp_password,
-            "message": f"User created successfully{' with role permissions applied' if role_permissions_applied else ''}. Please provide the temporary password to the user."
-        }
-        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
 
@@ -1501,180 +1631,241 @@ async def create_user(user: UserCreate, company_name: str = Query(...),
 @router.get("/permissions")
 async def get_permissions(company_name: str = Query(...)):
     """Get all permissions for a company"""
+    conn: Optional[PGConnection] = None
+    cur: Optional[RealDictCursor] = None
     try:
-        # Return mock permissions data since we don't have a permissions table yet
-        mock_permissions = [
-            {
-                "id": 1,
-                "module": "users",
-                "action": "create",
-                "name": "Create Users",
-                "description": "Create new user accounts",
-                "company_id": company_name
-            },
-            {
-                "id": 2,
-                "module": "users",
-                "action": "read",
-                "name": "View Users",
-                "description": "View user accounts and details",
-                "company_id": company_name
-            },
-            {
-                "id": 3,
-                "module": "users",
-                "action": "update",
-                "name": "Update Users",
-                "description": "Edit user accounts and settings",
-                "company_id": company_name
-            },
-            {
-                "id": 4,
-                "module": "users",
-                "action": "delete",
-                "name": "Delete Users",
-                "description": "Remove user accounts",
-                "company_id": company_name
-            },
-            {
-                "id": 5,
-                "module": "roles",
-                "action": "create",
-                "name": "Create Roles",
-                "description": "Create new roles",
-                "company_id": company_name
-            },
-            {
-                "id": 6,
-                "module": "roles",
-                "action": "read",
-                "name": "View Roles",
-                "description": "View roles and permissions",
-                "company_id": company_name
-            },
-            {
-                "id": 7,
-                "module": "roles",
-                "action": "update",
-                "name": "Update Roles",
-                "description": "Edit roles and permissions",
-                "company_id": company_name
-            },
-            {
-                "id": 8,
-                "module": "roles",
-                "action": "delete",
-                "name": "Delete Roles",
-                "description": "Remove roles",
-                "company_id": company_name
-            },
-            {
-                "id": 9,
-                "module": "reports",
-                "action": "read",
-                "name": "View Reports",
-                "description": "Access reporting features",
-                "company_id": company_name
-            },
-            {
-                "id": 10,
-                "module": "settings",
-                "action": "update",
-                "name": "System Settings",
-                "description": "Modify system settings",
-                "company_id": company_name
-            }
-        ]
-        
-        return {"permissions": mock_permissions}
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "postgres"),
+            database=os.getenv("DB_NAME", "epm_tool"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "epm_password"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+
+        cur.execute(
+            """
+            SELECT permissions
+            FROM custom_roles
+            WHERE company_id = %s
+            """,
+            (company_name,)
+        )
+        rows = cur.fetchall()
+
+        permissions: List[Dict[str, Any]] = []
+        seen = set()
+        next_id = 1
+
+        for row in rows:
+            role_permissions = parse_json_field(row.get("permissions"), {})
+            if not isinstance(role_permissions, dict):
+                continue
+            for module, actions in role_permissions.items():
+                if not isinstance(actions, (list, tuple, set)):
+                    continue
+                for action in actions:
+                    key = (str(module), str(action))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    permissions.append({
+                        "id": next_id,
+                        "module": str(module),
+                        "action": str(action),
+                        "name": f"{str(action).title()} {str(module).replace('_', ' ').title()}",
+                        "description": f"{str(action).title()} access for {str(module)}",
+                        "company_id": company_name
+                    })
+                    next_id += 1
+
+        return {"permissions": permissions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch permissions: {str(e)}")
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 @router.get("/permission-matrix")
 async def get_permission_matrix(company_name: str = Query(...)):
     """Get the complete permission matrix for all roles"""
+    conn: Optional[PGConnection] = None
+    cur: Optional[RealDictCursor] = None
     try:
-        # Return mock data for now
-        mock_roles = [
-            {
-                "id": 1,
-                "name": "Admin",
-                "permissions": {
-                    "users": ["create", "read", "update", "delete"],
-                    "roles": ["create", "read", "update", "delete"],
-                    "reports": ["read"],
-                    "settings": ["update"]
-                }
-            },
-            {
-                "id": 2,
-                "name": "Manager",
-                "permissions": {
-                    "users": ["read", "update"],
-                    "roles": ["read"],
-                    "reports": ["read"]
-                }
-            },
-            {
-                "id": 3,
-                "name": "User",
-                "permissions": {
-                    "users": ["read"],
-                    "reports": ["read"]
-                }
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "postgres"),
+            database=os.getenv("DB_NAME", "epm_tool"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "epm_password"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+
+        cur.execute(
+            """
+            SELECT id, name, permissions, database_permissions
+            FROM custom_roles
+            WHERE company_id = %s
+            ORDER BY name
+            """,
+            (company_name,)
+        )
+        roles = cur.fetchall()
+
+        matrix: Dict[str, Dict[str, List[str]]] = {}
+        database_matrix: Dict[str, Dict[str, List[str]]] = {}
+
+        for role in roles:
+            role_key = str(role["id"])
+            stored_permissions = parse_json_field(role.get("permissions"), {})
+            matrix[role_key] = {}
+            if isinstance(stored_permissions, dict):
+                for module, actions in stored_permissions.items():
+                    if isinstance(actions, (list, tuple, set)):
+                        matrix[role_key][module] = sorted({str(action) for action in actions})
+
+            db_permissions = normalize_database_permissions(role.get("database_permissions"))
+            database_matrix[role_key] = {
+                db: sorted([perm for perm, allowed in perms.items() if allowed])
+                for db, perms in db_permissions.items()
             }
-        ]
-        
-        mock_permissions = [
-            {"module": "users", "action": "create", "name": "Create Users", "description": "Create new user accounts"},
-            {"module": "users", "action": "read", "name": "View Users", "description": "View user accounts"},
-            {"module": "users", "action": "update", "name": "Update Users", "description": "Edit user accounts"},
-            {"module": "users", "action": "delete", "name": "Delete Users", "description": "Remove user accounts"},
-            {"module": "roles", "action": "create", "name": "Create Roles", "description": "Create new roles"},
-            {"module": "roles", "action": "read", "name": "View Roles", "description": "View roles"},
-            {"module": "roles", "action": "update", "name": "Update Roles", "description": "Edit roles"},
-            {"module": "roles", "action": "delete", "name": "Delete Roles", "description": "Remove roles"},
-            {"module": "reports", "action": "read", "name": "View Reports", "description": "Access reports"},
-            {"module": "settings", "action": "update", "name": "System Settings", "description": "Modify settings"}
-        ]
-        
+
         return {
-            "roles": mock_roles,
-            "permissions": mock_permissions
+            "matrix": matrix,
+            "database_matrix": database_matrix
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch permission matrix: {str(e)}")
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
 
 @router.put("/permission-matrix")
-async def update_permission_matrix(matrix: Dict[str, Dict[str, List[str]]], 
-                                 company_name: str = Query(...), 
-                                 username: str = Query("admin"), 
-                                 request: Request = None):
+async def update_permission_matrix(
+    payload: Dict[str, Any],
+    company_name: str = Query(...),
+    username: str = Query("admin"),
+    request: Request = None
+):
     """Update the permission matrix for all roles"""
+    conn: Optional[PGConnection] = None
+    cur: Optional[RealDictCursor] = None
     try:
         ip_address, user_agent = get_client_info(request)
-        
-        with get_company_connection(company_name) as conn:
-            cur = conn.cursor()
-            
-            # Update each role's permissions
-            for role_name, permissions in matrix.items():
-                cur.execute("""
-                    UPDATE roles 
-                    SET permissions = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE name = %s AND company_id = %s
-                """, (json.dumps(permissions), role_name, company_name))
-            
-            conn.commit()
-            
-            # Log audit event
-            log_audit_event(company_name, username, "Permission Matrix Updated", 
-                          "Permission Matrix", None, "Updated permission matrix for all roles", 
-                          "success", ip_address, user_agent)
-            
-            return {"message": "Permission matrix updated successfully"}
+        matrix = payload.get("matrix", {}) or {}
+        database_matrix = payload.get("database_matrix", {}) or {}
+
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "postgres"),
+            database=os.getenv("DB_NAME", "epm_tool"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "epm_password"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+
+        updated_roles: List[int] = []
+        for role_key, module_permissions in matrix.items():
+            try:
+                role_id = int(role_key)
+            except (TypeError, ValueError):
+                continue
+
+            cur.execute(
+                """
+                SELECT permissions, database_permissions
+                FROM custom_roles
+                WHERE id = %s AND company_id = %s
+                """,
+                (role_id, company_name)
+            )
+            existing = cur.fetchone()
+            if not existing:
+                continue
+
+            current_permissions = parse_json_field(existing.get("permissions"), {})
+            current_db_permissions = normalize_database_permissions(existing.get("database_permissions"))
+
+            cleaned_permissions: Dict[str, List[str]] = {}
+            if isinstance(module_permissions, dict):
+                for module, actions in module_permissions.items():
+                    if isinstance(actions, (list, tuple, set)):
+                        cleaned_permissions[module] = sorted({str(action) for action in actions})
+            else:
+                cleaned_permissions = current_permissions
+
+            db_updates_raw = database_matrix.get(role_key)
+            if isinstance(db_updates_raw, dict):
+                cleaned_db_permissions: Dict[str, Dict[str, bool]] = {}
+                for db_name, perms in db_updates_raw.items():
+                    perm_set = {str(p).lower() for p in (perms or [])}
+                    cleaned_db_permissions[db_name] = {
+                        "read": "read" in perm_set or "admin" in perm_set or "full_access" in perm_set,
+                        "write": "write" in perm_set or "admin" in perm_set or "full_access" in perm_set,
+                        "execute": "execute" in perm_set or "admin" in perm_set or "full_access" in perm_set,
+                        "admin": "admin" in perm_set or "full_access" in perm_set
+                    }
+                    if cleaned_db_permissions[db_name]["admin"]:
+                        cleaned_db_permissions[db_name]["read"] = True
+                        cleaned_db_permissions[db_name]["write"] = True
+                        cleaned_db_permissions[db_name]["execute"] = True
+                final_db_permissions = cleaned_db_permissions
+            else:
+                final_db_permissions = current_db_permissions
+
+            cur.execute(
+                """
+                UPDATE custom_roles
+                SET permissions = %s,
+                    database_permissions = %s,
+                    updated_at = CURRENT_TIMESTAMP,
+                    last_action = CURRENT_TIMESTAMP
+                WHERE id = %s AND company_id = %s
+                """,
+                (
+                    json.dumps(cleaned_permissions),
+                    json.dumps(final_db_permissions),
+                    role_id,
+                    company_name
+                )
+            )
+            updated_roles.append(role_id)
+
+        conn.commit()
+
+        if updated_roles:
+            log_audit_event(
+                company_name,
+                username,
+                "Permission Matrix Updated",
+                "Permission Matrix",
+                ",".join(map(str, updated_roles)),
+                f"Updated permission matrix for roles: {', '.join(map(str, updated_roles))}",
+                "success",
+                ip_address,
+                user_agent
+            )
+
+        return {"message": "Permission matrix updated successfully", "updated_roles": updated_roles}
+    except HTTPException:
+        raise
     except Exception as e:
+        if conn:
+            conn.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to update permission matrix: {str(e)}")
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 # Audit Logs Endpoints
 @router.get("/audit-logs")
@@ -1701,9 +1892,18 @@ async def get_audit_logs(company_name: str = Query(...),
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
         query = """
-            SELECT al.*, u.full_name as user_full_name, u.email as user_email
+            SELECT 
+                al.*, 
+                up.metadata AS user_metadata,
+                up.role_id AS user_role_id,
+                r.name AS user_role_name
             FROM role_management_audit_logs al
-            LEFT JOIN users u ON al.username = u.username AND al.company_id = u.company
+            LEFT JOIN user_profiles up 
+                ON al.username = up.username 
+               AND al.company_id = up.company_id
+            LEFT JOIN custom_roles r 
+                ON up.role_id = r.id 
+               AND r.company_id = al.company_id
             WHERE al.company_id = %s
         """
         params = [company_name]
@@ -1733,6 +1933,16 @@ async def get_audit_logs(company_name: str = Query(...),
         
         cur.execute(query, params)
         logs = cur.fetchall()
+        enriched_logs: List[Dict[str, Any]] = []
+        for log in logs:
+            log_dict = dict(log)
+            metadata = parse_json_field(log_dict.pop("user_metadata", {}), {})
+            log_dict["user_full_name"] = metadata.get("full_name")
+            log_dict["user_department"] = metadata.get("department")
+            log_dict["user_position"] = metadata.get("position")
+            log_dict["user_phone"] = metadata.get("phone")
+            log_dict["user_role_name"] = log_dict.get("user_role_name")
+            enriched_logs.append(log_dict)
         
         # Get total count
         count_query = "SELECT COUNT(*) as total FROM role_management_audit_logs WHERE company_id = %s"
@@ -1778,7 +1988,7 @@ async def get_audit_logs(company_name: str = Query(...),
         conn.close()
         
         return {
-            "logs": [dict(log) for log in logs],
+            "logs": enriched_logs,
             "total": total,
             "limit": limit,
             "offset": offset,
@@ -1839,30 +2049,8 @@ async def create_access_request(
         )
         
         cur = conn.cursor()
-        
-        # Create access_requests table if not exists
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS access_requests (
-                id SERIAL PRIMARY KEY,
-                requester_username VARCHAR(255) NOT NULL,
-                company_id VARCHAR(255) NOT NULL,
-                requested_module VARCHAR(255) NOT NULL,
-                requested_page VARCHAR(255) NOT NULL,
-                requested_permissions JSONB DEFAULT '[]',
-                reason TEXT NOT NULL,
-                urgency VARCHAR(20) DEFAULT 'normal',
-                business_justification TEXT,
-                status VARCHAR(20) DEFAULT 'pending',
-                requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                reviewed_at TIMESTAMP,
-                reviewer_username VARCHAR(255),
-                review_reason TEXT,
-                ip_address INET,
-                user_agent TEXT,
-                auto_approved BOOLEAN DEFAULT FALSE
-            )
-        """)
-        
+        ensure_role_management_tables(cur)
+
         # Insert access request
         cur.execute("""
             INSERT INTO access_requests 
@@ -1913,15 +2101,37 @@ async def get_access_requests(
         )
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+        conn.commit()
         
         query = """
-            SELECT ar.*, 
-                   u.full_name as requester_full_name,
-                   u.email as requester_email,
-                   rev.full_name as reviewer_full_name
+            SELECT 
+                ar.id,
+                ar.requester_username,
+                ar.company_id,
+                ar.requested_module,
+                ar.requested_page,
+                ar.requested_permissions,
+                ar.reason,
+                ar.urgency,
+                ar.business_justification,
+                ar.status,
+                ar.requested_at AS created_at,
+                ar.reviewed_at,
+                ar.reviewer_username,
+                ar.review_reason,
+                ar.ip_address,
+                ar.user_agent,
+                ar.auto_approved,
+                COALESCE(up_req.metadata->>'full_name', ar.requester_username) AS requester_name,
+                COALESCE(u_req.email, '') AS requester_email,
+                COALESCE(up_rev.metadata->>'full_name', ar.reviewer_username) AS reviewer_name,
+                COALESCE(u_rev.email, '') AS reviewer_email
             FROM access_requests ar
-            LEFT JOIN users u ON ar.requester_username = u.username AND ar.company_id = u.company
-            LEFT JOIN users rev ON ar.reviewer_username = rev.username AND ar.company_id = rev.company
+            LEFT JOIN user_profiles up_req ON ar.requester_username = up_req.username AND ar.company_id = up_req.company_id
+            LEFT JOIN users u_req ON up_req.user_id = u_req.id
+            LEFT JOIN user_profiles up_rev ON ar.reviewer_username = up_rev.username AND ar.company_id = up_rev.company_id
+            LEFT JOIN users u_rev ON up_rev.user_id = u_rev.id
             WHERE ar.company_id = %s
         """
         params = [company_name]
@@ -1941,7 +2151,14 @@ async def get_access_requests(
         query += " ORDER BY ar.requested_at DESC"
         
         cur.execute(query, params)
-        requests = cur.fetchall()
+        raw_requests = cur.fetchall()
+        requests: List[Dict[str, Any]] = []
+        for entry in raw_requests:
+            entry_dict = dict(entry)
+            entry_dict["requested_permissions"] = parse_json_field(
+                entry_dict.get("requested_permissions"), []
+            )
+            requests.append(entry_dict)
         
         # Get statistics
         stats_query = """
@@ -1962,7 +2179,7 @@ async def get_access_requests(
         conn.close()
         
         return {
-            "requests": [dict(req) for req in requests],
+            "requests": requests,
             "statistics": dict(stats)
         }
     except Exception as e:
@@ -1993,6 +2210,8 @@ async def review_access_request(
         )
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+        conn.commit()
         
         # Get the access request
         cur.execute("""
@@ -2060,9 +2279,20 @@ async def check_user_access(
         
         # Get user's role and permissions
         cur.execute("""
-            SELECT up.*, cr.permissions, cr.name as role_name
+            SELECT 
+                up.id,
+                up.user_id,
+                up.role_id,
+                up.company_id,
+                up.permissions AS user_permissions,
+                up.database_access,
+                up.metadata,
+                cr.permissions AS role_permissions,
+                cr.name AS role_name
             FROM user_profiles up
-            LEFT JOIN custom_roles cr ON up.role_id = cr.id
+            LEFT JOIN custom_roles cr 
+                ON up.role_id = cr.id
+               AND cr.company_id = up.company_id
             WHERE up.username = %s AND up.company_id = %s
         """, (username, company_name))
         
@@ -2071,14 +2301,23 @@ async def check_user_access(
         if not user_profile:
             return {"has_access": False, "reason": "User profile not found"}
         
-        permissions = user_profile['permissions'] or {}
-        
-        # Check if user has access to the module/page
-        has_access = False
-        if module in permissions:
-            module_permissions = permissions[module]
-            if page in module_permissions:
-                has_access = True
+        user_permissions_payload = parse_json_field(user_profile.get("user_permissions"), {})
+        role_permissions_payload = parse_json_field(user_profile.get("role_permissions"), {})
+
+        page_permissions = parse_json_field(user_permissions_payload.get("page_permissions"), {})
+        role_page_permissions_map = {}
+        if isinstance(role_permissions_payload, dict):
+            for mod, perm_list in role_permissions_payload.items():
+                if isinstance(perm_list, list):
+                    role_page_permissions_map[mod] = {perm: True for perm in perm_list}
+
+        has_access = bool(page_permissions.get(page) or page_permissions.get(module))
+        if not has_access and module in role_page_permissions_map:
+            module_entries = role_page_permissions_map[module]
+            if isinstance(module_entries, dict):
+                has_access = bool(module_entries.get(page))
+            elif isinstance(module_entries, list):
+                has_access = page in module_entries
         
         cur.close()
         conn.close()
@@ -2099,18 +2338,29 @@ async def check_user_access(
 async def get_system_integrations(company_name: str = Query(...)):
     """Get system integrations for a company"""
     try:
-        with get_company_connection(company_name) as conn:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("""
-                SELECT * FROM system_integrations 
-                WHERE company_id = %s 
-                ORDER BY name
-            """, (company_name,))
-            integrations = cur.fetchall()
-            
-            return {"integrations": [dict(integration) for integration in integrations]}
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "postgres"),
+            database=os.getenv("DB_NAME", "epm_tool"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "epm_password"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+        cur.execute("""
+            SELECT * FROM system_integrations 
+            WHERE company_id = %s 
+            ORDER BY name
+        """, (company_name,))
+        integrations = cur.fetchall()
+        return {"integrations": [dict(integration) for integration in integrations]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch system integrations: {str(e)}")
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
 @router.put("/system-integrations/{integration_id}")
 async def update_system_integration(integration_id: int, 
@@ -2121,42 +2371,62 @@ async def update_system_integration(integration_id: int,
     """Update a system integration"""
     try:
         ip_address, user_agent = get_client_info(request)
-        
-        with get_company_connection(company_name) as conn:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Check if integration exists
-            cur.execute("SELECT * FROM system_integrations WHERE id = %s AND company_id = %s", 
-                       (integration_id, company_name))
-            existing = cur.fetchone()
-            if not existing:
-                raise HTTPException(status_code=404, detail="System integration not found")
-            
-            # Update integration
-            cur.execute("""
-                UPDATE system_integrations 
-                SET status = %s, health_percentage = %s, config = %s, 
-                    last_sync = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s AND company_id = %s
-                RETURNING *
-            """, (integration.status, integration.health_percentage, 
-                  json.dumps(integration.config) if integration.config else existing['config'],
-                  integration_id, company_name))
-            
-            updated_integration = cur.fetchone()
-            conn.commit()
-            
-            # Log audit event
-            log_audit_event(company_name, username, "System Integration Updated", 
-                          "System Integration", str(integration_id), 
-                          f"Updated integration: {existing['name']}", 
-                          "success", ip_address, user_agent)
-            
-            return {"integration": dict(updated_integration), "message": "Integration updated successfully"}
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "postgres"),
+            database=os.getenv("DB_NAME", "epm_tool"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "epm_password"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        ensure_role_management_tables(cur)
+
+        cur.execute(
+            "SELECT * FROM system_integrations WHERE id = %s AND company_id = %s",
+            (integration_id, company_name)
+        )
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="System integration not found")
+
+        cur.execute("""
+            UPDATE system_integrations 
+            SET status = %s, health_percentage = %s, config = %s, 
+                last_sync = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND company_id = %s
+            RETURNING *
+        """, (
+            integration.status,
+            integration.health_percentage,
+            json.dumps(integration.config) if integration.config else existing["config"],
+            integration_id,
+            company_name
+        ))
+        updated_integration = cur.fetchone()
+        conn.commit()
+
+        log_audit_event(
+            company_name,
+            username,
+            "System Integration Updated",
+            "System Integration",
+            str(integration_id),
+            f"Updated integration: {existing['name']}",
+            "success",
+            ip_address,
+            user_agent
+        )
+
+        return {"integration": dict(updated_integration), "message": "Integration updated successfully"}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update system integration: {str(e)}")
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
 # ===== USER CREATION WITH DATABASE PROVISIONING =====
 
@@ -2168,7 +2438,32 @@ async def create_user_with_db_access(
     request: Request = None
 ):
     """Create a new user with real database access provisioning"""
+    conn = None
+    cur = None
+    new_user = None
+    user_profile = None
+    role_permissions_applied = {}
+    combined_page_permissions = {}
+    combined_database_permissions = {}
+    metadata_payload = {}
+    database_users_created = []
+    company_id = None
+    resolved_company = None
+
     try:
+        resolved_company = (company_name or user_data.get("company_name") or "").strip()
+        if not resolved_company:
+            raise HTTPException(status_code=400, detail="company_name is required")
+
+        required_fields = {
+            "username": "Username is required",
+            "email": "Email is required",
+            "password": "Password is required"
+        }
+        for field, message in required_fields.items():
+            if not user_data.get(field):
+                raise HTTPException(status_code=400, detail=message)
+
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "postgres"),
             database=os.getenv("DB_NAME", "epm_tool"),
@@ -2176,236 +2471,163 @@ async def create_user_with_db_access(
             password=os.getenv("DB_PASSWORD", "epm_password"),
             port=os.getenv("DB_PORT", "5432")
         )
-        
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Create tables if they don't exist
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(255) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                full_name VARCHAR(255) NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                company VARCHAR(255) NOT NULL,
-                role VARCHAR(100) DEFAULT 'user',
-                department VARCHAR(255),
-                position VARCHAR(255),
-                phone VARCHAR(50),
-                is_active BOOLEAN DEFAULT TRUE,
-                is_admin BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                page_permissions JSONB DEFAULT '{}',
-                database_permissions JSONB DEFAULT '{}'
-            )
-        """)
-        
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                role_id INTEGER,
-                company_id VARCHAR(255) NOT NULL,
-                permissions JSONB DEFAULT '{}',
-                database_access JSONB DEFAULT '{}',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_by VARCHAR(255),
-                last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        conn.commit()
-        
-        # Hash password
-        import bcrypt
-        password_hash = bcrypt.hashpw(user_data['password'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        
-        # Check if username or email already exists
-        cur.execute("SELECT id FROM users WHERE username = %s OR email = %s", 
-                   (user_data['username'], user_data['email']))
+        ensure_role_management_tables(cur)
+
+        company_record = ensure_company_record(cur, resolved_company)
+        company_id = company_record["id"]
+
+        cur.execute(
+            """
+            SELECT 1
+            FROM users
+            WHERE company_id = %s AND LOWER(username) = LOWER(%s)
+            """,
+            (company_id, user_data["username"])
+        )
         if cur.fetchone():
-            raise HTTPException(status_code=400, detail="Username or email already exists")
-        
-        # Create user in main users table
-        cur.execute("""
-            INSERT INTO users (username, email, full_name, password_hash, company, department, 
-                             position, phone, page_permissions, database_permissions)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING *
-        """, (
-            user_data['username'],
-            user_data['email'], 
-            user_data['full_name'],
-            password_hash,
-            company_name,
-            user_data.get('department', ''),
-            user_data.get('position', ''),
-            user_data.get('phone', ''),
-            json.dumps(user_data.get('page_permissions', {})),
-            json.dumps(user_data.get('database_permissions', {}))
-        ))
-        
+            raise HTTPException(status_code=400, detail="Username already exists for this company")
+
+        cur.execute(
+            """
+            SELECT 1
+            FROM users
+            WHERE company_id = %s AND LOWER(email) = LOWER(%s)
+            """,
+            (company_id, user_data["email"])
+        )
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail="Email already exists for this company")
+
+        password_hash = bcrypt.hashpw(
+            user_data["password"].encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
+
+        cur.execute(
+            """
+            INSERT INTO users (company_id, username, email, password_hash, is_active, is_superuser, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            RETURNING id, username, email, is_active, last_login, created_at, updated_at
+            """,
+            (company_id, user_data["username"], user_data["email"], password_hash)
+        )
         new_user = cur.fetchone()
-        user_id = new_user['id']
-        
-        # Create user profile
-        cur.execute("""
-            INSERT INTO user_profiles (user_id, role_id, company_id, permissions, database_access, created_by)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING *
-        """, (
-            user_id,
-            user_data.get('role_id'),
-            company_name,
-            json.dumps(user_data.get('page_permissions', {})),
-            json.dumps(user_data.get('database_permissions', {})),
-            username
-        ))
-        
-        user_profile = cur.fetchone()
-        
-        # Create real database users for each database with permissions
-        database_users_created = []
-        for db_name, permissions in user_data.get('database_permissions', {}).items():
-            if any(permissions.values()):  # If any permission is granted
-                try:
-                    # Create database-specific username
-                    db_username = f"{user_data['username']}_{db_name}".lower()
-                    db_password = user_data['password']  # Use same password for simplicity
-                    
-                    # Connect to the specific database to create user
-                    db_conn = psycopg2.connect(
-                        host=os.getenv("DB_HOST", "postgres"),
-                        database=db_name,
-                        user=os.getenv("DB_USER", "postgres"),
-                        password=os.getenv("DB_PASSWORD", "epm_password"),
-                        port=os.getenv("DB_PORT", "5432")
-                    )
-                    
-                    db_cur = db_conn.cursor()
-                    
-                    # Create database user
-                    db_cur.execute(f"CREATE USER {db_username} WITH PASSWORD %s", (db_password,))
-                    
-                    # Grant permissions based on configuration
-                    if permissions.get('read', False):
-                        db_cur.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {db_username}")
-                        db_cur.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {db_username}")
-                    
-                    if permissions.get('write', False):
-                        db_cur.execute(f"GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {db_username}")
-                        db_cur.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT INSERT, UPDATE, DELETE ON TABLES TO {db_username}")
-                    
-                    if permissions.get('execute', False):
-                        db_cur.execute(f"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {db_username}")
-                        db_cur.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO {db_username}")
-                    
-                    db_conn.commit()
-                    db_cur.close()
-                    db_conn.close()
-                    
-                    database_users_created.append({
-                        'database': db_name,
-                        'username': db_username,
-                        'permissions': permissions
-                    })
-                    
-                except Exception as db_error:
-                    print(f"Warning: Failed to create database user for {db_name}: {str(db_error)}")
-                    # Continue with other databases even if one fails
-        
-        conn.commit()
-        cur.close()
-        conn.close()
-        
-        # Log audit event
-        ip_address, user_agent = get_client_info(request) if request else (None, None)
-        log_audit_event(company_name, username, "User Created", "User", 
-                      str(user_id), f"Created user: {user_data['username']}", 
-                      "success", ip_address, user_agent)
-        
-        # Return user data (excluding password hash)
-        user_result = dict(new_user)
-        user_result.pop('password_hash', None)
-        user_result['database_users_created'] = database_users_created
-        
-        return {
-            "user": user_result,
-            "profile": dict(user_profile),
-            "database_access": database_users_created,
-            "message": f"User created successfully with access to {len(database_users_created)} databases"
+        user_id = new_user["id"]
+
+        incoming_page_permissions = normalize_page_permissions(user_data.get("page_permissions"))
+        incoming_database_permissions = normalize_database_permissions(user_data.get("database_permissions"))
+
+        role_page_permissions: Dict[str, bool] = {}
+        role_database_permissions: Dict[str, Dict[str, bool]] = {}
+
+        if user_data.get("role_id"):
+            cur.execute(
+                """
+                SELECT id, name, description, page_permissions, database_permissions
+                FROM custom_roles
+                WHERE id = %s AND company_id = %s
+                """,
+                (user_data["role_id"], resolved_company)
+            )
+            role_row = cur.fetchone()
+            if role_row:
+                role_page_permissions = normalize_page_permissions(role_row["page_permissions"])
+                role_database_permissions = normalize_database_permissions(role_row["database_permissions"])
+                role_permissions_applied = {
+                    "role_name": role_row["name"],
+                    "role_description": role_row["description"],
+                    "pages": [path for path, allowed in role_page_permissions.items() if allowed],
+                    "databases": [db for db, perms in role_database_permissions.items() if any(perms.values())]
+                }
+
+        combined_page_permissions = merge_page_permissions(role_page_permissions, incoming_page_permissions)
+        combined_database_permissions = merge_database_permissions(role_database_permissions, incoming_database_permissions)
+
+        permissions_payload = {
+            "page_permissions": combined_page_permissions,
+            "database_permissions": combined_database_permissions
         }
-        
+        metadata_payload = {
+            "full_name": user_data.get("full_name", ""),
+            "department": user_data.get("department", ""),
+            "position": user_data.get("position", ""),
+            "phone": user_data.get("phone", "")
+        }
+
+        cur.execute(
+            """
+            INSERT INTO user_profiles (user_id, role_id, company_id, permissions, database_access, metadata, username, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                user_id,
+                user_data.get("role_id"),
+                resolved_company,
+                json.dumps(permissions_payload),
+                json.dumps(combined_database_permissions),
+                json.dumps(metadata_payload),
+                user_data["username"],
+                username
+            )
+        )
+        user_profile = cur.fetchone()
+
+        conn.commit()
+
     except HTTPException:
+        if conn:
+            conn.rollback()
         raise
     except Exception as e:
+        if conn:
+            conn.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
-@router.get("/users")
-async def get_users(company_name: str = Query(...)):
-    """Get all users for a company"""
-    try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "postgres"),
-            database=os.getenv("DB_NAME", "epm_tool"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "epm_password"),
-            port=os.getenv("DB_PORT", "5432")
-        )
-        
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Create tables if they don't exist
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(255) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                full_name VARCHAR(255) NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                company VARCHAR(255) NOT NULL,
-                role VARCHAR(100) DEFAULT 'user',
-                department VARCHAR(255),
-                position VARCHAR(255),
-                phone VARCHAR(50),
-                is_active BOOLEAN DEFAULT TRUE,
-                is_admin BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP,
-                page_permissions JSONB DEFAULT '{}',
-                database_permissions JSONB DEFAULT '{}'
-            )
-        """)
-        
-        conn.commit()
-        
-        # Get users for the company
-        cur.execute("""
-            SELECT u.*, up.role_id, r.name as role_name
-            FROM users u
-            LEFT JOIN user_profiles up ON u.id = up.user_id
-            LEFT JOIN custom_roles r ON up.role_id = r.id
-            WHERE u.company = %s
-            ORDER BY u.created_at DESC
-        """, (company_name,))
-        
-        users = cur.fetchall()
-        
-        # Remove password hashes from response
-        safe_users = []
-        for user in users:
-            user_dict = dict(user)
-            user_dict.pop('password_hash', None)
-            safe_users.append(user_dict)
-        
-        cur.close()
-        conn.close()
-        
-        return {"users": safe_users}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
+    ip_address, user_agent = get_client_info(request) if request else (None, None)
+    log_audit_event(
+        resolved_company,
+        username,
+        "User Created",
+        "User",
+        str(new_user["id"]) if new_user else None,
+        f"Created user: {user_data['username']}",
+        "success",
+        ip_address,
+        user_agent
+    )
+
+    user_result = {
+        **new_user,
+        "company": resolved_company,
+        "company_id": company_id,
+        "role_id": user_data.get("role_id"),
+        "role_name": role_permissions_applied.get("role_name"),
+        "role_description": role_permissions_applied.get("role_description"),
+        "page_permissions": combined_page_permissions,
+        "database_permissions": combined_database_permissions,
+        "metadata": metadata_payload,
+        "full_name": metadata_payload.get("full_name"),
+        "department": metadata_payload.get("department"),
+        "position": metadata_payload.get("position"),
+        "phone": metadata_payload.get("phone"),
+        "database_users_created": database_users_created
+    }
+
+    databases_with_access = [
+        db for db, perms in combined_database_permissions.items() if any(perms.values())
+    ]
+
+    return {
+        "user": user_result,
+        "profile": dict(user_profile) if user_profile else None,
+        "database_access": database_users_created,
+        "role_permissions_applied": role_permissions_applied,
+        "message": f"User created successfully with access to {len(databases_with_access)} databases"
+    }

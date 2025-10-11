@@ -7,11 +7,14 @@ from fastapi import (
     UploadFile,
     File,
     Form,
+    Depends,
 )
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Set
+from typing import Literal
 from pydantic import BaseModel, validator
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2 import sql
 import os
 import json
 import csv
@@ -20,6 +23,9 @@ from datetime import datetime
 from decimal import Decimal
 from contextlib import contextmanager
 from io import BytesIO, StringIO
+
+from auth.dependencies import get_current_active_user
+from database import User
 
 try:
     import openpyxl  # type: ignore
@@ -108,6 +114,7 @@ def ensure_tb_entries_schema(conn: psycopg2.extensions.connection) -> None:
         "source": "VARCHAR(50) DEFAULT 'manual'",
         "created_by": "VARCHAR(255)",
         "updated_by": "VARCHAR(255)",
+        "custom_fields": "JSONB DEFAULT '{}'::jsonb",
     }
 
     for column, definition in additional_columns.items():
@@ -122,6 +129,514 @@ def ensure_tb_entries_schema(conn: psycopg2.extensions.connection) -> None:
 
     conn.commit()
     cur.close()
+
+
+ALLOWED_CUSTOM_FIELD_TYPES: Set[str] = {"text", "textarea", "number", "date", "select", "boolean", "sql_query"}
+
+
+def sanitize_identifier(name: str, prefix: str = "") -> str:
+    """Sanitize a string so it can be safely used as a SQL identifier."""
+    base = re.sub(r"[^a-zA-Z0-9_]", "_", name or "")
+    base = re.sub(r"_+", "_", base).strip("_").lower()
+    if not base:
+        base = "item"
+    if not re.match(r"^[a-zA-Z_]", base):
+        base = f"{prefix or 'cf'}_{base}"
+    if prefix:
+        base = f"{prefix}_{base}" if not base.startswith(f"{prefix}_") else base
+    return base[:120]
+
+
+def generate_process_key(name: str) -> str:
+    """Generate a unique process key from a provided name."""
+    base = re.sub(r"[^a-zA-Z0-9]", "_", (name or "").strip().lower())
+    base = re.sub(r"_+", "_", base).strip("_")
+    if not base:
+        base = "process"
+    return base[:60]
+
+
+def normalise_custom_fields_payload(raw_fields: Optional[Any]) -> List[Dict[str, Any]]:
+    """Ensure custom field definitions are always returned as a list of dicts."""
+    if raw_fields in (None, "", []):
+        return []
+    if isinstance(raw_fields, list):
+        return [field for field in raw_fields if isinstance(field, dict)]
+    if isinstance(raw_fields, str):
+        try:
+            parsed = json.loads(raw_fields)
+            if isinstance(parsed, list):
+                return [field for field in parsed if isinstance(field, dict)]
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def ensure_process_catalog(conn: psycopg2.extensions.connection) -> None:
+    """Ensure the core catalog table for process definitions exists."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS process_definitions (
+            id SERIAL PRIMARY KEY,
+            process_key VARCHAR(128) UNIQUE NOT NULL,
+            table_name VARCHAR(160) UNIQUE NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            process_type VARCHAR(100) DEFAULT 'Operational',
+            status VARCHAR(50) DEFAULT 'draft',
+            custom_fields JSONB DEFAULT '[]'::jsonb,
+            settings JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(255),
+            created_by_id INTEGER,
+            updated_by VARCHAR(255),
+            updated_by_id INTEGER
+        )
+        """
+    )
+    cur.execute("ALTER TABLE process_definitions ADD COLUMN IF NOT EXISTS created_by VARCHAR(255)")
+    cur.execute("ALTER TABLE process_definitions ADD COLUMN IF NOT EXISTS created_by_id INTEGER")
+    cur.execute("ALTER TABLE process_definitions ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255)")
+    cur.execute("ALTER TABLE process_definitions ADD COLUMN IF NOT EXISTS updated_by_id INTEGER")
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_process_definitions_owner
+        ON process_definitions (created_by_id)
+        """
+    )
+    conn.commit()
+    cur.close()
+
+
+def create_process_table(conn: psycopg2.extensions.connection, table_name: str) -> None:
+    """Create the physical table that stores entries for a process definition."""
+    cur = conn.cursor()
+    cur.execute(
+        sql.SQL(
+            """
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id SERIAL PRIMARY KEY,
+                account_code VARCHAR(255) NOT NULL,
+                account_name VARCHAR(255),
+                entity_code VARCHAR(255),
+                entity_name VARCHAR(255),
+                period VARCHAR(50) NOT NULL,
+                year VARCHAR(10) NOT NULL,
+                debit_amount NUMERIC(18, 2) DEFAULT 0,
+                credit_amount NUMERIC(18, 2) DEFAULT 0,
+                balance_amount NUMERIC(18, 2) DEFAULT 0,
+                currency VARCHAR(10),
+                entry_category VARCHAR(100),
+                counterparty VARCHAR(255),
+                description TEXT,
+                entry_type VARCHAR(20) DEFAULT 'debit',
+                source VARCHAR(50) DEFAULT 'manual',
+                custom_fields JSONB DEFAULT '{}'::jsonb,
+                created_by VARCHAR(255),
+                updated_by VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        ).format(table_name=sql.Identifier(table_name))
+    )
+    cur.execute(
+        sql.SQL(
+            """
+            CREATE INDEX IF NOT EXISTS {index_name}
+            ON {table_name} (period, year)
+            """
+        ).format(
+            index_name=sql.Identifier(f"idx_{table_name}_period_year"),
+            table_name=sql.Identifier(table_name),
+        )
+    )
+    conn.commit()
+    cur.close()
+
+
+def ensure_process_table_schema(conn: psycopg2.extensions.connection, table_name: str) -> None:
+    """Ensure a process entry table exists with the base schema."""
+    if table_name == "tb_entries":
+        ensure_tb_entries_schema(conn)
+        return
+    create_process_table(conn, table_name)
+
+
+def map_field_type_to_sql(field_type: str) -> str:
+    """Map a UI field type to a PostgreSQL column type."""
+    field_type = (field_type or "text").lower()
+    if field_type == "number":
+        return "NUMERIC(20, 4)"
+    if field_type == "date":
+        return "DATE"
+    if field_type == "boolean":
+        return "BOOLEAN"
+    return "TEXT"
+
+
+def sync_process_table_custom_fields(
+    conn: psycopg2.extensions.connection,
+    table_name: str,
+    custom_fields: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    """
+    Ensure custom field columns exist (or are removed) for the process table.
+    Returns a mapping of field_name -> column_name used in the table.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        (table_name,),
+    )
+    existing_columns = {row[0] for row in cur.fetchall()}
+
+    field_to_column: Dict[str, str] = {}
+    desired_columns: Set[str] = set()
+
+    for field in custom_fields:
+        field_name = (field.get("field_name") or field.get("name") or "").strip()
+        if not field_name:
+            continue
+        column_name = sanitize_identifier(field_name, prefix="cf")
+        desired_columns.add(column_name)
+        field_to_column[field_name] = column_name
+        if column_name not in existing_columns:
+            cur.execute(
+                sql.SQL("ALTER TABLE {table} ADD COLUMN {column} {type}").format(
+                    table=sql.Identifier(table_name),
+                    column=sql.Identifier(column_name),
+                    type=sql.SQL(map_field_type_to_sql(field.get("field_type") or field.get("type", "text"))),
+                )
+            )
+
+    removable_columns = {
+        column
+        for column in existing_columns
+        if column.startswith("cf_") and column not in desired_columns
+    }
+    for column in removable_columns:
+        cur.execute(
+            sql.SQL("ALTER TABLE {table} DROP COLUMN {column}").format(
+                table=sql.Identifier(table_name),
+                column=sql.Identifier(column),
+            )
+        )
+
+    conn.commit()
+    cur.close()
+    return field_to_column
+
+
+def ensure_default_process(conn: psycopg2.extensions.connection) -> Dict[str, Any]:
+    """Ensure the legacy trial balance table is registered as a process definition."""
+    ensure_process_catalog(conn)
+    ensure_tb_entries_schema(conn)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        "SELECT * FROM process_definitions WHERE table_name = 'tb_entries' LIMIT 1"
+    )
+    row = cur.fetchone()
+    if row:
+        process_row = dict(row)
+        needs_owner_update = not process_row.get("created_by") and not process_row.get("created_by_id")
+        if needs_owner_update:
+            cur.execute(
+                """
+                UPDATE process_definitions
+                SET created_by = %s,
+                    created_by_id = %s,
+                    updated_by = %s,
+                    updated_by_id = %s
+                WHERE id = %s
+                """,
+                ("system", 0, "system", 0, process_row["id"]),
+            )
+            conn.commit()
+            process_row.update({"created_by": "system", "created_by_id": 0, "updated_by": "system", "updated_by_id": 0})
+        cur.close()
+        return process_row
+
+    process_key = "legacy_trial_balance"
+    cur.execute(
+        """
+        INSERT INTO process_definitions (
+            process_key,
+            table_name,
+            name,
+            description,
+            process_type,
+            status,
+            custom_fields,
+            created_by,
+            created_by_id,
+            updated_by,
+            updated_by_id
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING *
+        """,
+        (
+            process_key,
+            "tb_entries",
+            "Manual Adjustments",
+            "Legacy trial balance workspace for manual adjustments and imports.",
+            "Trial Balance",
+            "active",
+            json.dumps([]),
+            "system",
+            0,
+            "system",
+            0,
+        ),
+    )
+    conn.commit()
+    default_row = cur.fetchone()
+    cur.close()
+    return dict(default_row)
+
+
+def get_process_context(
+    conn: psycopg2.extensions.connection,
+    process_id: int,
+    current_user: Optional[User] = None,
+) -> Dict[str, Any]:
+    """Return full context for a process including table and custom field metadata."""
+    ensure_default_process(conn)
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM process_definitions WHERE id = %s", (process_id,))
+    row = cur.fetchone()
+    cur.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Process workspace not found")
+
+    process = dict(row)
+    if current_user is not None and process.get("table_name") != "tb_entries":
+        owner_id = process.get("created_by_id")
+        owner_name = process.get("created_by")
+        current_id = getattr(current_user, "id", None)
+        current_name = getattr(current_user, "username", None)
+
+        owner_matches = False
+        if owner_id is not None and current_id is not None:
+            owner_matches = owner_id == current_id
+        if not owner_matches and owner_name and current_name:
+            owner_matches = owner_name == current_name
+        if owner_id is None and not owner_name:
+            owner_matches = True  # legacy process without owner metadata
+
+        if not owner_matches:
+            raise HTTPException(status_code=403, detail="You do not have access to this process workspace.")
+
+    table_name = process["table_name"]
+    custom_fields = normalise_custom_fields_payload(process.get("custom_fields"))
+
+    ensure_process_table_schema(conn, table_name)
+    column_map = sync_process_table_custom_fields(conn, table_name, custom_fields)
+
+    process["custom_fields"] = custom_fields
+    process["custom_field_columns"] = column_map
+    process["readonly"] = table_name == "tb_entries"
+    process["settings"] = normalise_process_settings(process.get("settings"))
+    return process
+
+
+def map_custom_fields_to_columns(process: Dict[str, Any]) -> Dict[str, str]:
+    """Helper to access the column mapping for a process definition."""
+    return process.get("custom_field_columns") or {}
+
+
+def normalise_process_settings(raw_settings: Optional[Any]) -> Dict[str, Any]:
+    """Return process settings merged with defaults."""
+    default_settings = {
+        "workflow": [
+            {
+                "id": "original_input",
+                "type": "original_input",
+                "title": "Original Input",
+                "description": "Capture or import source balances.",
+                "enabled": True,
+            },
+            {
+                "id": "manual_entry",
+                "type": "manual_entry",
+                "title": "Manual Entry",
+                "description": "Record adjustments directly within the workspace.",
+                "enabled": True,
+            },
+            {
+                "id": "excel_sync",
+                "type": "excel",
+                "title": "Excel Import / Export",
+                "description": "Exchange data with spreadsheets for mass updates.",
+                "enabled": True,
+            },
+            {
+                "id": "journal_entries",
+                "type": "journal_entries",
+                "title": "Journal Entries",
+                "description": "Prepare, approve, and post journals derived from this process.",
+                "enabled": True,
+            },
+            {
+                "id": "forms",
+                "type": "forms",
+                "title": "Forms & Reports",
+                "description": "Design forms to review results and share downstream insights.",
+                "enabled": True,
+            }
+        ],
+        "restrictions": {
+            "accounts": {"mode": "all", "allowed_codes": []},
+            "entities": {"mode": "all", "allowed_codes": []},
+        },
+    }
+
+    if not raw_settings:
+        return default_settings
+
+    if isinstance(raw_settings, str):
+        try:
+            raw_settings = json.loads(raw_settings)
+        except json.JSONDecodeError:
+            raw_settings = {}
+
+    if not isinstance(raw_settings, dict):
+        raw_settings = {}
+
+    normalised = json.loads(json.dumps(default_settings))  # deep copy
+
+    for key in ("workflow", "restrictions"):
+        if key in raw_settings:
+            normalised[key] = raw_settings[key]
+
+    # Normalise workflow list
+    workflow = []
+    for idx, raw_step in enumerate(normalised.get("workflow", [])):
+        if not isinstance(raw_step, dict):
+            continue
+        workflow.append(
+            {
+                "id": raw_step.get("id") or raw_step.get("type") or f"step_{idx + 1}",
+                "type": raw_step.get("type") or raw_step.get("id") or f"custom_{idx + 1}",
+                "title": raw_step.get("title") or raw_step.get("type") or f"Step {idx + 1}",
+                "description": raw_step.get("description") or "",
+                "enabled": bool(raw_step.get("enabled", True)),
+            }
+        )
+    normalised["workflow"] = workflow or default_settings["workflow"]
+
+    # Normalise restrictions
+    restrictions = normalised.get("restrictions") or {}
+    accounts_restrictions = restrictions.get("accounts") or {}
+    entities_restrictions = restrictions.get("entities") or {}
+
+    normalised["restrictions"] = {
+        "accounts": {
+            "mode": accounts_restrictions.get("mode", "all"),
+            "allowed_codes": accounts_restrictions.get("allowed_codes", []) or [],
+        },
+        "entities": {
+            "mode": entities_restrictions.get("mode", "all"),
+            "allowed_codes": entities_restrictions.get("allowed_codes", []) or [],
+        },
+    }
+
+    return normalised
+
+
+def validate_restrictions_or_raise(
+    process: Dict[str, Any],
+    account_code: Optional[str],
+    entity_code: Optional[str],
+) -> None:
+    """Ensure process restrictions permit the supplied account and entity."""
+    settings = process.get("settings") or {}
+    restrictions = settings.get("restrictions") or {}
+
+    account_rule = restrictions.get("accounts") or {"mode": "all", "allowed_codes": []}
+    entity_rule = restrictions.get("entities") or {"mode": "all", "allowed_codes": []}
+
+    if account_rule.get("mode") == "restricted":
+        allowed_accounts = set(account_rule.get("allowed_codes") or [])
+        if allowed_accounts and account_code not in allowed_accounts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Account '{account_code}' is not permitted for this process.",
+            )
+
+    if entity_rule.get("mode") == "restricted":
+        allowed_entities = set(entity_rule.get("allowed_codes") or [])
+        if allowed_entities and entity_code not in allowed_entities:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Entity '{entity_code}' is not permitted for this process.",
+            )
+
+
+def build_process_payload(
+    conn: psycopg2.extensions.connection,
+    process_row: Dict[str, Any],
+    current_user: Optional[User] = None,
+) -> Dict[str, Any]:
+    """Construct an API friendly representation of a process definition."""
+    process_context = get_process_context(conn, process_row["id"], current_user=current_user)
+    table_name = process_context["table_name"]
+
+    cur = conn.cursor()
+    cur.execute(sql.SQL("SELECT COUNT(*) FROM {table}").format(table=sql.Identifier(table_name)))
+    entry_count_row = cur.fetchone()
+    entry_count = entry_count_row[0] if entry_count_row else 0
+
+    cur.execute(sql.SQL("SELECT MAX(updated_at) FROM {table}").format(table=sql.Identifier(table_name)))
+    last_updated_row = cur.fetchone()
+    last_updated = last_updated_row[0].isoformat() if last_updated_row and last_updated_row[0] else None
+    cur.close()
+
+    created_at = process_context.get("created_at")
+    updated_at = process_context.get("updated_at")
+    owner_id = process_context.get("created_by_id")
+    owner_name = process_context.get("created_by")
+    current_id = getattr(current_user, "id", None) if current_user is not None else None
+    current_name = getattr(current_user, "username", None) if current_user is not None else None
+    owned_by_you = False
+    if current_user is not None:
+        if owner_id is None and not owner_name:
+            owned_by_you = True
+        else:
+            if owner_id is not None and current_id is not None:
+                owned_by_you = owner_id == current_id
+            if not owned_by_you and owner_name and current_name:
+                owned_by_you = owner_name == current_name
+
+    return {
+        "id": process_context.get("id"),
+        "process_key": process_context.get("process_key"),
+        "table_name": table_name,
+        "name": process_context.get("name"),
+        "description": process_context.get("description"),
+        "process_type": process_context.get("process_type"),
+        "status": process_context.get("status"),
+        "custom_fields": process_context.get("custom_fields"),
+        "custom_field_columns": process_context.get("custom_field_columns"),
+        "settings": process_context.get("settings"),
+        "entry_count": entry_count,
+        "last_updated_at": last_updated,
+        "readonly": process_context.get("readonly", False),
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
+        "created_by": owner_name,
+        "created_by_id": owner_id,
+        "updated_by": process_context.get("updated_by"),
+        "updated_by_id": process_context.get("updated_by_id"),
+        "owned_by_you": owned_by_you,
+    }
 
 
 def decimal_to_float(value: Optional[Decimal]) -> float:
@@ -192,6 +707,106 @@ def fetch_entities(conn: psycopg2.extensions.connection, company_name: str) -> L
         return []
 
 
+def fetch_hierarchies(
+    conn: psycopg2.extensions.connection,
+    company_name: str,
+    hierarchy_type: str,
+) -> List[Dict[str, Any]]:
+    """Return hierarchies and their nodes for accounts/entities."""
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT id, hierarchy_name
+            FROM hierarchies
+            WHERE company_id = %s AND hierarchy_type = %s
+            ORDER BY hierarchy_name
+            """,
+            (company_name, hierarchy_type),
+        )
+        hierarchies = cur.fetchall()
+        cur.close()
+    except psycopg2.errors.UndefinedTable:
+        return []
+
+    results: List[Dict[str, Any]] = []
+    for hierarchy in hierarchies:
+        hierarchy_id = hierarchy["id"]
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                """
+                SELECT id, name, code, parent_id, level, path
+                FROM hierarchy_nodes
+                WHERE company_id = %s AND hierarchy_id = %s
+                ORDER BY path, sort_order, name
+                """,
+                (company_name, hierarchy_id),
+            )
+            nodes = cur.fetchall()
+            cur.close()
+        except psycopg2.errors.UndefinedTable:
+            nodes = []
+
+        node_codes: Dict[int, Set[str]] = {}
+        for node in nodes:
+            node_codes[node["id"]] = set()
+
+        if nodes:
+            table_name = "axes_accounts" if hierarchy_type == "account" else "axes_entities"
+            try:
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute(
+                    sql.SQL(
+                        """
+                        SELECT node_id, array_agg(code) AS codes
+                        FROM {table}
+                        WHERE company_id = %s AND hierarchy_id = %s AND node_id IS NOT NULL
+                        GROUP BY node_id
+                        """
+                    ).format(table=sql.Identifier(table_name)),
+                    (company_name, hierarchy_id),
+                )
+                code_rows = cur.fetchall()
+                cur.close()
+            except psycopg2.errors.UndefinedTable:
+                code_rows = []
+            for row in code_rows:
+                if row["node_id"] in node_codes:
+                    node_codes[row["node_id"]].update(row["codes"] or [])
+
+            sorted_nodes = sorted(
+                nodes,
+                key=lambda node: node.get("level") if node.get("level") is not None else len((node.get("path") or "").split(".")),
+                reverse=True,
+            )
+            for node in sorted_nodes:
+                parent_id = node.get("parent_id")
+                if parent_id and parent_id in node_codes:
+                    node_codes[parent_id].update(node_codes.get(node["id"], set()))
+
+        results.append(
+            {
+                "id": hierarchy_id,
+                "name": hierarchy["hierarchy_name"],
+                "nodes": [
+                    {
+                        "id": node["id"],
+                        "name": node["name"],
+                        "code": node["code"],
+                        "parent_id": node["parent_id"],
+                        "level": node.get("level"),
+                        "path": node.get("path"),
+                        "codes": sorted(node_codes.get(node["id"], set())),
+                    }
+                    for node in nodes
+                ],
+            }
+        )
+
+    return results
+
+
 def fetch_account_details(
     conn: psycopg2.extensions.connection, company_name: str, account_code: str
 ) -> Optional[Dict[str, Any]]:
@@ -228,11 +843,28 @@ def fetch_entity_details(
     return row
 
 
-def serialise_entry(row: Dict[str, Any]) -> Dict[str, Any]:
+def serialise_entry(row: Dict[str, Any], custom_field_columns: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     debit_amount = decimal_to_float(row.get("debit_amount"))
     credit_amount = decimal_to_float(row.get("credit_amount"))
     entry_type = (row.get("entry_type") or ("debit" if debit_amount >= credit_amount else "credit")).lower()
     amount = debit_amount if entry_type == "debit" else credit_amount
+
+    custom_values: Dict[str, Any] = {}
+    raw_custom = row.get("custom_fields")
+    if isinstance(raw_custom, str):
+        try:
+            decoded = json.loads(raw_custom)
+            if isinstance(decoded, dict):
+                custom_values.update(decoded)
+        except json.JSONDecodeError:
+            custom_values = {}
+    elif isinstance(raw_custom, dict):
+        custom_values.update(raw_custom)
+
+    if custom_field_columns:
+        for field_name, column_name in custom_field_columns.items():
+            if column_name in row and row[column_name] is not None:
+                custom_values[field_name] = row[column_name]
 
     return {
         "id": row["id"],
@@ -254,6 +886,7 @@ def serialise_entry(row: Dict[str, Any]) -> Dict[str, Any]:
         "source": row.get("source"),
         "created_at": row.get("created_at").isoformat() if row.get("created_at") else None,
         "updated_at": row.get("updated_at").isoformat() if row.get("updated_at") else None,
+        "custom_fields": custom_values,
     }
 
 
@@ -287,7 +920,39 @@ def parse_numeric(value: Any) -> Optional[float]:
     return None
 
 
-def map_uploaded_columns(headers: List[str]) -> Dict[str, int]:
+def normalise_custom_field_value(field: Dict[str, Any], value: Any) -> Any:
+    """Convert uploaded or form value into a database friendly representation."""
+    field_type = (field.get("field_type") or field.get("type") or "text").lower()
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "":
+            return None
+        value = stripped
+
+    if field_type == "number":
+        return parse_numeric(value)
+    if field_type == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.lower() in {"true", "1", "yes", "y"}
+        return bool(value)
+    if field_type == "date":
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        return str(value)
+    # text, textarea, select, sql_query fall back to string
+    return value
+
+
+def map_uploaded_columns(
+    headers: List[str],
+    custom_fields: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[Dict[str, str], Dict[str, str]]:
     aliases = {
         "entity_code": ["entity_code", "entity", "entity id", "entity_id", "entity code"],
         "entity_name": ["entity_name", "entity name"],
@@ -301,13 +966,17 @@ def map_uploaded_columns(headers: List[str]) -> Dict[str, int]:
         "description": ["description", "memo", "note", "narrative"],
     }
 
-    column_map: Dict[str, int] = {}
-    normalised = [str(h).strip().lower() if h is not None else "" for h in headers]
+    column_map: Dict[str, str] = {}
+    original_headers = [str(h) if h is not None else "" for h in headers]
+    normalised = [h.strip().lower() for h in original_headers]
+    normalised_to_original = {normalised[idx]: original_headers[idx] for idx in range(len(normalised))}
 
     for key, options in aliases.items():
         for alias in options:
             if alias in normalised:
-                column_map[key] = normalised.index(alias)
+                original_header = normalised_to_original.get(alias)
+                if original_header:
+                    column_map[key] = original_header
                 break
 
     required = {"entity_code", "account_code", "amount"}
@@ -318,42 +987,107 @@ def map_uploaded_columns(headers: List[str]) -> Dict[str, int]:
             detail=f"Uploaded file is missing required columns: {', '.join(missing)}",
         )
 
-    return column_map
+    custom_header_map: Dict[str, str] = {}
+    if custom_fields:
+        for field in custom_fields:
+            field_name = (field.get("field_name") or field.get("name") or "").strip()
+            field_label = (field.get("field_label") or field.get("label") or "").strip()
+            if not field_name and not field_label:
+                continue
+            if not field_name:
+                field_name = sanitize_identifier(field_label or "custom_field", prefix="cf")
+                field["field_name"] = field_name  # persist derived name for downstream use
+            candidates = {field_name.lower()} if field_name else set()
+            if field_label:
+                lowered = field_label.lower()
+                candidates.update({lowered, lowered.replace(" ", "_"), lowered.replace("_", " ")})
+            expanded_candidates = {c for c in candidates if c}
+            for candidate in expanded_candidates:
+                if candidate in normalised_to_original:
+                    custom_header_map[field_name or candidate] = normalised_to_original[candidate]
+                    break
+
+    return column_map, custom_header_map
 
 
-def parse_uploaded_entries(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
-    """Parse an uploaded CSV/XLSX file and return entry dictionaries."""
+def parse_uploaded_entries(
+    file_bytes: bytes,
+    filename: str,
+    custom_fields: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Parse an uploaded CSV/XLSX file and return entry dictionaries with custom fields."""
     extension = os.path.splitext(filename)[1].lower()
     records: List[Dict[str, Any]] = []
+    custom_fields = custom_fields or []
 
-    def process_row(row: Dict[str, Any], row_number: int) -> None:
-        amount = parse_numeric(row.get("amount"))
+    field_lookup: Dict[str, Dict[str, Any]] = {}
+    for field in custom_fields:
+        field_name = (field.get("field_name") or field.get("name") or "").strip()
+        if not field_name:
+            continue
+        field_lookup[field_name] = field
+        field_label = (field.get("field_label") or field.get("label") or "").strip()
+        if field_label:
+            field_lookup[field_label.lower()] = field
+
+    def process_row(
+        row: Dict[str, Any],
+        row_number: int,
+        column_map: Dict[str, str],
+        custom_header_map: Dict[str, str],
+    ) -> None:
+        def get_value(key: str) -> Any:
+            header = column_map.get(key)
+            return row.get(header) if header else None
+
+        amount_raw = get_value("amount")
+        amount = parse_numeric(amount_raw)
         if amount is None:
             raise ValueError("Amount is required")
-        entry_type = (row.get("entry_type") or ("debit" if amount >= 0 else "credit")).strip().lower()
-        if entry_type not in ("debit", "credit"):
-            raise ValueError("Entry type must be debit or credit")
 
-        entity_value = row.get("entity_code")
-        account_value = row.get("account_code")
+        entry_type_raw = get_value("entry_type")
+        entry_type = str(entry_type_raw).strip().lower() if entry_type_raw is not None else ("debit" if amount >= 0 else "credit")
+        if entry_type not in {"debit", "credit"}:
+            entry_type = "debit" if amount >= 0 else "credit"
 
+        entity_value = get_value("entity_code")
+        account_value = get_value("account_code")
         if entity_value is None or str(entity_value).strip() == "":
             raise ValueError("Entity code is required")
         if account_value is None or str(account_value).strip() == "":
             raise ValueError("Account code is required")
 
+        effective_amount = float(abs(amount))
+        effective_entry_type = entry_type if amount >= 0 else ("credit" if entry_type == "debit" else "debit")
+
+        custom_payload: Dict[str, Any] = {}
+        for field_key, header in custom_header_map.items():
+            if not header:
+                continue
+            raw_value = row.get(header)
+            lookup_key = field_key if field_key in field_lookup else field_key.lower()
+            field_def = field_lookup.get(lookup_key)
+            if field_def is None:
+                continue
+            normalised_value = normalise_custom_field_value(field_def, raw_value)
+            if normalised_value is not None:
+                canonical_name = (field_def.get("field_name") or field_def.get("name") or field_key).strip()
+                if canonical_name:
+                    custom_payload[canonical_name] = normalised_value
+
         records.append(
             {
                 "entity_code": str(entity_value).strip(),
-                "entity_name": (str(row.get("entity_name")).strip() if row.get("entity_name") else None),
+                "entity_name": (str(get_value("entity_name")).strip() if get_value("entity_name") else None),
                 "account_code": str(account_value).strip(),
-                "account_name": (str(row.get("account_name")).strip() if row.get("account_name") else None),
-                "amount": float(abs(amount)),
-                "entry_type": entry_type if amount >= 0 else ("credit" if entry_type == "debit" else "debit"),
-                "currency": (str(row.get("currency")).strip() if row.get("currency") else None),
-                "entry_category": (str(row.get("entry_category")).strip() if row.get("entry_category") else "Imported"),
-                "counterparty": (str(row.get("counterparty")).strip() if row.get("counterparty") else None),
-                "description": (str(row.get("description")).strip() if row.get("description") else None),
+                "account_name": (str(get_value("account_name")).strip() if get_value("account_name") else None),
+                "amount": effective_amount,
+                "entry_type": effective_entry_type,
+                "currency": (str(get_value("currency")).strip() if get_value("currency") else None),
+                "entry_category": (str(get_value("entry_category")).strip() if get_value("entry_category") else "Imported"),
+                "counterparty": (str(get_value("counterparty")).strip() if get_value("counterparty") else None),
+                "description": (str(get_value("description")).strip() if get_value("description") else None),
+                "custom_fields": custom_payload,
             }
         )
 
@@ -369,13 +1103,14 @@ def parse_uploaded_entries(file_bytes: bytes, filename: str) -> List[Dict[str, A
         if not rows:
             raise HTTPException(status_code=400, detail="The uploaded spreadsheet is empty.")
 
-        column_map = map_uploaded_columns(list(rows[0] or []))
+        headers = [str(cell) if cell is not None else "" for cell in (rows[0] or [])]
+        column_map, custom_header_map = map_uploaded_columns(headers, custom_fields)
         for idx, data_row in enumerate(rows[1:], start=2):
             if not data_row or all(cell is None for cell in data_row):
                 continue
-            row_dict = {key: data_row[column_map[key]] if column_map.get(key) is not None else None for key in column_map}
+            row_dict = {headers[i]: data_row[i] for i in range(len(headers)) if headers[i]}
             try:
-                process_row(row_dict, idx)
+                process_row(row_dict, idx, column_map, custom_header_map)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=f"Row {idx}: {exc}") from exc
 
@@ -384,11 +1119,12 @@ def parse_uploaded_entries(file_bytes: bytes, filename: str) -> List[Dict[str, A
         reader = csv.DictReader(text_stream)
         if reader.fieldnames is None:
             raise HTTPException(status_code=400, detail="CSV file is missing header row.")
-        column_map = map_uploaded_columns(reader.fieldnames)
+        column_map, custom_header_map = map_uploaded_columns(reader.fieldnames, custom_fields)
         for idx, csv_row in enumerate(reader, start=2):
-            filtered_row = {key: csv_row.get(headers_idx) for key, headers_idx in column_map.items()}
+            if not csv_row:
+                continue
             try:
-                process_row(filtered_row, idx)
+                process_row(dict(csv_row), idx, column_map, custom_header_map)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=f"Row {idx}: {exc}") from exc
     else:
@@ -400,11 +1136,13 @@ def parse_uploaded_entries(file_bytes: bytes, filename: str) -> List[Dict[str, A
 def insert_entry_record(
     conn: psycopg2.extensions.connection,
     company_name: str,
+    process: Dict[str, Any],
     entry_data: Dict[str, Any],
     source: str = "manual",
 ) -> Dict[str, Any]:
-    """Insert a record into tb_entries and return the persisted row."""
-    ensure_tb_entries_schema(conn)
+    """Insert a record into the process-specific table and return the persisted row."""
+    table_name = process["table_name"]
+    ensure_process_table_schema(conn, table_name)
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     entry_type = (entry_data.get("entry_type") or "debit").lower()
@@ -419,6 +1157,8 @@ def insert_entry_record(
     account_details = fetch_account_details(conn, company_name, entry_data["account_code"])
     entity_details = fetch_entity_details(conn, company_name, entry_data["entity_code"])
 
+    validate_restrictions_or_raise(process, entry_data["account_code"], entry_data["entity_code"])
+
     account_name = entry_data.get("account_name") or (account_details.get("name") if account_details else entry_data["account_code"])
     entity_name = entry_data.get("entity_name") or (entity_details.get("name") if entity_details else entry_data["entity_code"])
     currency = entry_data.get("currency") or (entity_details.get("currency") if entity_details and entity_details.get("currency") else "USD")
@@ -426,35 +1166,81 @@ def insert_entry_record(
     debit_amount, credit_amount = compute_amounts(amount_value, entry_type)
     balance_amount = debit_amount - credit_amount
 
-    cur.execute(
+    custom_fields_definitions = process.get("custom_fields") or []
+    custom_columns_map = map_custom_fields_to_columns(process)
+    provided_custom_fields = entry_data.get("custom_fields") or {}
+
+    persisted_custom_fields: Dict[str, Any] = {}
+    dynamic_column_names: List[str] = []
+    dynamic_values: List[Any] = []
+
+    for field in custom_fields_definitions:
+        field_name = (field.get("field_name") or field.get("name") or "").strip()
+        if not field_name:
+            continue
+        column_name = custom_columns_map.get(field_name)
+        field_value = provided_custom_fields.get(field_name, field.get("default_value"))
+        normalised_value = normalise_custom_field_value(field, field_value)
+        if normalised_value is not None:
+            persisted_custom_fields[field_name] = normalised_value
+        if column_name:
+            dynamic_column_names.append(column_name)
+            dynamic_values.append(normalised_value)
+
+    base_columns = [
+        "account_code",
+        "account_name",
+        "entity_code",
+        "entity_name",
+        "period",
+        "year",
+        "debit_amount",
+        "credit_amount",
+        "balance_amount",
+        "currency",
+        "entry_category",
+        "counterparty",
+        "description",
+        "entry_type",
+        "source",
+        "custom_fields",
+    ]
+
+    base_values = [
+        entry_data["account_code"],
+        account_name,
+        entry_data["entity_code"],
+        entity_name,
+        entry_data["period"],
+        entry_data["year"],
+        debit_amount,
+        credit_amount,
+        balance_amount,
+        currency,
+        entry_data.get("entry_category") or ("Imported" if source == "upload" else "Manual Entry"),
+        entry_data.get("counterparty"),
+        entry_data.get("description"),
+        entry_type,
+        source,
+        json.dumps(persisted_custom_fields, default=str),
+    ]
+
+    all_columns = base_columns + dynamic_column_names
+    all_values = base_values + dynamic_values
+
+    insert_query = sql.SQL(
         """
-        INSERT INTO tb_entries (
-            account_code, account_name, entity_code, entity_name,
-            period, year, debit_amount, credit_amount, balance_amount,
-            currency, entry_category, counterparty, description,
-            entry_type, source, created_at, updated_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO {table} ({columns})
+        VALUES ({placeholders})
         RETURNING *
-        """,
-        (
-            entry_data["account_code"],
-            account_name,
-            entry_data["entity_code"],
-            entity_name,
-            entry_data["period"],
-            entry_data["year"],
-            debit_amount,
-            credit_amount,
-            balance_amount,
-            currency,
-            entry_data.get("entry_category") or ("Imported" if source == "upload" else "Manual Entry"),
-            entry_data.get("counterparty"),
-            entry_data.get("description"),
-            entry_type,
-            source,
-        ),
+        """
+    ).format(
+        table=sql.Identifier(table_name),
+        columns=sql.SQL(", ").join(sql.Identifier(col) for col in all_columns),
+        placeholders=sql.SQL(", ").join(sql.Placeholder() for _ in all_columns),
     )
+
+    cur.execute(insert_query, all_values)
     inserted = cur.fetchone()
     cur.close()
     return inserted
@@ -463,13 +1249,16 @@ def insert_entry_record(
 def update_entry_record(
     conn: psycopg2.extensions.connection,
     company_name: str,
+    process: Dict[str, Any],
     entry_id: int,
     payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Update an existing entry and return the refreshed row."""
-    ensure_tb_entries_schema(conn)
+    table_name = process["table_name"]
+    ensure_process_table_schema(conn, table_name)
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM tb_entries WHERE id = %s", (entry_id,))
+    select_query = sql.SQL("SELECT * FROM {table} WHERE id = %s").format(table=sql.Identifier(table_name))
+    cur.execute(select_query, (entry_id,))
     existing = cur.fetchone()
     if not existing:
         cur.close()
@@ -480,23 +1269,23 @@ def update_entry_record(
     period = payload.get("period", existing["period"])
     year = payload.get("year", existing["year"])
 
-    entry_type = (
-        (payload.get("entry_type") or existing.get("entry_type") or ("debit" if existing["debit_amount"] >= existing["credit_amount"] else "credit"))
-        .lower()
-    )
+    base_entry_type = existing.get("entry_type") or ("debit" if existing.get("debit_amount", 0) >= existing.get("credit_amount", 0) else "credit")
+    entry_type = (payload.get("entry_type") or base_entry_type).lower()
     if entry_type not in {"debit", "credit"}:
         entry_type = "debit"
 
-    amount_value = payload.get("amount")
-    if amount_value is None:
-        amount_value = existing["debit_amount"] if entry_type == "debit" else existing["credit_amount"]
-    amount_value = parse_numeric(amount_value) or 0.0
+    amount_value_raw = payload.get("amount")
+    if amount_value_raw is None:
+        amount_value_raw = existing["debit_amount"] if entry_type == "debit" else existing["credit_amount"]
+    amount_value = parse_numeric(amount_value_raw) or 0.0
     if amount_value < 0:
         amount_value = abs(amount_value)
         entry_type = "credit" if entry_type == "debit" else "debit"
 
     account_details = fetch_account_details(conn, company_name, account_code)
     entity_details = fetch_entity_details(conn, company_name, entity_code)
+
+    validate_restrictions_or_raise(process, account_code, entity_code)
 
     account_name = payload.get("account_name") or existing.get("account_name") or (
         account_details.get("name") if account_details else account_code
@@ -515,47 +1304,85 @@ def update_entry_record(
     debit_amount, credit_amount = compute_amounts(amount_value, entry_type)
     balance_amount = debit_amount - credit_amount
 
-    cur.execute(
+    custom_fields_definitions = process.get("custom_fields") or []
+    custom_columns_map = map_custom_fields_to_columns(process)
+    provided_custom_fields = payload.get("custom_fields") or {}
+
+    existing_custom_fields: Dict[str, Any] = {}
+    raw_existing_custom = existing.get("custom_fields")
+    if isinstance(raw_existing_custom, str):
+        try:
+            decoded = json.loads(raw_existing_custom)
+            if isinstance(decoded, dict):
+                existing_custom_fields.update(decoded)
+        except json.JSONDecodeError:
+            existing_custom_fields = {}
+    elif isinstance(raw_existing_custom, dict):
+        existing_custom_fields.update(raw_existing_custom)
+
+    dynamic_updates: List[Tuple[str, Any]] = []
+    merged_custom_fields: Dict[str, Any] = {}
+
+    for field in custom_fields_definitions:
+        field_name = (field.get("field_name") or field.get("name") or "").strip()
+        if not field_name:
+            continue
+        column_name = custom_columns_map.get(field_name)
+
+        value_source = provided_custom_fields[field_name] if field_name in provided_custom_fields else existing_custom_fields.get(field_name)
+        if field_name not in provided_custom_fields and column_name and value_source is None:
+            value_source = existing.get(column_name)
+        normalised_value = normalise_custom_field_value(field, value_source)
+        if normalised_value is not None:
+            merged_custom_fields[field_name] = normalised_value
+        if column_name:
+            dynamic_updates.append((column_name, normalised_value))
+
+    update_pairs: List[Tuple[str, Any]] = [
+        ("account_code", account_code),
+        ("account_name", account_name),
+        ("entity_code", entity_code),
+        ("entity_name", entity_name),
+        ("period", period),
+        ("year", year),
+        ("debit_amount", debit_amount),
+        ("credit_amount", credit_amount),
+        ("balance_amount", balance_amount),
+        ("currency", currency),
+        ("entry_category", entry_category),
+        ("counterparty", counterparty),
+        ("description", description),
+        ("entry_type", entry_type),
+        ("source", payload.get("source", existing.get("source"))),
+        ("custom_fields", json.dumps(merged_custom_fields, default=str)),
+    ]
+    update_pairs.extend(dynamic_updates)
+
+    set_clauses = []
+    values: List[Any] = []
+    for column, value in update_pairs:
+        set_clauses.append(
+            sql.SQL("{column} = {placeholder}").format(
+                column=sql.Identifier(column),
+                placeholder=sql.Placeholder(),
+            )
+        )
+        values.append(value)
+
+    update_query = sql.SQL(
         """
-        UPDATE tb_entries
-        SET account_code = %s,
-            account_name = %s,
-            entity_code = %s,
-            entity_name = %s,
-            period = %s,
-            year = %s,
-            debit_amount = %s,
-            credit_amount = %s,
-            balance_amount = %s,
-            currency = %s,
-            entry_category = %s,
-            counterparty = %s,
-            description = %s,
-            entry_type = %s,
-            source = COALESCE(%s, source),
-            updated_at = CURRENT_TIMESTAMP
+        UPDATE {table}
+        SET {assignments}, updated_at = CURRENT_TIMESTAMP
         WHERE id = %s
         RETURNING *
-        """,
-        (
-            account_code,
-            account_name,
-            entity_code,
-            entity_name,
-            period,
-            year,
-            debit_amount,
-            credit_amount,
-            balance_amount,
-            currency,
-            entry_category,
-            counterparty,
-            description,
-            entry_type,
-            payload.get("source"),
-            entry_id,
-        ),
+        """
+    ).format(
+        table=sql.Identifier(table_name),
+        assignments=sql.SQL(", ").join(set_clauses),
     )
+
+    values.append(entry_id)
+    cur.execute(update_query, values)
     refreshed = cur.fetchone()
     cur.close()
     return refreshed
@@ -579,6 +1406,7 @@ class ManualEntry(BaseModel):
     description: Optional[str] = None
     account_name: Optional[str] = None
     entity_name: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
 
     @validator("entry_type")
     def validate_entry_type(cls, value: str) -> str:
@@ -601,6 +1429,7 @@ class ManualEntryUpdate(BaseModel):
     description: Optional[str] = None
     account_name: Optional[str] = None
     entity_name: Optional[str] = None
+    custom_fields: Optional[Dict[str, Any]] = None
 
     @validator("entry_type")
     def validate_entry_type(cls, value: Optional[str]) -> Optional[str]:
@@ -610,6 +1439,90 @@ class ManualEntryUpdate(BaseModel):
         if value not in {"debit", "credit"}:
             raise ValueError("entry_type must be either 'debit' or 'credit'")
         return value
+
+
+class CustomFieldDefinition(BaseModel):
+    field_name: str
+    field_label: str
+    field_type: str = "text"
+    options: Optional[List[str]] = None
+    is_required: bool = False
+    is_unique: bool = False
+    default_value: Optional[Any] = None
+    validation_rules: Optional[Dict[str, Any]] = None
+    display_order: int = 0
+
+    @validator("field_name")
+    def validate_field_name(cls, value: str) -> str:
+        if not value or not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", value):
+            raise ValueError("field_name must start with a letter or underscore and contain only alphanumeric characters or underscores")
+        return value
+
+    @validator("field_type")
+    def validate_field_type(cls, value: str) -> str:
+        if value.lower() not in ALLOWED_CUSTOM_FIELD_TYPES:
+            raise ValueError(f"field_type must be one of: {', '.join(sorted(ALLOWED_CUSTOM_FIELD_TYPES))}")
+        return value.lower()
+
+
+class ProcessDefinitionCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    process_type: Optional[str] = "Consolidation"
+    custom_fields: Optional[List[CustomFieldDefinition]] = None
+    workflow: Optional[List["WorkflowStepDefinition"]] = None
+    restrictions: Optional[Dict[str, "RestrictionDefinition"]] = None
+
+
+class ProcessDefinitionUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    process_type: Optional[str] = None
+    status: Optional[str] = None
+
+
+class ProcessCustomFieldsUpdate(BaseModel):
+    custom_fields: List[CustomFieldDefinition]
+
+
+class WorkflowStepDefinition(BaseModel):
+    id: str
+    type: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    enabled: bool = True
+
+    @validator("id", "type")
+    def validate_identifier(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("workflow step id/type cannot be empty")
+        return value
+
+
+class RestrictionDefinition(BaseModel):
+    mode: Literal["all", "restricted"] = "all"
+    allowed_codes: List[str] = []
+
+
+class ProcessSettingsUpdate(BaseModel):
+    workflow: Optional[List[WorkflowStepDefinition]] = None
+    restrictions: Optional[Dict[str, RestrictionDefinition]] = None
+
+
+class RollforwardRequest(BaseModel):
+    process_id: int
+    company_name: str
+    source_period: str
+    source_year: str
+    target_period: str
+    target_year: str
+
+
+ProcessDefinitionCreate.update_forward_refs(
+    WorkflowStepDefinition=WorkflowStepDefinition,
+    RestrictionDefinition=RestrictionDefinition,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +1536,8 @@ def get_reference_data(company_name: str = Query(...)) -> Dict[str, Any]:
     with company_connection(company_name) as conn:
         accounts = fetch_accounts(conn, company_name)
         entities = fetch_entities(conn, company_name)
+        account_hierarchies = fetch_hierarchies(conn, company_name, "account")
+        entity_hierarchies = fetch_hierarchies(conn, company_name, "entity")
 
     currencies = sorted({entity["currency"] for entity in entities if entity.get("currency")})
 
@@ -630,7 +1545,425 @@ def get_reference_data(company_name: str = Query(...)) -> Dict[str, Any]:
         "accounts": accounts,
         "entities": entities,
         "currencies": currencies,
+        "account_hierarchies": account_hierarchies,
+        "entity_hierarchies": entity_hierarchies,
     }
+
+
+@router.get("/catalog")
+def list_process_definitions(
+    company_name: str = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Return the catalogue of processes configured for the company."""
+    with company_connection(company_name) as conn:
+        ensure_default_process(conn)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM process_definitions ORDER BY created_at ASC")
+        rows = [dict(row) for row in cur.fetchall()]
+        cur.close()
+
+        current_id = getattr(current_user, "id", None)
+        current_username = getattr(current_user, "username", None)
+
+        processes: List[Dict[str, Any]] = []
+        for row in rows:
+            is_default = row.get("table_name") == "tb_entries"
+            owner_id = row.get("created_by_id")
+            owner_name = row.get("created_by")
+
+            legacy_entry = owner_id is None and not owner_name
+            owner_matches = legacy_entry
+            if not owner_matches and owner_id is not None and current_id is not None:
+                owner_matches = owner_id == current_id
+            if not owner_matches and owner_name and current_username:
+                owner_matches = owner_name == current_username
+
+            if is_default or owner_matches:
+                processes.append(build_process_payload(conn, row, current_user=current_user))
+    return {"processes": processes}
+
+
+@router.post("/catalog", status_code=status.HTTP_201_CREATED)
+def create_process_definition(
+    definition: ProcessDefinitionCreate,
+    company_name: str = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Create a new process definition and provision its storage table."""
+    custom_fields_payload = [
+        {
+            **field.dict(),
+            "field_name": field.field_name.strip(),
+            "field_label": field.field_label.strip(),
+            "field_type": field.field_type.lower(),
+        }
+        for field in (definition.custom_fields or [])
+    ]
+    workflow_payload = [
+        {
+            "id": step.id,
+            "type": step.type,
+            "title": step.title or step.type.title(),
+            "description": step.description or "",
+            "enabled": step.enabled,
+        }
+        for step in (definition.workflow or [])
+    ]
+    restrictions_payload: Dict[str, Dict[str, Any]] = {}
+    if definition.restrictions:
+        for key, restriction in definition.restrictions.items():
+            restrictions_payload[key] = restriction.dict()
+    settings_payload = normalise_process_settings(
+        {
+            "workflow": workflow_payload or None,
+            "restrictions": restrictions_payload or None,
+        }
+    )
+
+    with company_connection(company_name) as conn:
+        ensure_process_catalog(conn)
+        ensure_default_process(conn)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        base_key = generate_process_key(definition.name)
+        process_key = base_key
+        suffix = 1
+        while True:
+            cur.execute("SELECT 1 FROM process_definitions WHERE process_key = %s", (process_key,))
+            if not cur.fetchone():
+                break
+            process_key = f"{base_key}_{suffix}"
+            suffix += 1
+
+        base_table_name = sanitize_identifier(f"process_entries_{process_key}")
+        table_name = base_table_name
+        suffix = 1
+        while True:
+            cur.execute("SELECT 1 FROM process_definitions WHERE table_name = %s", (table_name,))
+            if not cur.fetchone():
+                break
+            table_name = sanitize_identifier(f"{base_table_name}_{suffix}")
+            suffix += 1
+
+        create_process_table(conn, table_name)
+        sync_process_table_custom_fields(conn, table_name, custom_fields_payload)
+
+        cur.execute(
+            """
+            INSERT INTO process_definitions (
+                process_key,
+                table_name,
+                name,
+                description,
+                process_type,
+                status,
+                custom_fields,
+                settings,
+                created_by,
+                created_by_id,
+                updated_by,
+                updated_by_id
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                process_key,
+                table_name,
+                definition.name,
+                definition.description,
+                definition.process_type or "Consolidation",
+                "active",
+                json.dumps(custom_fields_payload),
+                json.dumps(settings_payload),
+                getattr(current_user, "username", None),
+                getattr(current_user, "id", None),
+                getattr(current_user, "username", None),
+                getattr(current_user, "id", None),
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        process_payload = build_process_payload(conn, dict(row), current_user=current_user)
+
+    return {"message": "Process created successfully", "process": process_payload}
+
+
+@router.put("/catalog/{process_id}")
+def update_process_definition(
+    process_id: int,
+    updates: ProcessDefinitionUpdate,
+    company_name: str = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Update metadata for an existing process definition."""
+    update_data = updates.dict(exclude_unset=True)
+    if not update_data:
+        with company_connection(company_name) as conn:
+            ensure_process_catalog(conn)
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT * FROM process_definitions WHERE id = %s", (process_id,))
+            row = cur.fetchone()
+            cur.close()
+            if not row:
+                raise HTTPException(status_code=404, detail="Process not found")
+            return {"process": build_process_payload(conn, dict(row), current_user=current_user)}
+
+    with company_connection(company_name) as conn:
+        ensure_process_catalog(conn)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM process_definitions WHERE id = %s", (process_id,))
+        existing = cur.fetchone()
+        if not existing:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Process not found")
+        existing_dict = dict(existing)
+        if existing_dict.get("table_name") == "tb_entries":
+            cur.close()
+            raise HTTPException(status_code=400, detail="The default trial balance process cannot be modified.")
+
+        owner_id = existing_dict.get("created_by_id")
+        owner_name = existing_dict.get("created_by")
+        current_id = getattr(current_user, "id", None)
+        current_username = getattr(current_user, "username", None)
+        owner_matches = owner_id is None and not owner_name
+        if not owner_matches and owner_id is not None and current_id is not None:
+            owner_matches = owner_id == current_id
+        if not owner_matches and owner_name and current_username:
+            owner_matches = owner_name == current_username
+        if not owner_matches:
+            cur.close()
+            raise HTTPException(status_code=403, detail="You are not permitted to update this process.")
+
+        assignments = []
+        values: List[Any] = []
+        update_data["updated_by"] = getattr(current_user, "username", None)
+        update_data["updated_by_id"] = getattr(current_user, "id", None)
+
+        for field, value in update_data.items():
+            assignments.append(
+                sql.SQL("{field} = {placeholder}").format(
+                    field=sql.Identifier(field),
+                    placeholder=sql.Placeholder(),
+                )
+            )
+            values.append(value)
+        assignments.append(sql.SQL("updated_at = CURRENT_TIMESTAMP"))
+
+        update_query = sql.SQL(
+            "UPDATE process_definitions SET {assignments} WHERE id = %s RETURNING *"
+        ).format(assignments=sql.SQL(", ").join(assignments))
+
+        values.append(process_id)
+        cur.execute(update_query, values)
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        process_payload = build_process_payload(conn, dict(row), current_user=current_user)
+
+    return {"message": "Process updated successfully", "process": process_payload}
+
+
+@router.delete("/catalog/{process_id}")
+def delete_process_definition(
+    process_id: int,
+    company_name: str = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Delete a process definition and drop its data table."""
+    with company_connection(company_name) as conn:
+        ensure_process_catalog(conn)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM process_definitions WHERE id = %s", (process_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Process not found")
+
+        process_row = dict(row)
+        table_name = process_row["table_name"]
+        if table_name == "tb_entries":
+            cur.close()
+            raise HTTPException(status_code=400, detail="The default trial balance process cannot be deleted.")
+
+        owner_id = process_row.get("created_by_id")
+        owner_name = process_row.get("created_by")
+        current_id = getattr(current_user, "id", None)
+        current_username = getattr(current_user, "username", None)
+        owner_matches = owner_id is None and not owner_name
+        if not owner_matches and owner_id is not None and current_id is not None:
+            owner_matches = owner_id == current_id
+        if not owner_matches and owner_name and current_username:
+            owner_matches = owner_name == current_username
+        if not owner_matches:
+            cur.close()
+            raise HTTPException(status_code=403, detail="You are not permitted to delete this process.")
+
+        drop_query = sql.SQL("DROP TABLE IF EXISTS {table}").format(table=sql.Identifier(table_name))
+        cur.execute(drop_query)
+        cur.execute("DELETE FROM process_definitions WHERE id = %s", (process_id,))
+        conn.commit()
+        process_name = process_row["name"]
+        cur.close()
+
+    return {"success": True, "message": f"Process '{process_name}' deleted successfully"}
+
+
+@router.post("/catalog/{process_id}/custom-fields")
+def update_process_custom_fields(
+    process_id: int,
+    payload: ProcessCustomFieldsUpdate,
+    company_name: str = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Replace the custom field configuration for a process."""
+    custom_fields_payload = [
+        {
+            **field.dict(),
+            "field_name": field.field_name.strip(),
+            "field_label": field.field_label.strip(),
+            "field_type": field.field_type.lower(),
+        }
+        for field in payload.custom_fields
+    ]
+
+    with company_connection(company_name) as conn:
+        ensure_process_catalog(conn)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM process_definitions WHERE id = %s", (process_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Process not found")
+
+        process_row = dict(row)
+        if process_row.get("table_name") == "tb_entries":
+            cur.close()
+            raise HTTPException(status_code=400, detail="System processes cannot be modified.")
+
+        owner_id = process_row.get("created_by_id")
+        owner_name = process_row.get("created_by")
+        current_id = getattr(current_user, "id", None)
+        current_username = getattr(current_user, "username", None)
+        owner_matches = owner_id is None and not owner_name
+        if not owner_matches and owner_id is not None and current_id is not None:
+            owner_matches = owner_id == current_id
+        if not owner_matches and owner_name and current_username:
+            owner_matches = owner_name == current_username
+        if not owner_matches:
+            cur.close()
+            raise HTTPException(status_code=403, detail="You are not permitted to manage this process.")
+
+        table_name = row["table_name"]
+        sync_process_table_custom_fields(conn, table_name, custom_fields_payload)
+
+        cur.execute(
+            """
+            UPDATE process_definitions
+            SET custom_fields = %s,
+                updated_at = CURRENT_TIMESTAMP,
+                updated_by = %s,
+                updated_by_id = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                json.dumps(custom_fields_payload),
+                getattr(current_user, "username", None),
+                getattr(current_user, "id", None),
+                process_id,
+            ),
+        )
+        updated_row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        process_payload = build_process_payload(conn, dict(updated_row), current_user=current_user)
+
+    return {"message": "Custom fields updated successfully", "process": process_payload}
+
+
+@router.post("/catalog/{process_id}/settings")
+def update_process_settings(
+    process_id: int,
+    payload: ProcessSettingsUpdate,
+    company_name: str = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Update workflow and restriction settings for a process."""
+    with company_connection(company_name) as conn:
+        ensure_process_catalog(conn)
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT * FROM process_definitions WHERE id = %s", (process_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            raise HTTPException(status_code=404, detail="Process not found")
+
+        process_row = dict(row)
+        if process_row.get("table_name") == "tb_entries":
+            cur.close()
+            raise HTTPException(status_code=400, detail="System processes cannot be modified.")
+
+        owner_id = process_row.get("created_by_id")
+        owner_name = process_row.get("created_by")
+        current_id = getattr(current_user, "id", None)
+        current_username = getattr(current_user, "username", None)
+        owner_matches = owner_id is None and not owner_name
+        if not owner_matches and owner_id is not None and current_id is not None:
+            owner_matches = owner_id == current_id
+        if not owner_matches and owner_name and current_username:
+            owner_matches = owner_name == current_username
+        if not owner_matches:
+            cur.close()
+            raise HTTPException(status_code=403, detail="You are not permitted to manage this process.")
+
+        settings = normalise_process_settings(process_row.get("settings"))
+
+        if payload.workflow is not None:
+            workflow_payload = [
+                {
+                    "id": step.id,
+                    "type": step.type,
+                    "title": step.title or step.type.title(),
+                    "description": step.description or "",
+                    "enabled": step.enabled,
+                }
+                for step in payload.workflow
+            ]
+            settings["workflow"] = workflow_payload
+
+        if payload.restrictions is not None:
+            for key, restriction in payload.restrictions.items():
+                settings.setdefault("restrictions", {})
+                settings["restrictions"][key] = restriction.dict()
+
+        settings = normalise_process_settings(settings)
+
+        cur.execute(
+            """
+            UPDATE process_definitions
+            SET settings = %s,
+                updated_at = CURRENT_TIMESTAMP,
+                updated_by = %s,
+                updated_by_id = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                json.dumps(settings),
+                getattr(current_user, "username", None),
+                getattr(current_user, "id", None),
+                process_id,
+            ),
+        )
+        updated_row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        process_payload = build_process_payload(conn, dict(updated_row), current_user=current_user)
+
+    return {"message": "Process settings updated successfully", "process": process_payload}
 
 
 @router.get("/entries")
@@ -638,24 +1971,28 @@ def get_process_entries(
     period: str = Query(...),
     year: str = Query(...),
     company_name: str = Query(...),
+    process_id: int = Query(...),
+    current_user: User = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Return processed entries for a given period and year."""
     with company_connection(company_name) as conn:
-        ensure_tb_entries_schema(conn)
+        process = get_process_context(conn, process_id, current_user=current_user)
+        table_name = process["table_name"]
+        custom_columns = map_custom_fields_to_columns(process)
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
+        query = sql.SQL(
             """
             SELECT *
-            FROM tb_entries
+            FROM {table}
             WHERE period = %s AND year = %s
             ORDER BY created_at DESC, id DESC
-            """,
-            (period, year),
-        )
+            """
+        ).format(table=sql.Identifier(table_name))
+        cur.execute(query, (period, year))
         rows = cur.fetchall()
         cur.close()
 
-    entries = [serialise_entry(row) for row in rows]
+    entries = [serialise_entry(row, custom_columns) for row in rows]
     total_debit = sum(entry["debit_amount"] for entry in entries)
     total_credit = sum(entry["credit_amount"] for entry in entries)
 
@@ -674,19 +2011,22 @@ def get_process_entries(
 async def create_process_entry(
     entry: ManualEntry,
     company_name: str = Query(...),
-    request: Request = None,
+    process_id: int = Query(...),
+    current_user: User = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Create a manual process entry."""
     entry_payload = entry.dict()
     with company_connection(company_name) as conn:
+        process = get_process_context(conn, process_id, current_user=current_user)
+        custom_columns = map_custom_fields_to_columns(process)
         try:
-            inserted = insert_entry_record(conn, company_name, entry_payload, source="manual")
+            inserted = insert_entry_record(conn, company_name, process, entry_payload, source="manual")
             conn.commit()
         except Exception as exc:
             conn.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create entry: {exc}") from exc
 
-    return {"message": "Entry recorded successfully", "entry": serialise_entry(inserted)}
+    return {"message": "Entry recorded successfully", "entry": serialise_entry(inserted, custom_columns)}
 
 
 @router.put("/entries/{entry_id}")
@@ -694,12 +2034,16 @@ async def update_process_entry(
     entry_id: int,
     entry_update: ManualEntryUpdate,
     company_name: str = Query(...),
+    process_id: int = Query(...),
+    current_user: User = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Update an existing process entry."""
     payload = entry_update.dict(exclude_unset=True)
     with company_connection(company_name) as conn:
+        process = get_process_context(conn, process_id, current_user=current_user)
+        custom_columns = map_custom_fields_to_columns(process)
         try:
-            updated = update_entry_record(conn, company_name, entry_id, payload)
+            updated = update_entry_record(conn, company_name, process, entry_id, payload)
             conn.commit()
         except HTTPException:
             conn.rollback()
@@ -708,22 +2052,30 @@ async def update_process_entry(
             conn.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to update entry: {exc}") from exc
 
-    return {"message": "Entry updated successfully", "entry": serialise_entry(updated)}
+    return {"message": "Entry updated successfully", "entry": serialise_entry(updated, custom_columns)}
 
 
 @router.delete("/entries/{entry_id}")
-def delete_process_entry(entry_id: int, company_name: str = Query(...)) -> Dict[str, Any]:
+def delete_process_entry(
+    entry_id: int,
+    company_name: str = Query(...),
+    process_id: int = Query(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
     """Delete a process entry."""
     with company_connection(company_name) as conn:
-        ensure_tb_entries_schema(conn)
+        process = get_process_context(conn, process_id, current_user=current_user)
+        table_name = process["table_name"]
         cur = conn.cursor()
-        cur.execute("SELECT account_name FROM tb_entries WHERE id = %s", (entry_id,))
+        select_query = sql.SQL("SELECT account_name FROM {table} WHERE id = %s").format(table=sql.Identifier(table_name))
+        cur.execute(select_query, (entry_id,))
         existing = cur.fetchone()
         if not existing:
             cur.close()
             raise HTTPException(status_code=404, detail="Process entry not found")
 
-        cur.execute("DELETE FROM tb_entries WHERE id = %s", (entry_id,))
+        delete_query = sql.SQL("DELETE FROM {table} WHERE id = %s").format(table=sql.Identifier(table_name))
+        cur.execute(delete_query, (entry_id,))
         conn.commit()
         cur.close()
 
@@ -736,17 +2088,23 @@ async def upload_process_entries(
     period: str = Form(...),
     year: str = Form(...),
     file: UploadFile = File(...),
+    process_id: int = Query(...),
+    current_user: User = Depends(get_current_active_user),
 ) -> Dict[str, Any]:
     """Upload process entries via CSV/XLSX file."""
     contents = await file.read()
-    rows = parse_uploaded_entries(contents, file.filename)
+    with company_connection(company_name) as conn:
+        process = get_process_context(conn, process_id, current_user=current_user)
+
+    rows = parse_uploaded_entries(contents, file.filename, process.get("custom_fields"))
 
     inserted = 0
     errors: List[str] = []
     inserted_entries: List[Dict[str, Any]] = []
 
     with company_connection(company_name) as conn:
-        ensure_tb_entries_schema(conn)
+        process = get_process_context(conn, process_id, current_user=current_user)
+        custom_columns = map_custom_fields_to_columns(process)
         for index, row in enumerate(rows, start=1):
             payload = {
                 "account_code": row["account_code"],
@@ -761,12 +2119,13 @@ async def upload_process_entries(
                 "entry_category": row.get("entry_category"),
                 "counterparty": row.get("counterparty"),
                 "description": row.get("description"),
+                "custom_fields": row.get("custom_fields", {}),
             }
             try:
-                inserted_row = insert_entry_record(conn, company_name, payload, source="upload")
+                inserted_row = insert_entry_record(conn, company_name, process, payload, source="upload")
                 conn.commit()
                 inserted += 1
-                inserted_entries.append(serialise_entry(inserted_row))
+                inserted_entries.append(serialise_entry(inserted_row, custom_columns))
             except Exception as exc:
                 conn.rollback()
                 errors.append(f"Row {index}: {exc}")
@@ -776,6 +2135,133 @@ async def upload_process_entries(
         "inserted": inserted,
         "errors": errors[:50],
         "entries": inserted_entries,
+    }
+
+
+@router.post("/entries/rollforward")
+def rollforward_process_entries(
+    request: RollforwardRequest,
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Copy entries from one period/year to another within the same process."""
+    if (
+        request.source_period == request.target_period
+        and request.source_year == request.target_year
+    ):
+        raise HTTPException(status_code=400, detail="Source and target periods must differ.")
+
+    inserted = 0
+    updated = 0
+
+    with company_connection(request.company_name) as conn:
+        process = get_process_context(conn, request.process_id, current_user=current_user)
+        table_name = process["table_name"]
+        ensure_process_table_schema(conn, table_name)
+
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        select_source = sql.SQL(
+            """
+            SELECT *
+            FROM {table}
+            WHERE period = %s AND year = %s
+            """
+        ).format(table=sql.Identifier(table_name))
+        cur.execute(select_source, (request.source_period, request.source_year))
+        source_rows = cur.fetchall()
+
+        select_target = sql.SQL(
+            """
+            SELECT *
+            FROM {table}
+            WHERE period = %s AND year = %s
+            """
+        ).format(table=sql.Identifier(table_name))
+        cur.execute(select_target, (request.target_period, request.target_year))
+        target_rows = cur.fetchall()
+        cur.close()
+
+        target_index = {
+            (
+                row["account_code"],
+                row.get("entity_code"),
+                row.get("entry_category"),
+                row.get("counterparty"),
+            ): row
+            for row in target_rows
+        }
+
+        for row in source_rows:
+            entry_type = (
+                row.get("entry_type")
+                or ("debit" if decimal_to_float(row.get("debit_amount")) >= decimal_to_float(row.get("credit_amount")) else "credit")
+            ).lower()
+            amount = row["debit_amount"] if entry_type == "debit" else row["credit_amount"]
+            custom_fields = row.get("custom_fields")
+            if isinstance(custom_fields, str):
+                try:
+                    custom_fields = json.loads(custom_fields)
+                except json.JSONDecodeError:
+                    custom_fields = {}
+            elif not isinstance(custom_fields, dict):
+                custom_fields = {}
+
+            payload = {
+                "period": request.target_period,
+                "year": request.target_year,
+                "entity_code": row.get("entity_code"),
+                "account_code": row.get("account_code"),
+                "amount": decimal_to_float(amount),
+                "entry_type": entry_type,
+                "currency": row.get("currency"),
+                "entry_category": row.get("entry_category"),
+                "counterparty": row.get("counterparty"),
+                "description": row.get("description"),
+                "custom_fields": custom_fields,
+            }
+
+            key = (
+                row.get("account_code"),
+                row.get("entity_code"),
+                row.get("entry_category"),
+                row.get("counterparty"),
+            )
+
+            if key in target_index:
+                target_row = target_index[key]
+                try:
+                    update_entry_record(
+                        conn,
+                        request.company_name,
+                        process,
+                        target_row["id"],
+                        payload,
+                    )
+                    conn.commit()
+                    updated += 1
+                except Exception as exc:
+                    conn.rollback()
+                    raise HTTPException(status_code=500, detail=f"Failed to roll forward entry: {exc}") from exc
+            else:
+                try:
+                    insert_entry_record(
+                        conn,
+                        request.company_name,
+                        process,
+                        payload,
+                        source="rollforward",
+                    )
+                    conn.commit()
+                    inserted += 1
+                except Exception as exc:
+                    conn.rollback()
+                    raise HTTPException(status_code=500, detail=f"Failed to roll forward entry: {exc}") from exc
+
+    return {
+        "message": "Rollforward completed.",
+        "inserted": inserted,
+        "updated": updated,
+        "source": {"period": request.source_period, "year": request.source_year},
+        "target": {"period": request.target_period, "year": request.target_year},
     }
 
 
