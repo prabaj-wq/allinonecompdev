@@ -188,7 +188,7 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
 
   const loadDatabases = async () => {
     try {
-      const response = await fetch(`/api/database-management/databases?company_name=${encodeURIComponent(selectedCompany)}`, {
+      const response = await fetch(`/api/role-management/databases?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       if (response.ok) {
@@ -248,7 +248,7 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
   const handleSubmit = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/role-management/users`, {
+      const response = await fetch(`/api/role-management/users?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

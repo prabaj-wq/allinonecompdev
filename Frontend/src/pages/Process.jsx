@@ -1013,11 +1013,11 @@ const Process = () => {
                       </div>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {process.process_type || 'Process'}
-                        {process.readonly ? ' · Default workspace' : ''}
+                        {process.readonly ? ' ï¿½ Default workspace' : ''}
                       </p>
                       <p className="text-xs text-gray-400 dark:text-gray-500">
                         {process.entry_count || 0} entries
-                        {process.last_updated_at ? ` · Updated ${new Date(process.last_updated_at).toLocaleDateString()}` : ''}
+                        {process.last_updated_at ? ` ï¿½ Updated ${new Date(process.last_updated_at).toLocaleDateString()}` : ''}
                       </p>
                     </div>
                     <ChevronRight className={`h-4 w-4 transition ${isActive ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0 group-hover:opacity-100'}`} />
@@ -1295,7 +1295,7 @@ const Process = () => {
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+                              <span className="text-sm text-gray-400 dark:text-gray-500">ï¿½</span>
                             )}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
