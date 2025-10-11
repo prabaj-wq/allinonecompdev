@@ -1548,7 +1548,7 @@ const Process = () => {
           <>
             {processSummaryCards}
 
-            <section className="grid gap-6 xl:grid-cols-2">
+            <div className="grid gap-6 xl:grid-cols-2">
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
@@ -1665,7 +1665,7 @@ const Process = () => {
                   )}
                 </div>
               </div>
-            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Process entries</h2>
                 <button
@@ -2150,7 +2150,8 @@ const Process = () => {
                   </button>
                 </div>
               </div>
-            </section>
+            </div>
+            </div>
           </>
         ) : (
           <div className="flex h-full flex-1 items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
