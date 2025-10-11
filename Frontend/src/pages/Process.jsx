@@ -14,6 +14,9 @@ import {
   TrendingUp,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
   FileSpreadsheet,
   Building2,
   Layers,
@@ -24,6 +27,9 @@ import {
   CirclePlus,
   Loader2,
   Tag,
+  GitBranch,
+  Shield,
+  Repeat,
 } from 'lucide-react'
 
 const PROCESS_TYPES = ['Consolidation', 'Close', 'Forecast', 'Budget', 'Reporting', 'Operational']
@@ -36,6 +42,39 @@ const FIELD_TYPE_OPTIONS = [
   { value: 'select', label: 'Dropdown' },
   { value: 'boolean', label: 'Yes / No' },
   { value: 'sql_query', label: 'SQL Driven' },
+]
+
+const WORKFLOW_LIBRARY = [
+  {
+    type: 'original_input',
+    title: 'Original Input',
+    description: 'Ingest balances from flat files or connected sources.',
+    icon: Upload,
+  },
+  {
+    type: 'manual_entry',
+    title: 'Manual Entry',
+    description: 'Collect adjustments directly from process owners.',
+    icon: Edit,
+  },
+  {
+    type: 'excel',
+    title: 'Excel Import / Export',
+    description: 'Synchronise with spreadsheet templates for mass updates.',
+    icon: FileSpreadsheet,
+  },
+  {
+    type: 'journal_entries',
+    title: 'Journal Entries',
+    description: 'Generate and approve journals downstream.',
+    icon: GitBranch,
+  },
+  {
+    type: 'forms',
+    title: 'Forms & Analytics',
+    description: 'Design review forms and connect to dashboards.',
+    icon: Settings,
+  },
 ]
 
 const getDefaultPeriod = () => {
@@ -107,7 +146,13 @@ const Process = () => {
 
   const [period, setPeriod] = useState(getDefaultPeriod())
   const [year, setYear] = useState(getDefaultYear())
-  const [referenceData, setReferenceData] = useState({ accounts: [], entities: [], currencies: [] })
+  const [referenceData, setReferenceData] = useState({
+    accounts: [],
+    entities: [],
+    currencies: [],
+    accountHierarchies: [],
+    entityHierarchies: [],
+  })
   const [entries, setEntries] = useState([])
   const [summary, setSummary] = useState({ count: 0, total_debit: 0, total_credit: 0, net_balance: 0 })
 
@@ -140,6 +185,24 @@ const Process = () => {
   const [customFieldOptionsInput, setCustomFieldOptionsInput] = useState('')
   const [customFieldErrors, setCustomFieldErrors] = useState({})
   const [customFieldSaving, setCustomFieldSaving] = useState(false)
+  const [workflowDraft, setWorkflowDraft] = useState([])
+  const [restrictionDraft, setRestrictionDraft] = useState({
+    accounts: { mode: 'all', allowed_codes: [] },
+    entities: { mode: 'all', allowed_codes: [] },
+  })
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [rollforwardOpen, setRollforwardOpen] = useState(false)
+  const [rollforwardForm, setRollforwardForm] = useState({
+    source_period: getDefaultPeriod(),
+    source_year: getDefaultYear(),
+    target_period: getDefaultPeriod(),
+    target_year: getDefaultYear(),
+  })
+  const [rollforwardSubmitting, setRollforwardSubmitting] = useState(false)
+  const [accountRestrictionInput, setAccountRestrictionInput] = useState('')
+  const [entityRestrictionInput, setEntityRestrictionInput] = useState('')
+  const [accountHierarchySelection, setAccountHierarchySelection] = useState('')
+  const [entityHierarchySelection, setEntityHierarchySelection] = useState('')
 
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
@@ -208,6 +271,8 @@ const Process = () => {
           accounts: data.accounts || [],
           entities: data.entities || [],
           currencies: data.currencies || [],
+          accountHierarchies: data.account_hierarchies || [],
+          entityHierarchies: data.entity_hierarchies || [],
         })
       } catch (error) {
         console.error('Process: failed to load reference data', error)
@@ -257,6 +322,54 @@ const Process = () => {
     selectedProcessId,
   ])
 
+  useEffect(() => {
+    if (!activeProcess) {
+      setWorkflowDraft([])
+      setRestrictionDraft({
+        accounts: { mode: 'all', allowed_codes: [] },
+        entities: { mode: 'all', allowed_codes: [] },
+      })
+      setAccountRestrictionInput('')
+      setEntityRestrictionInput('')
+      setAccountHierarchySelection('')
+      setEntityHierarchySelection('')
+      return
+    }
+
+    const currentWorkflow = (activeProcess.settings?.workflow || []).map((step, index) => ({
+      id: step.id || step.type || `step_${index + 1}`,
+      type: step.type || step.id || `custom_${index + 1}`,
+      title: step.title || step.type || `Step ${index + 1}`,
+      description: step.description || '',
+      enabled: step.enabled !== false,
+    }))
+    setWorkflowDraft(currentWorkflow)
+
+    const restrictions = activeProcess.settings?.restrictions || {}
+    setRestrictionDraft({
+      accounts: {
+        mode: restrictions.accounts?.mode || 'all',
+        allowed_codes: [...new Set(restrictions.accounts?.allowed_codes || [])],
+      },
+      entities: {
+        mode: restrictions.entities?.mode || 'all',
+        allowed_codes: [...new Set(restrictions.entities?.allowed_codes || [])],
+      },
+    })
+    setAccountRestrictionInput('')
+    setEntityRestrictionInput('')
+    setAccountHierarchySelection('')
+    setEntityHierarchySelection('')
+  }, [activeProcess])
+
+  useEffect(() => {
+    setRollforwardForm((prev) => ({
+      ...prev,
+      target_period: period,
+      target_year: year,
+    }))
+  }, [period, year])
+
   const activeCustomFields = useMemo(() => normaliseCustomFieldList(activeProcess?.custom_fields || []), [activeProcess])
 
   const periodOptions = useMemo(
@@ -278,6 +391,30 @@ const Process = () => {
     () => referenceData.entities.find((entity) => entity.code === formState.entity_code),
     [referenceData.entities, formState.entity_code]
   )
+
+  const accountHierarchyOptions = useMemo(() => {
+    return (referenceData.accountHierarchies || []).flatMap((hierarchy) =>
+      (hierarchy.nodes || [])
+        .filter((node) => (node.codes || []).length > 0)
+        .map((node) => ({
+          value: `${hierarchy.id}:${node.id}`,
+          label: `${hierarchy.hierarchy_name || hierarchy.name} • ${node.name || node.code || 'Node'} (${(node.codes || []).length})`,
+          codes: node.codes || [],
+        }))
+    )
+  }, [referenceData.accountHierarchies])
+
+  const entityHierarchyOptions = useMemo(() => {
+    return (referenceData.entityHierarchies || []).flatMap((hierarchy) =>
+      (hierarchy.nodes || [])
+        .filter((node) => (node.codes || []).length > 0)
+        .map((node) => ({
+          value: `${hierarchy.id}:${node.id}`,
+          label: `${hierarchy.hierarchy_name || hierarchy.name} • ${node.name || node.code || 'Node'} (${(node.codes || []).length})`,
+          codes: node.codes || [],
+        }))
+    )
+  }, [referenceData.entityHierarchies])
 
   useEffect(() => {
     if (selectedEntity && !formState.currency) {
@@ -578,13 +715,14 @@ const Process = () => {
     setProcessDrawerOpen(true)
   }
 
-  const openEditProcessDrawer = () => {
-    if (!activeProcess) return
+  const openEditProcessDrawer = (processToEdit = activeProcess) => {
+    if (!processToEdit) return
+    setSelectedProcessId(processToEdit.id)
     setProcessForm({
-      id: activeProcess.id,
-      name: activeProcess.name || '',
-      description: activeProcess.description || '',
-      process_type: activeProcess.process_type || PROCESS_TYPES[0],
+      id: processToEdit.id,
+      name: processToEdit.name || '',
+      description: processToEdit.description || '',
+      process_type: processToEdit.process_type || PROCESS_TYPES[0],
     })
     setProcessDrawerMode('edit')
     setProcessDrawerOpen(true)
@@ -827,6 +965,231 @@ const Process = () => {
     }
   }
 
+  const handleRestrictionModeChange = (scope, mode) => {
+    setRestrictionDraft((prev) => ({
+      ...prev,
+      [scope]: {
+        ...prev[scope],
+        mode,
+        allowed_codes: mode === 'all' ? [] : prev[scope].allowed_codes,
+      },
+    }))
+  }
+
+  const handleToggleRestrictionCode = (scope, code) => {
+    if (!code) return
+    setRestrictionDraft((prev) => {
+      const current = new Set(prev[scope].allowed_codes || [])
+      if (current.has(code)) {
+        current.delete(code)
+      } else {
+        current.add(code)
+      }
+      return {
+        ...prev,
+        [scope]: {
+          ...prev[scope],
+          mode: current.size === 0 ? 'all' : 'restricted',
+          allowed_codes: Array.from(current),
+        },
+      }
+    })
+  }
+
+  const handleApplyHierarchySelection = (scope, optionValue, options) => {
+    if (!optionValue) return
+    const option = options.find((candidate) => candidate.value === optionValue)
+    if (!option) return
+    setRestrictionDraft((prev) => {
+      const current = new Set(prev[scope].allowed_codes || [])
+      option.codes.forEach((code) => current.add(code))
+      return {
+        ...prev,
+        [scope]: {
+          ...prev[scope],
+          mode: 'restricted',
+          allowed_codes: Array.from(current),
+        },
+      }
+    })
+  }
+
+  const handleClearRestrictions = (scope) => {
+    setRestrictionDraft((prev) => ({
+      ...prev,
+      [scope]: { mode: 'all', allowed_codes: [] },
+    }))
+    if (scope === 'accounts') {
+      setAccountRestrictionInput('')
+      setAccountHierarchySelection('')
+    } else {
+      setEntityRestrictionInput('')
+      setEntityHierarchySelection('')
+    }
+  }
+
+  const handleAddManualRestrictionCode = (scope, code) => {
+    const trimmed = code.trim()
+    if (!trimmed) return
+    handleRestrictionModeChange(scope, 'restricted')
+    handleToggleRestrictionCode(scope, trimmed.toUpperCase())
+    if (scope === 'accounts') {
+      setAccountRestrictionInput('')
+    } else {
+      setEntityRestrictionInput('')
+    }
+  }
+
+  const handleAddWorkflowStep = (type) => {
+    const libraryItem = WORKFLOW_LIBRARY.find((item) => item.type === type)
+    const timestamp = Date.now()
+    const identifier = `${type}_${timestamp}`
+    setWorkflowDraft((prev) => [
+      ...prev,
+      {
+        id: identifier,
+        type,
+        title: libraryItem?.title || type.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        description: libraryItem?.description || '',
+        enabled: true,
+      },
+    ])
+  }
+
+  const handleRemoveWorkflowStep = (stepId) => {
+    setWorkflowDraft((prev) => prev.filter((step) => step.id !== stepId))
+  }
+
+  const handleReorderWorkflowStep = (index, direction) => {
+    setWorkflowDraft((prev) => {
+      const next = [...prev]
+      const newIndex = index + direction
+      if (newIndex < 0 || newIndex >= next.length) {
+        return next
+      }
+      const [moved] = next.splice(index, 1)
+      next.splice(newIndex, 0, moved)
+      return next
+    })
+  }
+
+  const handleWorkflowToggle = (stepId) => {
+    setWorkflowDraft((prev) =>
+      prev.map((step) =>
+        step.id === stepId
+          ? {
+              ...step,
+              enabled: !step.enabled,
+            }
+          : step
+      )
+    )
+  }
+
+  const handleWorkflowFieldChange = (stepId, field, value) => {
+    setWorkflowDraft((prev) =>
+      prev.map((step) => (step.id === stepId ? { ...step, [field]: value } : step))
+    )
+  }
+
+  const handleSaveProcessSettings = async () => {
+    if (!activeProcess || !selectedCompany) return
+    setSettingsSaving(true)
+    try {
+      const payload = {
+        workflow: workflowDraft,
+        restrictions: restrictionDraft,
+      }
+
+      const response = await fetch(
+        `/api/process/catalog/${activeProcess.id}/settings?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: {
+            ...authHeaders(),
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || 'Failed to update process settings')
+      }
+
+      const data = await response.json()
+      if (data.process) {
+        setProcesses((prev) => prev.map((process) => (process.id === data.process.id ? data.process : process)))
+      }
+      showNotification('Process settings saved successfully.')
+    } catch (error) {
+      console.error('Process: settings update failed', error)
+      showNotification(error.message || 'Unable to save process settings.', 'error')
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  const openRollforwardModal = () => {
+    setRollforwardForm((prev) => ({
+      ...prev,
+      target_period: period,
+      target_year: year,
+      source_period: prev.source_period || period,
+      source_year: prev.source_year || year,
+    }))
+    setRollforwardOpen(true)
+  }
+
+  const closeRollforwardModal = () => {
+    setRollforwardOpen(false)
+  }
+
+  const handleRollforwardChange = (field, value) => {
+    setRollforwardForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleSubmitRollforward = async (event) => {
+    event.preventDefault()
+    if (!selectedCompany || !selectedProcessId) return
+    setRollforwardSubmitting(true)
+    try {
+      const response = await fetch(`/api/process/entries/rollforward`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders(),
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          process_id: selectedProcessId,
+          company_name: selectedCompany,
+          source_period: rollforwardForm.source_period,
+          source_year: rollforwardForm.source_year,
+          target_period: rollforwardForm.target_period,
+          target_year: rollforwardForm.target_year,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || 'Failed to roll forward entries')
+      }
+
+      const result = await response.json()
+      showNotification(`Rollforward complete: ${result.inserted} inserted, ${result.updated} updated.`)
+      setRollforwardOpen(false)
+      fetchEntries()
+    } catch (error) {
+      console.error('Process: rollforward failed', error)
+      showNotification(error.message || 'Unable to roll forward entries.', 'error')
+    } finally {
+      setRollforwardSubmitting(false)
+    }
+  }
+
   const renderCustomFieldInput = (field) => {
     const value = formState.custom_fields?.[field.field_name]
     const label = field.field_label || field.field_name
@@ -930,57 +1293,72 @@ const Process = () => {
         </div>
         <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{summary.count}</p>
         <p className="text-xs text-gray-500 dark:text-gray-400">Across {activeProcess?.name || 'selected process'}</p>
+        <button
+          type="button"
+          onClick={openRollforwardModal}
+          className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-indigo-600 transition hover:text-indigo-500 focus:outline-none dark:text-indigo-300"
+        >
+          <Repeat className="h-3.5 w-3.5" />
+          Rollforward entries
+        </button>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-          <span>Total debits</span>
+          <span>Original input balance</span>
           <ArrowUpRight className="h-4 w-4 text-emerald-500" />
         </div>
-        <p className="mt-2 text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-          {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(
-            summary.total_debit || 0
-          )}
+        <p className="mt-2 text-lg font-semibold text-emerald-600 dark:text-emerald-400">
+          Debits {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(summary.total_debit || 0)}
         </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Captured against {period} {year}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Credits {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(summary.total_credit || 0)}</p>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Net balance {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(summary.net_balance || 0)}</p>
+        <p className="mt-2 text-[11px] uppercase tracking-wide text-indigo-500 dark:text-indigo-300">Period {period} {year}</p>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-          <span>Total credits</span>
-          <ArrowDownRight className="h-4 w-4 text-rose-500" />
+          <span>Workflow canvas</span>
+          <GitBranch className="h-4 w-4 text-indigo-500" />
         </div>
-        <p className="mt-2 text-2xl font-semibold text-rose-600 dark:text-rose-400">
-          {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(
-            summary.total_credit || 0
+        <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{workflowDraft.length || 1} steps</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Design how data flows from input to reporting.</p>
+        <div className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
+          {workflowDraft.slice(0, 3).map((step) => (
+            <span key={step.id} className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
+              {step.title || step.type}
+            </span>
+          ))}
+          {workflowDraft.length > 3 && (
+            <span className="text-indigo-400 dark:text-indigo-300">+{workflowDraft.length - 3} more</span>
           )}
-        </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          Net balance {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(
-            summary.net_balance || 0
-          )}
-        </p>
+        </div>
       </div>
     </section>
   )
 
   return (
     <div className="flex h-full gap-6">
-      <aside className="w-72 shrink-0 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-            Process Catalogue
-          </h2>
-          <button
-            type="button"
-            onClick={openCreateProcessDrawer}
-            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500"
-          >
-            <Plus className="h-4 w-4" />
-            New
-          </button>
+      <aside className="relative z-10 w-72 shrink-0 space-y-4 lg:w-80">
+        <div className="sticky top-0 z-10 space-y-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-gray-800 dark:bg-gray-950/80 dark:supports-[backdrop-filter]:bg-gray-900/60">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+              Process Catalogue
+            </h2>
+            <button
+              type="button"
+              onClick={openCreateProcessDrawer}
+              className="relative z-10 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950"
+            >
+              <Plus className="h-4 w-4" />
+              New
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Create dedicated workspaces for each close, forecast, or operational process you manage.
+          </p>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 pr-1">
           {processLoading ? (
             <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading processes...
@@ -995,7 +1373,7 @@ const Process = () => {
               return (
                 <div
                   key={process.id}
-                  className={`group relative overflow-hidden rounded-xl border px-4 py-3 transition ${
+                  className={`group relative overflow-hidden rounded-2xl border px-4 py-3 transition focus-within:ring-2 focus-within:ring-indigo-500 ${
                     isActive
                       ? 'border-indigo-500 bg-indigo-50 shadow-sm dark:border-indigo-400 dark:bg-indigo-900/30'
                       : 'border-gray-200 bg-white hover:border-indigo-400 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-400 dark:hover:bg-indigo-900/20'
@@ -1004,34 +1382,61 @@ const Process = () => {
                   <button
                     type="button"
                     onClick={() => setSelectedProcessId(process.id)}
-                    className="flex w-full items-start justify-between text-left"
+                    className="flex w-full items-start justify-between gap-4 text-left"
                   >
-                    <div>
+                    <div className="flex flex-1 flex-col gap-1">
                       <div className="flex items-center gap-2">
-                        <Layers className="h-4 w-4 text-indigo-500" />
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{process.name}</h3>
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
+                          <Layers className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-white">{process.name}</h3>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                            <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 font-medium dark:bg-indigo-900/40">
+                              {process.process_type || 'Process'}
+                            </span>
+                            {process.readonly && <span className="text-[11px] text-gray-500 dark:text-gray-400">Default workspace</span>}
+                          </div>
+                        </div>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {process.process_type || 'Process'}
-                        {process.readonly ? ' � Default workspace' : ''}
-                      </p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500">
-                        {process.entry_count || 0} entries
-                        {process.last_updated_at ? ` � Updated ${new Date(process.last_updated_at).toLocaleDateString()}` : ''}
-                      </p>
+                      {process.description ? (
+                        <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{process.description}</p>
+                      ) : (
+                        <p className="mt-2 text-xs italic text-gray-400 dark:text-gray-500">Add a description to guide your team.</p>
+                      )}
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                        <span>{process.entry_count || 0} entries</span>
+                        {process.last_updated_at && (
+                          <span>Updated {new Date(process.last_updated_at).toLocaleDateString()}</span>
+                        )}
+                      </div>
                     </div>
-                    <ChevronRight className={`h-4 w-4 transition ${isActive ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0 group-hover:opacity-100'}`} />
+                    <ChevronRight className={`mt-1 h-4 w-4 flex-shrink-0 text-indigo-400 transition ${isActive ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0 group-hover:opacity-100'}`} />
                   </button>
                   {!process.readonly && (
-                    <button
-                      type="button"
-                      disabled={processDeletingId === process.id}
-                      onClick={() => handleDeleteProcess(process)}
-                      className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:hover:bg-rose-900/40"
-                      title="Delete process"
+                    <div
+                      className={`pointer-events-auto absolute right-3 top-3 flex items-center gap-1 rounded-full bg-white/70 p-1 shadow-sm transition dark:bg-gray-950/70 ${
+                        processDeletingId === process.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
                     >
-                      {processDeletingId === process.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditProcessDrawer(process)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+                        title="Edit process details"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={processDeletingId === process.id}
+                        onClick={() => handleDeleteProcess(process)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300 dark:hover:bg-rose-900/40"
+                        title="Delete process"
+                      >
+                        {processDeletingId === process.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                   )}
                 </div>
               )
@@ -1116,21 +1521,31 @@ const Process = () => {
 
             <section className="grid gap-6 xl:grid-cols-2">
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                       {entryDrawerMode === 'edit' ? 'Edit entry' : 'Create manual entry'}
                     </h2>
                     <p className="text-xs text-gray-500 dark:text-gray-400">Capture adjustments directly into this process.</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={openCreateEntryDrawer}
-                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
-                  >
-                    <Plus className="h-4 w-4" />
-                    New Entry
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={openCreateEntryDrawer}
+                      className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
+                    >
+                      <Plus className="h-4 w-4" />
+                      New entry
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openRollforwardModal}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400"
+                    >
+                      <Repeat className="h-4 w-4" />
+                      Rollforward
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -1140,20 +1555,26 @@ const Process = () => {
                 >
                   Click to open the entry workspace panel
                 </button>
+
+                <div className="mt-6 space-y-2 rounded-xl bg-indigo-50/60 p-4 text-xs text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200">
+                  <p className="font-semibold uppercase tracking-wide">Original input tips</p>
+                  <ul className="space-y-1">
+                    <li>Use custom fields to capture approvals, narratives, or allocation drivers.</li>
+                    <li>Rollforward keeps existing entries and updates only matching lines.</li>
+                  </ul>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Bulk import</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      Upload CSV or XLSX files using the process-specific template.
-                    </p>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Original input import</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Upload CSV or XLSX files using the process-specific template.</p>
                   </div>
                   <button
                     type="button"
                     onClick={downloadTemplate}
-                    className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-300"
+                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
                   >
                     <Download className="h-4 w-4" />
                     Template
@@ -1162,12 +1583,8 @@ const Process = () => {
 
                 <div className="mt-6 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center dark:border-gray-600 dark:bg-gray-800">
                   <FileSpreadsheet className="mx-auto h-10 w-10 text-indigo-500" />
-                  <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-200">
-                    Drag a CSV/XLSX file here, or click to browse.
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Required columns: entity_code, account_code, amount. Custom fields may be added as additional columns.
-                  </p>
+                  <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-200">Drag a CSV/XLSX file here, or click to browse.</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Required columns: entity_code, account_code, amount. Custom fields may be added as columns.</p>
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xlsm"
@@ -1179,7 +1596,7 @@ const Process = () => {
                       Selected file: <span className="font-medium">{uploadState.file.name}</span>
                     </p>
                   )}
-                  <div className="mt-4 flex justify-center">
+                  <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
                     <button
                       type="button"
                       onClick={handleUploadSubmit}
@@ -1188,6 +1605,14 @@ const Process = () => {
                     >
                       <Upload className="h-4 w-4" />
                       {uploadState.uploading ? 'Importing...' : 'Import balances'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openRollforwardModal}
+                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400"
+                    >
+                      <Repeat className="h-4 w-4" />
+                      Update from prior period
                     </button>
                   </div>
                   {uploadState.errors.length > 0 && (
@@ -1201,13 +1626,391 @@ const Process = () => {
                           </li>
                         ))}
                         {uploadState.errors.length > 5 && (
-                          <li className="text-amber-600 dark:text-amber-300">...
+                          <li className="text-amber-600 dark:text-amber-300">
+                            ...
                             {uploadState.errors.length - 5} more
                           </li>
                         )}
                       </ul>
                     </div>
                   )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900 xl:col-span-2">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow orchestration</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Pull workflow blocks onto the canvas to mirror your process.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {WORKFLOW_LIBRARY.map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <button
+                          key={item.type}
+                          type="button"
+                          onClick={() => handleAddWorkflowStep(item.type)}
+                          className="inline-flex items-center gap-2 rounded-full border border-indigo-200 px-3 py-1 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {item.title}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  {workflowDraft.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500 dark:border-gray-600 dark:bg-gray-800/70 dark:text-gray-300">
+                      Add steps from the library to start designing your flow.
+                    </div>
+                  ) : (
+                    workflowDraft.map((step, index) => {
+                      const libraryItem = WORKFLOW_LIBRARY.find((item) => item.type === step.type)
+                      const StepIcon = libraryItem?.icon || Layers
+                      return (
+                        <div key={step.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="flex flex-1 items-start gap-3">
+                              <span className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
+                                <StepIcon className="h-5 w-5" />
+                              </span>
+                              <div className="flex-1 space-y-3">
+                                <input
+                                  type="text"
+                                  value={step.title}
+                                  onChange={(event) => handleWorkflowFieldChange(step.id, 'title', event.target.value)}
+                                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                />
+                                <textarea
+                                  value={step.description}
+                                  onChange={(event) => handleWorkflowFieldChange(step.id, 'description', event.target.value)}
+                                  rows={2}
+                                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                                  placeholder="Explain how this block is used..."
+                                />
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-start gap-2 lg:items-end">
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                                  step.enabled
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                    : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                }`}
+                              >
+                                <CirclePlus className="h-3.5 w-3.5" />
+                                {step.enabled ? 'Active' : 'Disabled'}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleWorkflowToggle(step.id)}
+                                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400"
+                                >
+                                  Toggle
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReorderWorkflowStep(index, -1)}
+                                  disabled={index === 0}
+                                  className="inline-flex items-center rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
+                                >
+                                  <ArrowUp className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReorderWorkflowStep(index, 1)}
+                                  disabled={index === workflowDraft.length - 1}
+                                  className="inline-flex items-center rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
+                                >
+                                  <ArrowDown className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveWorkflowStep(step.id)}
+                                  className="inline-flex items-center rounded-lg border border-gray-200 px-2 py-1 text-xs text-rose-500 transition hover:border-rose-400 hover:text-rose-600 dark:border-gray-700 dark:text-rose-300"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                {workflowDraft.length > 0 && (
+                  <div className="mt-6 overflow-x-auto">
+                    <div className="flex items-center gap-4 pb-2">
+                      {workflowDraft.map((step, index) => {
+                        const libraryItem = WORKFLOW_LIBRARY.find((item) => item.type === step.type)
+                        const StepIcon = libraryItem?.icon || Layers
+                        return (
+                          <React.Fragment key={step.id}>
+                            <div className="flex min-w-[160px] flex-col gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 dark:border-indigo-400/40 dark:bg-indigo-900/20">
+                              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-200">
+                                <StepIcon className="h-4 w-4" />
+                                <span className="text-xs font-semibold uppercase tracking-wide">{step.type.replace(/_/g, ' ')}</span>
+                              </div>
+                              <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{step.title || step.type}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-300">{step.description || 'Draft step description'}</p>
+                            </div>
+                            {index < workflowDraft.length - 1 && <ArrowRight className="h-4 w-4 text-indigo-400 dark:text-indigo-300" />}
+                          </React.Fragment>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 lg:flex-row lg:items-center lg:justify-between">
+                  <p>Save to persist workflow and restriction changes to the process catalogue.</p>
+                  <button
+                    type="button"
+                    onClick={handleSaveProcessSettings}
+                    disabled={settingsSaving}
+                    className="inline-flex items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+                  >
+                    <Save className="h-4 w-4" />
+                    {settingsSaving ? 'Saving...' : 'Save settings'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900 xl:col-span-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Access restrictions</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Limit which accounts and entities can be used in this process.</p>
+                  </div>
+                  <Shield className="h-5 w-5 text-indigo-500" />
+                </div>
+
+                <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Accounts</h3>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRestrictionModeChange('accounts', 'all')}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            restrictionDraft.accounts.mode === 'all'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                          }`}
+                        >
+                          All accounts
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRestrictionModeChange('accounts', 'restricted')}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            restrictionDraft.accounts.mode === 'restricted'
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
+                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                          }`}
+                        >
+                          Restricted list
+                        </button>
+                      </div>
+                    </div>
+                    {restrictionDraft.accounts.mode === 'restricted' && (
+                      <div className="mt-4 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={accountRestrictionInput}
+                            onChange={(event) => setAccountRestrictionInput(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                handleAddManualRestrictionCode('accounts', accountRestrictionInput)
+                              }
+                            }}
+                            placeholder="Add account code (e.g. 4000)"
+                            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddManualRestrictionCode('accounts', accountRestrictionInput)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {accountHierarchyOptions.length > 0 && (
+                          <select
+                            value={accountHierarchySelection}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setAccountHierarchySelection(value)
+                              if (value) {
+                                handleApplyHierarchySelection('accounts', value, accountHierarchyOptions)
+                                setAccountHierarchySelection('')
+                              }
+                            }}
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                          >
+                            <option value="">Apply hierarchy grouping...</option>
+                            {accountHierarchyOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {(restrictionDraft.accounts.allowed_codes || []).map((code) => (
+                            <button
+                              key={code}
+                              type="button"
+                              onClick={() => handleToggleRestrictionCode('accounts', code)}
+                              className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-200"
+                            >
+                              {code}
+                              <X className="h-3 w-3" />
+                            </button>
+                          ))}
+                        </div>
+                        {(restrictionDraft.accounts.allowed_codes || []).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleClearRestrictions('accounts')}
+                            className="text-xs font-medium text-rose-500 hover:text-rose-600 dark:text-rose-300"
+                          >
+                            Clear accounts
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Entities</h3>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRestrictionModeChange('entities', 'all')}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            restrictionDraft.entities.mode === 'all'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                          }`}
+                        >
+                          All entities
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRestrictionModeChange('entities', 'restricted')}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            restrictionDraft.entities.mode === 'restricted'
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
+                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                          }`}
+                        >
+                          Restricted list
+                        </button>
+                      </div>
+                    </div>
+                    {restrictionDraft.entities.mode === 'restricted' && (
+                      <div className="mt-4 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            value={entityRestrictionInput}
+                            onChange={(event) => setEntityRestrictionInput(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                handleAddManualRestrictionCode('entities', entityRestrictionInput)
+                              }
+                            }}
+                            placeholder="Add entity code (e.g. US01)"
+                            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddManualRestrictionCode('entities', entityRestrictionInput)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        {entityHierarchyOptions.length > 0 && (
+                          <select
+                            value={entityHierarchySelection}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setEntityHierarchySelection(value)
+                              if (value) {
+                                handleApplyHierarchySelection('entities', value, entityHierarchyOptions)
+                                setEntityHierarchySelection('')
+                              }
+                            }}
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                          >
+                            <option value="">Apply hierarchy grouping...</option>
+                            {entityHierarchyOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {(restrictionDraft.entities.allowed_codes || []).map((code) => (
+                            <button
+                              key={code}
+                              type="button"
+                              onClick={() => handleToggleRestrictionCode('entities', code)}
+                              className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-200"
+                            >
+                              {code}
+                              <X className="h-3 w-3" />
+                            </button>
+                          ))}
+                        </div>
+                        {(restrictionDraft.entities.allowed_codes || []).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleClearRestrictions('entities')}
+                            className="text-xs font-medium text-rose-500 hover:text-rose-600 dark:text-rose-300"
+                          >
+                            Clear entities
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 lg:flex-row lg:items-center lg:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleClearRestrictions('accounts')
+                      handleClearRestrictions('entities')
+                    }}
+                    className="text-xs font-semibold text-rose-500 hover:text-rose-600 dark:text-rose-300"
+                  >
+                    Reset restrictions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveProcessSettings}
+                    disabled={settingsSaving}
+                    className="inline-flex items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+                  >
+                    <Save className="h-4 w-4" />
+                    {settingsSaving ? 'Saving...' : 'Save settings'}
+                  </button>
                 </div>
               </div>
             </section>
@@ -1509,6 +2312,106 @@ const Process = () => {
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {rollforwardOpen && (
+        <div className="fixed inset-0 z-40 flex">
+          <div className="absolute inset-0 bg-gray-900/40" onClick={closeRollforwardModal} />
+          <div className="ml-auto flex h-full w-full max-w-lg flex-col bg-white shadow-xl dark:bg-gray-900">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
+                  <Repeat className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Rollforward entries</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Copy balances from a prior period without overwriting existing lines.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeRollforwardModal}
+                className="rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitRollforward} className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="label">Source period</label>
+                  <select
+                    value={rollforwardForm.source_period}
+                    onChange={(event) => handleRollforwardChange('source_period', event.target.value)}
+                    className="form-select"
+                  >
+                    {periodOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Source year</label>
+                  <select
+                    value={rollforwardForm.source_year}
+                    onChange={(event) => handleRollforwardChange('source_year', event.target.value)}
+                    className="form-select"
+                  >
+                    {yearOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="label">Target period</label>
+                  <select
+                    value={rollforwardForm.target_period}
+                    onChange={(event) => handleRollforwardChange('target_period', event.target.value)}
+                    className="form-select"
+                  >
+                    {periodOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Target year</label>
+                  <select
+                    value={rollforwardForm.target_year}
+                    onChange={(event) => handleRollforwardChange('target_year', event.target.value)}
+                    className="form-select"
+                  >
+                    {yearOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-3 text-xs text-indigo-700 dark:border-indigo-400/40 dark:bg-indigo-900/20 dark:text-indigo-200">
+                Existing entries in the target period are updated by matching on account, entity, category, and counterparty. New lines are created for unmatched rows.
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <button type="button" onClick={closeRollforwardModal} className="btn-secondary" disabled={rollforwardSubmitting}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary inline-flex items-center gap-2" disabled={rollforwardSubmitting}>
+                  <Repeat className="h-4 w-4" />
+                  {rollforwardSubmitting ? 'Rolling forward...' : 'Run rollforward'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
