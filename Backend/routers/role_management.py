@@ -415,39 +415,8 @@ def ensure_company_record(cursor: RealDictCursor, company_name: str) -> Dict[str
     if existing:
         return dict(existing)
     
-    # If "Default Company" is requested but doesn't exist, try to find the first company
-    if company_name == "Default Company":
-        cursor.execute(
-            "SELECT id, name, code FROM companies ORDER BY created_at ASC LIMIT 1"
-        )
-        first_company = cursor.fetchone()
-        if first_company:
-            return dict(first_company)
-
-    base_code = "".join(ch.lower() for ch in company_name if ch.isalnum())
-    base_code = base_code[:20] or "company"
-    candidate_code = base_code
-
-    attempt = 0
-    while True:
-        cursor.execute(
-            "SELECT 1 FROM companies WHERE code = %s",
-            (candidate_code,)
-        )
-        if not cursor.fetchone():
-            break
-        attempt += 1
-        candidate_code = f"{base_code}-{secrets.token_hex(2)}"
-
-    cursor.execute(
-        """
-        INSERT INTO companies (name, code, environment_type, industry, status, created_at, updated_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id, name, code
-        """,
-        (company_name, candidate_code, "production", "General", "active")
-    )
-    return dict(cursor.fetchone())
+    # If no company found, raise an error instead of creating default
+    raise HTTPException(status_code=404, detail=f"Company '{company_name}' not found. Please complete onboarding first.")
 
 
 def fetch_users_for_company(company_name: str, role_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -622,74 +591,224 @@ def get_client_info(request: Request):
 
 # Role Management Endpoints
 @router.get("/system-modules")
-async def get_system_modules(company_name: str = Query(...)):
-    """Get all system modules and tabs for permission assignment"""
+async def get_system_modules(company_name: str = Query(...), role_id: Optional[int] = Query(None)):
+    """Get all system modules and pages for permission assignment with inheritance"""
     try:
+        # Get role permissions if role_id is provided
+        role_permissions = {}
+        if role_id:
+            try:
+                conn = psycopg2.connect(
+                    host=os.getenv("DB_HOST", "postgres"),
+                    database=os.getenv("DB_NAME", "epm_tool"),
+                    user=os.getenv("DB_USER", "postgres"),
+                    password=os.getenv("DB_PASSWORD", "epm_password"),
+                    port=os.getenv("DB_PORT", "5432")
+                )
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                
+                cur.execute("""
+                    SELECT page_permissions FROM custom_roles 
+                    WHERE id = %s AND company_id = %s
+                """, (role_id, company_name))
+                
+                role_data = cur.fetchone()
+                if role_data and role_data['page_permissions']:
+                    role_permissions = json.loads(role_data['page_permissions']) if isinstance(role_data['page_permissions'], str) else role_data['page_permissions']
+                
+                cur.close()
+                conn.close()
+            except Exception as e:
+                print(f"Error getting role permissions: {e}")
+
+        # Define all available pages with proper structure
         modules = {
             "core_system": {
                 "name": "Core System",
                 "icon": "settings",
-                "tabs": [
-                    {"id": "dashboard", "name": "Dashboard", "description": "Main dashboard access"},
-                    {"id": "user_management", "name": "User Management", "description": "Manage users and profiles"},
-                    {"id": "company_settings", "name": "Company Settings", "description": "Company configuration"},
-                    {"id": "system_logs", "name": "System Logs", "description": "View system logs"}
+                "pages": [
+                    {
+                        "path": "/dashboard",
+                        "name": "Dashboard", 
+                        "description": "Main dashboard access",
+                        "risk_level": "low",
+                        "inherited": role_permissions.get("/dashboard", False) if role_id else False,
+                        "enabled": role_permissions.get("/dashboard", False) if role_id else False
+                    }
                 ]
             },
-            "financial_planning": {
-                "name": "Financial Planning",
+            "accounting": {
+                "name": "Accounting & Finance",
                 "icon": "calculator",
-                "tabs": [
-                    {"id": "budget_planning", "name": "Budget Planning", "description": "Create and manage budgets"},
-                    {"id": "forecasting", "name": "Forecasting", "description": "Financial forecasting tools"},
-                    {"id": "variance_analysis", "name": "Variance Analysis", "description": "Budget vs actual analysis"}
-                ]
-            },
-            "entity_management": {
-                "name": "Entity Management", 
-                "icon": "building",
-                "tabs": [
-                    {"id": "entity_hierarchy", "name": "Entity Hierarchy", "description": "Manage entity structures"},
-                    {"id": "entity_data", "name": "Entity Data", "description": "Entity master data"},
-                    {"id": "consolidation_rules", "name": "Consolidation Rules", "description": "Define consolidation logic"}
-                ]
-            },
-            "account_management": {
-                "name": "Account Management",
-                "icon": "list",
-                "tabs": [
-                    {"id": "chart_of_accounts", "name": "Chart of Accounts", "description": "Manage account structures"},
-                    {"id": "account_mapping", "name": "Account Mapping", "description": "Map accounts across entities"},
-                    {"id": "account_reconciliation", "name": "Account Reconciliation", "description": "Account reconciliation tools"}
+                "pages": [
+                    {
+                        "path": "/accounts",
+                        "name": "Chart of Accounts",
+                        "description": "Manage account structures",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/accounts", False) if role_id else False,
+                        "enabled": role_permissions.get("/accounts", False) if role_id else False
+                    },
+                    {
+                        "path": "/entities",
+                        "name": "Entity Management",
+                        "description": "Manage entity structures",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/entities", False) if role_id else False,
+                        "enabled": role_permissions.get("/entities", False) if role_id else False
+                    },
+                    {
+                        "path": "/consolidation",
+                        "name": "Consolidation",
+                        "description": "Financial consolidation",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/consolidation", False) if role_id else False,
+                        "enabled": role_permissions.get("/consolidation", False) if role_id else False
+                    }
                 ]
             },
             "reporting": {
                 "name": "Reporting & Analytics",
                 "icon": "bar-chart",
-                "tabs": [
-                    {"id": "financial_reports", "name": "Financial Reports", "description": "Standard financial reports"},
-                    {"id": "custom_reports", "name": "Custom Reports", "description": "Build custom reports"},
-                    {"id": "analytics_dashboard", "name": "Analytics Dashboard", "description": "Advanced analytics"}
+                "pages": [
+                    {
+                        "path": "/financial-statements",
+                        "name": "Financial Statements",
+                        "description": "Generate financial statements",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/financial-statements", False) if role_id else False,
+                        "enabled": role_permissions.get("/financial-statements", False) if role_id else False
+                    },
+                    {
+                        "path": "/fst-items",
+                        "name": "FST Items",
+                        "description": "Financial statement templates",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/fst-items", False) if role_id else False,
+                        "enabled": role_permissions.get("/fst-items", False) if role_id else False
+                    },
+                    {
+                        "path": "/trial-balance",
+                        "name": "Trial Balance",
+                        "description": "Trial balance reports",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/trial-balance", False) if role_id else False,
+                        "enabled": role_permissions.get("/trial-balance", False) if role_id else False
+                    },
+                    {
+                        "path": "/real-time-analytics",
+                        "name": "Real-time Analytics",
+                        "description": "Advanced analytics dashboard",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/real-time-analytics", False) if role_id else False,
+                        "enabled": role_permissions.get("/real-time-analytics", False) if role_id else False
+                    },
+                    {
+                        "path": "/narrative-reporting",
+                        "name": "Narrative Reporting",
+                        "description": "Narrative reporting tools",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/narrative-reporting", False) if role_id else False,
+                        "enabled": role_permissions.get("/narrative-reporting", False) if role_id else False
+                    }
+                ]
+            },
+            "advanced": {
+                "name": "Advanced Features",
+                "icon": "cog",
+                "pages": [
+                    {
+                        "path": "/advanced-features",
+                        "name": "Advanced Features",
+                        "description": "Advanced system features",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/advanced-features", False) if role_id else False,
+                        "enabled": role_permissions.get("/advanced-features", False) if role_id else False
+                    },
+                    {
+                        "path": "/etl",
+                        "name": "ETL Management",
+                        "description": "Data extraction and transformation",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/etl", False) if role_id else False,
+                        "enabled": role_permissions.get("/etl", False) if role_id else False
+                    }
+                ]
+            },
+            "administration": {
+                "name": "Administration",
+                "icon": "shield",
+                "pages": [
+                    {
+                        "path": "/rolemanagement",
+                        "name": "Role Management",
+                        "description": "Manage user roles and permissions",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/rolemanagement", False) if role_id else False,
+                        "enabled": role_permissions.get("/rolemanagement", False) if role_id else False
+                    },
+                    {
+                        "path": "/system-management",
+                        "name": "System Management",
+                        "description": "System configuration and settings",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/system-management", False) if role_id else False,
+                        "enabled": role_permissions.get("/system-management", False) if role_id else False
+                    },
+                    {
+                        "path": "/database-management",
+                        "name": "Database Management",
+                        "description": "Database administration",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/database-management", False) if role_id else False,
+                        "enabled": role_permissions.get("/database-management", False) if role_id else False
+                    },
+                    {
+                        "path": "/api-management",
+                        "name": "API Management",
+                        "description": "API configuration and monitoring",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/api-management", False) if role_id else False,
+                        "enabled": role_permissions.get("/api-management", False) if role_id else False
+                    },
+                    {
+                        "path": "/audit",
+                        "name": "Audit Logs",
+                        "description": "System audit and compliance",
+                        "risk_level": "high",
+                        "inherited": role_permissions.get("/audit", False) if role_id else False,
+                        "enabled": role_permissions.get("/audit", False) if role_id else False
+                    }
                 ]
             },
             "workflow": {
                 "name": "Workflow & Approval",
                 "icon": "workflow",
-                "tabs": [
-                    {"id": "approval_workflows", "name": "Approval Workflows", "description": "Manage approval processes"},
-                    {"id": "task_management", "name": "Task Management", "description": "Track tasks and assignments"},
-                    {"id": "notification_center", "name": "Notification Center", "description": "System notifications"}
-                ]
-            },
-            "database_access": {
-                "name": "Database Access",
-                "icon": "database",
-                "databases": [
-                    {"id": "epm_tool", "name": "Main EPM Database", "permissions": ["read", "write", "execute"]},
-                    {"id": "axes_entity", "name": "Entity Database", "permissions": ["read", "write", "execute"]},
-                    {"id": "axes_account", "name": "Account Database", "permissions": ["read", "write", "execute"]},
-                    {"id": "reporting_db", "name": "Reporting Database", "permissions": ["read", "execute"]},
-                    {"id": "audit_db", "name": "Audit Database", "permissions": ["read"]}
+                "pages": [
+                    {
+                        "path": "/approval-workflows",
+                        "name": "Approval Workflows",
+                        "description": "Manage approval processes",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/approval-workflows", False) if role_id else False,
+                        "enabled": role_permissions.get("/approval-workflows", False) if role_id else False
+                    },
+                    {
+                        "path": "/task-management",
+                        "name": "Task Management",
+                        "description": "Track tasks and assignments",
+                        "risk_level": "medium",
+                        "inherited": role_permissions.get("/task-management", False) if role_id else False,
+                        "enabled": role_permissions.get("/task-management", False) if role_id else False
+                    },
+                    {
+                        "path": "/notification-center",
+                        "name": "Notification Center",
+                        "description": "System notifications",
+                        "risk_level": "low",
+                        "inherited": role_permissions.get("/notification-center", False) if role_id else False,
+                        "enabled": role_permissions.get("/notification-center", False) if role_id else False
+                    }
                 ]
             }
         }
@@ -1481,9 +1600,35 @@ async def get_user_activity(
             conn.close()
 
 @router.get("/databases")
-async def get_available_databases(company_name: str = Query(...)):
-    """Get list of available databases for access assignment"""
+async def get_available_databases(company_name: str = Query(...), role_id: Optional[int] = Query(None)):
+    """Get list of available databases for access assignment with inheritance info"""
     try:
+        # Get role database permissions if role_id is provided
+        role_database_permissions = {}
+        if role_id:
+            try:
+                role_conn = psycopg2.connect(
+                    host=os.getenv("DB_HOST", "postgres"),
+                    database=os.getenv("DB_NAME", "epm_tool"),
+                    user=os.getenv("DB_USER", "postgres"),
+                    password=os.getenv("DB_PASSWORD", "epm_password"),
+                    port=os.getenv("DB_PORT", "5432")
+                )
+                role_cur = role_conn.cursor(cursor_factory=RealDictCursor)
+                
+                role_cur.execute("""
+                    SELECT database_permissions FROM custom_roles 
+                    WHERE id = %s AND company_id = %s
+                """, (role_id, company_name))
+                
+                role_data = role_cur.fetchone()
+                if role_data and role_data['database_permissions']:
+                    role_database_permissions = json.loads(role_data['database_permissions']) if isinstance(role_data['database_permissions'], str) else role_data['database_permissions']
+                
+                role_cur.close()
+                role_conn.close()
+            except Exception as e:
+                print(f"Error getting role database permissions: {e}")
         
         # Try to connect to PostgreSQL and get actual databases
         try:
@@ -1502,37 +1647,75 @@ async def get_available_databases(company_name: str = Query(...)):
                 SELECT datname 
                 FROM pg_database 
                 WHERE datistemplate = false 
-                AND datname NOT IN ('postgres', 'template0', 'template1')
+                AND datname NOT IN ('template0', 'template1')
                 ORDER BY datname
             """)
             
-            databases = [row['datname'] for row in cur.fetchall()]
+            database_names = [row['datname'] for row in cur.fetchall()]
             
             cur.close()
             conn.close()
             
-            return {"databases": databases}
-            
         except psycopg2.Error as e:
             print(f"PostgreSQL connection error: {e}")
-            # Return your actual databases from the screenshot
-            actual_databases = [
+            # Return your actual databases from the logs
+            database_names = [
                 "default_company",
                 "epm_tool", 
-                "funfusion360",
-                "my_company",
-                "postgres",
-                "production_test_company",
-                "template0",
-                "template1",
-                "test_company"
+                "finfsuion",  # This is the actual company database
+                "postgres"
             ]
-            return {"databases": actual_databases}
+        
+        # Format databases with inheritance information
+        databases_with_inheritance = []
+        for db_name in database_names:
+            inherited_perms = role_database_permissions.get(db_name, {}) if role_id else {}
+            
+            databases_with_inheritance.append({
+                "name": db_name,
+                "display_name": db_name.replace('_', ' ').title(),
+                "inherited_permissions": {
+                    "read": inherited_perms.get("read", False),
+                    "write": inherited_perms.get("write", False),
+                    "execute": inherited_perms.get("execute", False)
+                },
+                "permissions": {
+                    "read": inherited_perms.get("read", False),
+                    "write": inherited_perms.get("write", False),
+                    "execute": inherited_perms.get("execute", False)
+                },
+                "is_system_db": db_name in ["postgres", "template0", "template1"],
+                "is_company_db": db_name not in ["postgres", "template0", "template1", "epm_tool"]
+            })
+        
+        return {
+            "databases": databases_with_inheritance,
+            "role_id": role_id,
+            "total_databases": len(databases_with_inheritance)
+        }
             
     except Exception as e:
         print(f"General error in get_databases: {e}")
-        # Return basic fallback
-        return {"databases": ["epm_tool", "postgres"]}
+        # Return basic fallback with structure
+        fallback_databases = [
+            {
+                "name": "epm_tool",
+                "display_name": "EPM Tool",
+                "inherited_permissions": {"read": False, "write": False, "execute": False},
+                "permissions": {"read": False, "write": False, "execute": False},
+                "is_system_db": False,
+                "is_company_db": False
+            },
+            {
+                "name": "finfsuion",
+                "display_name": "Finfsuion",
+                "inherited_permissions": {"read": False, "write": False, "execute": False},
+                "permissions": {"read": False, "write": False, "execute": False},
+                "is_system_db": False,
+                "is_company_db": True
+            }
+        ]
+        return {"databases": fallback_databases, "role_id": role_id, "total_databases": 2}
 
 @router.get("/database-tables/{database_name}")
 async def get_database_tables(database_name: str, company_name: str = Query(...)):
