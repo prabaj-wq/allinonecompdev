@@ -1364,803 +1364,125 @@ const Process = () => {
   )
 
   return (
-    <div className="flex h-full gap-6">
-      <aside className="relative z-10 w-72 shrink-0 space-y-4 lg:w-80">
-        <div className="sticky top-0 z-10 space-y-3 rounded-2xl border border-gray-200 bg-white/80 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-gray-800 dark:bg-gray-950/80 dark:supports-[backdrop-filter]:bg-gray-900/60">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-              Process Catalogue
-            </h2>
-            <button
-              type="button"
-              onClick={openCreateProcessDrawer}
-              className="relative z-10 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950"
-            >
-              <Plus className="h-4 w-4" />
-              New
-            </button>
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Create dedicated workspaces for each close, forecast, or operational process you manage.
-          </p>
-        </div>
-        <div className="space-y-2 pr-1">
-          {processLoading ? (
-            <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading processes...
-            </div>
-          ) : processes.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-              No processes yet. Create one to get started.
-            </div>
-          ) : (
-            processes.map((process) => {
-              const isActive = process.id === selectedProcessId
-              return (
-                <div
-                  key={process.id}
-                  className={`group relative overflow-hidden rounded-2xl border px-4 py-3 transition focus-within:ring-2 focus-within:ring-indigo-500 ${
-                    isActive
-                      ? 'border-indigo-500 bg-indigo-50 shadow-sm dark:border-indigo-400 dark:bg-indigo-900/30'
-                      : 'border-gray-200 bg-white hover:border-indigo-400 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-400 dark:hover:bg-indigo-900/20'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProcessId(process.id)}
-                    className="flex w-full items-start justify-between gap-4 text-left"
-                  >
-                    <div className="flex flex-1 flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
-                          <Layers className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-white">{process.name}</h3>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-                            <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 font-medium dark:bg-indigo-900/40">
-                              {process.process_type || 'Process'}
-                            </span>
-                            {process.readonly && <span className="text-[11px] text-gray-500 dark:text-gray-400">Default workspace</span>}
-                          </div>
-                        </div>
-                      </div>
-                      {process.description ? (
-                        <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{process.description}</p>
-                      ) : (
-                        <p className="mt-2 text-xs italic text-gray-400 dark:text-gray-500">Add a description to guide your team.</p>
-                      )}
-                      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                        <span>{process.entry_count || 0} entries</span>
-                        {process.last_updated_at && (
-                          <span>Updated {new Date(process.last_updated_at).toLocaleDateString()}</span>
-                        )}
-                      </div>
-                    </div>
-                    <ChevronRight className={`mt-1 h-4 w-4 flex-shrink-0 text-indigo-400 transition ${isActive ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0 group-hover:opacity-100'}`} />
-                  </button>
-                  {!process.readonly && (
-                    <div
-                      className={`pointer-events-auto absolute right-3 top-3 flex items-center gap-1 rounded-full bg-white/70 p-1 shadow-sm transition dark:bg-gray-950/70 ${
-                        processDeletingId === process.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedProcessId(process.id)
-                          openEditProcessDrawer(process)
-                        }}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-                        title="Edit process details"
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={processDeletingId === process.id}
-                        onClick={() => handleDeleteProcess(process)}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300 dark:hover:bg-rose-900/40"
-                        title="Delete process"
-                      >
-                        {processDeletingId === process.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
-      </aside>
+    <div className="space-y-6">
 
-      <div className="flex-1 space-y-6">
-        <header className="flex flex-col gap-4 border-b border-gray-200 pb-4 lg:flex-row lg:items-center lg:justify-between dark:border-gray-800">
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 text-sm uppercase tracking-wide text-blue-600 dark:text-blue-300">
-              <Layers className="h-4 w-4" />
-              Process Workspace
-            </div>
-            <h1 className="mt-1 text-3xl font-semibold text-gray-900 dark:text-white">{activeProcess?.name || 'Select a process'}</h1>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-              {activeProcess
-                ? activeProcess.description || 'Model, capture, and orchestrate business entries for this process.'
-                : 'Choose a process from the catalogue or create a new one to begin working.'}
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Process Catalogue</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Create dedicated workspaces for each close, forecast, or operational process you manage.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={openCreateProcessDrawer}
+            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950"
+          >
+            <Plus className="h-4 w-4" />
+            New
+          </button>
+        </div>
+      </section>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={period}
-              onChange={(event) => setPeriod(event.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            >
-              {periodOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={year}
-              onChange={(event) => setYear(event.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-            >
-              {yearOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={refreshAll}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </button>
-
-            <button
-              type="button"
-              onClick={openEditProcessDrawer}
-              disabled={!activeProcess}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:border-indigo-500 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
-            >
-              <Edit className="h-4 w-4" />
-              Edit Process
-            </button>
-
-            <button
-              type="button"
-              onClick={openCustomFieldPanel}
-              disabled={!activeProcess}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:border-indigo-500 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400 dark:hover:text-indigo-300"
-            >
-              <Settings className="h-4 w-4" />
-              Custom Fields
-            </button>
-          </div>
-        </header>
-
-        {activeProcess ? (
-          <div className="space-y-6">
-            {processSummaryCards}
-
-            <div className="grid gap-6 xl:grid-cols-2">
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      {entryDrawerMode === 'edit' ? 'Edit entry' : 'Create manual entry'}
-                    </h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Capture adjustments directly into this process.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={openCreateEntryDrawer}
-                      className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
-                    >
-                      <Plus className="h-4 w-4" />
-                      New entry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openRollforwardModal}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400"
-                    >
-                      <Repeat className="h-4 w-4" />
-                      Rollforward
-                    </button>
-                  </div>
-                </div>
-
+      {processLoading ? (
+        <div className="flex items-center justify-center rounded-2xl border border-dashed border-gray-300 p-8 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading processes...
+        </div>
+      ) : processes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          No processes yet. Create one to get started.
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {processes.map((process) => {
+            const isActive = process.id === selectedProcessId
+            return (
+              <div
+                key={process.id}
+                className={`group relative flex flex-col overflow-hidden rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-indigo-500 ${
+                  isActive
+                    ? 'border-indigo-500 bg-indigo-50 shadow-sm dark:border-indigo-400 dark:bg-indigo-900/30'
+                    : 'border-gray-200 bg-white hover:border-indigo-400 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-400 dark:hover:bg-indigo-900/20'
+                }`}
+              >
                 <button
                   type="button"
-                  onClick={openCreateEntryDrawer}
-                  className="mt-6 w-full rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-10 text-center text-sm font-medium text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800/60 dark:text-indigo-300 dark:hover:border-indigo-400"
+                  onClick={() => setSelectedProcessId(process.id)}
+                  className="flex w-full flex-1 items-start justify-between gap-4 text-left"
                 >
-                  Click to open the entry workspace panel
-                </button>
-
-                <div className="mt-6 space-y-2 rounded-xl bg-indigo-50/60 p-4 text-xs text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-200">
-                  <p className="font-semibold uppercase tracking-wide">Original input tips</p>
-                  <ul className="space-y-1">
-                    <li>Use custom fields to capture approvals, narratives, or allocation drivers.</li>
-                    <li>Rollforward keeps existing entries and updates only matching lines.</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Original input import</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Upload CSV or XLSX files using the process-specific template.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={downloadTemplate}
-                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
-                  >
-                    <Download className="h-4 w-4" />
-                    Template
-                  </button>
-                </div>
-
-                <div className="mt-6 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center dark:border-gray-600 dark:bg-gray-800">
-                  <FileSpreadsheet className="mx-auto h-10 w-10 text-indigo-500" />
-                  <p className="mt-2 text-sm font-medium text-gray-800 dark:text-gray-200">Drag a CSV/XLSX file here, or click to browse.</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Required columns: entity_code, account_code, amount. Custom fields may be added as columns.</p>
-                  <input
-                    type="file"
-                    accept=".csv,.xlsx,.xlsm"
-                    onChange={handleUploadChange}
-                    className="mt-4 w-full text-sm text-gray-600 file:mr-4 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-100 dark:text-gray-300 dark:file:border-gray-600 dark:file:bg-gray-900 dark:file:text-gray-200"
-                  />
-                  {uploadState.file && (
-                    <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                      Selected file: <span className="font-medium">{uploadState.file.name}</span>
-                    </p>
-                  )}
-                  <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleUploadSubmit}
-                      className="btn-primary inline-flex items-center gap-2"
-                      disabled={!uploadState.file || uploadState.uploading}
-                    >
-                      <Upload className="h-4 w-4" />
-                      {uploadState.uploading ? 'Importing...' : 'Import balances'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openRollforwardModal}
-                      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400"
-                    >
-                      <Repeat className="h-4 w-4" />
-                      Update from prior period
-                    </button>
-                  </div>
-                  {uploadState.errors.length > 0 && (
-                    <div className="mt-4 rounded-lg border border-amber-400 bg-amber-50 p-3 text-left text-xs text-amber-700 dark:border-amber-500 dark:bg-amber-900/40 dark:text-amber-200">
-                      <p className="font-semibold">Import warnings:</p>
-                      <ul className="mt-1 space-y-1">
-                        {uploadState.errors.slice(0, 5).map((error, index) => (
-                          <li key={index} className="flex items-start gap-1">
-                            <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
-                            <span>{error}</span>
-                          </li>
-                        ))}
-                        {uploadState.errors.length > 5 && (
-                          <li className="text-amber-600 dark:text-amber-300">
-                            ...
-                            {uploadState.errors.length - 5} more
-                          </li>
-                        )}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Process entries</h2>
-                <button
-                  type="button"
-                  onClick={openCreateEntryDrawer}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add entry
-                </button>
-              </div>
-
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-800">
-                    <tr className="text-left">
-                      <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Entity</th>
-                      <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Account</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
-                      <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Type</th>
-                      <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Category</th>
-                      <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Custom attributes</th>
-                      <th className="px-6 py-3 font-medium text-gray-500 dark:text-gray-400">Narrative</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {loadingEntries ? (
-                      <tr>
-                        <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
-                          Loading entries...
-                        </td>
-                      </tr>
-                    ) : entries.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400">
-                          No entries captured for {period} {year}. Use the entry panel or import a file to get started.
-                        </td>
-                      </tr>
-                    ) : (
-                      entries.map((entry) => (
-                        <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-gray-900 dark:text-white">{entry.entity_code}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{entry.entity_name}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-gray-900 dark:text-white">{entry.account_code}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">{entry.account_name}</div>
-                          </td>
-                          <td className="px-6 py-4 text-right font-semibold text-gray-900 dark:text-white">
-                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: entry.currency || 'USD' }).format(
-                              entry.amount || 0
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                                entry.entry_type === 'debit'
-                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                  : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
-                              }`}
-                            >
-                              {entry.entry_type}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                            {entry.entry_category || 'Manual Entry'}
-                          </td>
-                          <td className="px-6 py-4">
-                            {entry.custom_fields && Object.keys(entry.custom_fields).length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {Object.entries(entry.custom_fields).map(([key, value]) => (
-                                  <span
-                                    key={key}
-                                    className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200"
-                                  >
-                                    <Tag className="h-3 w-3" />
-                                    {key}: {String(value)}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-gray-400 dark:text-gray-500">�</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                            {entry.description || '-'}
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleEditEntry(entry)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50"
-                                title="Edit entry"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteEntry(entry)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-300 dark:hover:bg-rose-900/50"
-                                title="Delete entry"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900 xl:col-span-2">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Workflow orchestration</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Pull workflow blocks onto the canvas to mirror your process.</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {WORKFLOW_LIBRARY.map((item) => {
-                      const Icon = item.icon
-                      return (
-                        <button
-                          key={item.type}
-                          type="button"
-                          onClick={() => handleAddWorkflowStep(item.type)}
-                          className="inline-flex items-center gap-2 rounded-full border border-indigo-200 px-3 py-1 text-sm font-medium text-indigo-600 transition hover:border-indigo-400 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-indigo-400/40 dark:text-indigo-300 dark:hover:border-indigo-400"
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {item.title}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-                  {workflowDraft.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center text-sm text-gray-500 dark:border-gray-600 dark:bg-gray-800/70 dark:text-gray-300">
-                      Add steps from the library to start designing your flow.
-                    </div>
-                  ) : (
-                    workflowDraft.map((step, index) => {
-                      const libraryItem = WORKFLOW_LIBRARY.find((item) => item.type === step.type)
-                      const StepIcon = libraryItem?.icon || Layers
-                      return (
-                        <div key={step.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900">
-                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="flex flex-1 items-start gap-3">
-                              <span className="mt-1 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
-                                <StepIcon className="h-5 w-5" />
-                              </span>
-                              <div className="flex-1 space-y-3">
-                                <input
-                                  type="text"
-                                  value={step.title}
-                                  onChange={(event) => handleWorkflowFieldChange(step.id, 'title', event.target.value)}
-                                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-                                />
-                                <textarea
-                                  value={step.description}
-                                  onChange={(event) => handleWorkflowFieldChange(step.id, 'description', event.target.value)}
-                                  rows={2}
-                                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                                  placeholder="Explain how this block is used..."
-                                />
-                              </div>
-                            </div>
-                            <div className="flex flex-col items-start gap-2 lg:items-end">
-                              <span
-                                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
-                                  step.enabled
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                                    : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                                }`}
-                              >
-                                <CirclePlus className="h-3.5 w-3.5" />
-                                {step.enabled ? 'Active' : 'Disabled'}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleWorkflowToggle(step.id)}
-                                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:text-gray-300 dark:hover:border-indigo-400"
-                                >
-                                  Toggle
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleReorderWorkflowStep(index, -1)}
-                                  disabled={index === 0}
-                                  className="inline-flex items-center rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
-                                >
-                                  <ArrowUp className="h-3 w-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleReorderWorkflowStep(index, 1)}
-                                  disabled={index === workflowDraft.length - 1}
-                                  className="inline-flex items-center rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
-                                >
-                                  <ArrowDown className="h-3 w-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveWorkflowStep(step.id)}
-                                  className="inline-flex items-center rounded-lg border border-gray-200 px-2 py-1 text-xs text-rose-500 transition hover:border-rose-400 hover:text-rose-600 dark:border-gray-700 dark:text-rose-300"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                  <div className="flex flex-1 flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200">
+                        <Layers className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-gray-900 dark:text-white">{process.name}</h3>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                          <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 font-medium dark:bg-indigo-900/40">
+                            {process.process_type || 'Process'}
+                          </span>
+                          {process.readonly && <span className="text-[11px] text-gray-500 dark:text-gray-400">Default workspace</span>}
                         </div>
-                      )
-                    })
-                  )}
-                </div>
-
-                {workflowDraft.length > 0 && (
-                  <div className="mt-6 overflow-x-auto">
-                    <div className="flex items-center gap-4 pb-2">
-                      {workflowDraft.map((step, index) => {
-                        const libraryItem = WORKFLOW_LIBRARY.find((item) => item.type === step.type)
-                        const StepIcon = libraryItem?.icon || Layers
-                        return (
-                          <React.Fragment key={step.id}>
-                            <div className="flex min-w-[160px] flex-col gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 dark:border-indigo-400/40 dark:bg-indigo-900/20">
-                              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-200">
-                                <StepIcon className="h-4 w-4" />
-                                <span className="text-xs font-semibold uppercase tracking-wide">{step.type.replace(/_/g, ' ')}</span>
-                              </div>
-                              <p className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{step.title || step.type}</p>
-                              <p className="text-xs text-gray-500 dark:text-gray-300">{step.description || 'Draft step description'}</p>
-                            </div>
-                            {index < workflowDraft.length - 1 && <ArrowRight className="h-4 w-4 text-indigo-400 dark:text-indigo-300" />}
-                          </React.Fragment>
-                        )
-                      })}
+                      </div>
                     </div>
+                    {process.description ? (
+                      <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{process.description}</p>
+                    ) : (
+                      <p className="mt-2 text-xs italic text-gray-400 dark:text-gray-500">Add a description to guide your team.</p>
+                    )}
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <span>{process.entry_count || 0} entries</span>
+                      {process.last_updated_at && <span>Updated {new Date(process.last_updated_at).toLocaleDateString()}</span>}
+                    </div>
+                  </div>
+                  <ChevronRight
+                    className={`mt-1 h-4 w-4 flex-shrink-0 text-indigo-400 transition ${
+                      isActive ? 'translate-x-0 opacity-100' : 'translate-x-2 opacity-0 group-hover:opacity-100'
+                    }`}
+                  />
+                </button>
+                {!process.readonly && (
+                  <div
+                    className={`pointer-events-auto absolute right-3 top-3 flex items-center gap-1 rounded-full bg-white/70 p-1 shadow-sm transition dark:bg-gray-950/70 ${
+                      processDeletingId === process.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProcessId(process.id)
+                        openEditProcessDrawer(process)
+                      }}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-indigo-600 transition hover:bg-indigo-50 hover:text-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+                      title="Edit process details"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={processDeletingId === process.id}
+                      onClick={() => handleDeleteProcess(process)}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs text-rose-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:text-rose-300 dark:hover:bg-rose-900/40"
+                      title="Delete process"
+                    >
+                      {processDeletingId === process.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                   </div>
                 )}
-
-                <div className="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 lg:flex-row lg:items-center lg:justify-between">
-                  <p>Save to persist workflow and restriction changes to the process catalogue.</p>
-                  <button
-                    type="button"
-                    onClick={handleSaveProcessSettings}
-                    disabled={settingsSaving}
-                    className="inline-flex items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
-                  >
-                    <Save className="h-4 w-4" />
-                    {settingsSaving ? 'Saving...' : 'Save settings'}
-                  </button>
-                </div>
               </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900 xl:col-span-2">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Access restrictions</h2>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Limit which accounts and entities can be used in this process.</p>
-                  </div>
-                  <Shield className="h-5 w-5 text-indigo-500" />
-                </div>
-
-                <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                  <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Accounts</h3>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleRestrictionModeChange('accounts', 'all')}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            restrictionDraft.accounts.mode === 'all'
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          All accounts
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRestrictionModeChange('accounts', 'restricted')}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            restrictionDraft.accounts.mode === 'restricted'
-                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
-                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          Restricted list
-                        </button>
-                      </div>
-                    </div>
-                    {restrictionDraft.accounts.mode === 'restricted' && (
-                      <div className="mt-4 space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            type="text"
-                            value={accountRestrictionInput}
-                            onChange={(event) => setAccountRestrictionInput(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                handleAddManualRestrictionCode('accounts', accountRestrictionInput)
-                              }
-                            }}
-                            placeholder="Add account code (e.g. 4000)"
-                            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleAddManualRestrictionCode('accounts', accountRestrictionInput)}
-                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        {accountHierarchyOptions.length > 0 && (
-                          <select
-                            value={accountHierarchySelection}
-                            onChange={(event) => {
-                              const value = event.target.value
-                              setAccountHierarchySelection(value)
-                              if (value) {
-                                handleApplyHierarchySelection('accounts', value, accountHierarchyOptions)
-                                setAccountHierarchySelection('')
-                              }
-                            }}
-                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                          >
-                            <option value="">Apply hierarchy grouping...</option>
-                            {accountHierarchyOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          {(restrictionDraft.accounts.allowed_codes || []).map((code) => (
-                            <button
-                              key={code}
-                              type="button"
-                              onClick={() => handleToggleRestrictionCode('accounts', code)}
-                              className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-200"
-                            >
-                              {code}
-                              <X className="h-3 w-3" />
-                            </button>
-                          ))}
-                        </div>
-                        {(restrictionDraft.accounts.allowed_codes || []).length > 0 && (
-                          <button type="button" onClick={() => handleClearRestrictions('accounts')} className="text-xs font-medium text-rose-500 hover:text-rose-600 dark:text-rose-300">
-                            Clear accounts
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Entities</h3>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleRestrictionModeChange('entities', 'all')}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            restrictionDraft.entities.mode === 'all'
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          All entities
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRestrictionModeChange('entities', 'restricted')}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            restrictionDraft.entities.mode === 'restricted'
-                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
-                              : 'bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                          }`}
-                        >
-                          Restricted list
-                        </button>
-                      </div>
-                    </div>
-                    {restrictionDraft.entities.mode === 'restricted' && (
-                      <div className="mt-4 space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <input
-                            type="text"
-                            value={entityRestrictionInput}
-                            onChange={(event) => setEntityRestrictionInput(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                handleAddManualRestrictionCode('entities', entityRestrictionInput)
-                              }
-                            }}
-                            placeholder="Add entity code (e.g. US01)"
-                            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleAddManualRestrictionCode('entities', entityRestrictionInput)}
-                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          >
-                            Add
-                          </button>
-                        </div>
-                        {entityHierarchyOptions.length > 0 && (
-                          <select
-                            value={entityHierarchySelection}
-                            onChange={(event) => {
-                              const value = event.target.value
-                              setEntityHierarchySelection(value)
-                              if (value) {
-                                handleApplyHierarchySelection('entities', value, entityHierarchyOptions)
-                                setEntityHierarchySelection('')
-                              }
-                            }}
-                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                          >
-                            <option value="">Apply hierarchy grouping...</option>
-                            {entityHierarchyOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          {(restrictionDraft.entities.allowed_codes || []).map((code) => (
-                            <button
-                              key={code}
-                              type="button"
-                              onClick={() => handleToggleRestrictionCode('entities', code)}
-                              className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-200"
-                            >
-                              {code}
-                              <X className="h-3 w-3" />
-                            </button>
-                          ))}
-                        </div>
-                        {(restrictionDraft.entities.allowed_codes || []).length > 0 && (
-                          <button type="button" onClick={() => handleClearRestrictions('entities')} className="text-xs font-medium text-rose-500 hover:text-rose-600 dark:text-rose-300">
-                            Clear entities
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-6 flex flex-col gap-3 border-t border-gray-200 pt-4 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400 lg:flex-row lg:items-center lg:justify-between">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleClearRestrictions('accounts')
-                      handleClearRestrictions('entities')
-                    }}
-                    className="text-xs font-semibold text-rose-500 hover:text-rose-600 dark:text-rose-300"
-                  >
-                    Reset restrictions
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveProcessSettings}
-                    disabled={settingsSaving}
-                    className="inline-flex items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
-                  >
-                    <Save className="h-4 w-4" />
-                    {settingsSaving ? 'Saving...' : 'Save settings'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex h-full flex-1 items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-            Select a process to view its workspace.
-          </div>
-        )}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       {entryDrawerOpen && (
-        <div className="fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 z-[100] flex">
           <div className="absolute inset-0 bg-gray-900/40" onClick={closeEntryDrawer} />
           <div className="ml-auto flex h-full w-full max-w-xl flex-col bg-white shadow-xl dark:bg-gray-900">
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
@@ -2337,7 +1659,7 @@ const Process = () => {
       )}
 
       {processDrawerOpen && (
-        <div className="fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 z-[100] flex">
           <div className="absolute inset-0 bg-gray-900/40" onClick={() => setProcessDrawerOpen(false)} />
           <div className="ml-auto flex h-full w-full max-w-md flex-col bg-white shadow-xl dark:bg-gray-900">
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
@@ -2407,7 +1729,7 @@ const Process = () => {
       )}
 
       {customFieldPanelOpen && (
-        <div className="fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 z-[100] flex">
           <div className="absolute inset-0 bg-gray-900/40" onClick={() => setCustomFieldPanelOpen(false)} />
           <div className="ml-auto flex h-full w-full max-w-2xl flex-col bg-white shadow-xl dark:bg-gray-900">
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
