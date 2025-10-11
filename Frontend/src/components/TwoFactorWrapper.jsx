@@ -75,7 +75,6 @@ import RoleProfileManagement from '../pages/rolemanagement/RoleProfileManagement
 import PermissionMatrixManagement from '../pages/rolemanagement/PermissionMatrixManagement'
 import ComplianceAuditCenter from '../pages/rolemanagement/ComplianceAuditCenter'
 import AccessRequestWorkflow from '../pages/rolemanagement/AccessRequestWorkflow'
-import SystemIntegrationMonitor from '../pages/rolemanagement/SystemIntegrationMonitor'
 
 const TwoFactorWrapper = () => {
   // Comment out the 2FA context usage
@@ -180,7 +179,6 @@ const TwoFactorWrapper = () => {
           <Route path="/rolemanagement/permission-matrix-management" element={<PermissionMatrixManagement />} />
           <Route path="/rolemanagement/compliance-audit-center" element={<ComplianceAuditCenter />} />
           <Route path="/rolemanagement/access-request-workflow" element={<AccessRequestWorkflow />} />
-          <Route path="/rolemanagement/system-integration-monitor" element={<SystemIntegrationMonitor />} />
           
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

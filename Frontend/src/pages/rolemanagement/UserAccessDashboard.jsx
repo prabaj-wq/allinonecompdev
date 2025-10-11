@@ -146,10 +146,17 @@ const UserAccessDashboard = () => {
       return user
     }
 
+    const metadata = user.metadata || {}
+
     return {
       ...user,
-      page_permissions: normalizePagePermissions(user.page_permissions),
-      database_permissions: normalizeDatabasePermissions(user.database_permissions)
+      metadata,
+      full_name: user.full_name || metadata.full_name || user.username,
+      department: user.department || metadata.department || '',
+      position: user.position || metadata.position || '',
+      phone: user.phone || metadata.phone || '',
+      page_permissions: normalizePagePermissions(user.page_permissions || metadata.page_permissions),
+      database_permissions: normalizeDatabasePermissions(user.database_permissions || metadata.database_permissions)
     }
   }
 
@@ -189,16 +196,6 @@ const UserAccessDashboard = () => {
     setToast({ message, type })
     setTimeout(() => setToast(null), 3000)
   }
-  // Mock data for dashboard stats
-  const dashboardStats = {
-    totalUsers: 2847,
-    activeSessions: 1234,
-    pendingRequests: 23,
-    securityAlerts: 5,
-    roleAssignments: 156,
-    activePermissions: 18
-  };
-
   const loadUsers = async () => {
     if (!selectedCompany) return
     
@@ -585,15 +582,6 @@ const UserAccessDashboard = () => {
                   </div>
                 </a>
                 
-                <a href="/rolemanagement/system-integration-monitor" className="block p-4 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-800 hover:bg-teal-100 dark:hover:bg-teal-900/30 transition-colors">
-                  <div className="flex items-center space-x-3">
-                    <Activity className="h-6 w-6 text-teal-600 dark:text-teal-400" />
-                    <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-white">System Integration</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">Monitor database connections and health</p>
-                    </div>
-                  </div>
-                </a>
               </div>
             </div>
 

@@ -4,19 +4,11 @@ import { useCompany } from '../contexts/CompanyContext'
 import { useAuth } from '../hooks/useAuth'
 import {
   Upload,
-  Download,
-  RefreshCw,
   Save,
   Trash2,
   Edit,
   CheckCircle,
   AlertCircle,
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUp,
-  ArrowDown,
   FileSpreadsheet,
   Building2,
   Layers,
@@ -26,9 +18,7 @@ import {
   ChevronRight,
   CirclePlus,
   Loader2,
-  Tag,
   GitBranch,
-  Shield,
   Repeat,
 } from 'lucide-react'
 
@@ -1303,66 +1293,6 @@ const Process = () => {
       </div>
     )
   }
-  const processSummaryCards = (
-    <section className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-          <span>Entries this period</span>
-          <TrendingUp className="h-4 w-4" />
-        </div>
-        <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{summary.count}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Across {activeProcess?.name || 'selected process'}</p>
-        <button
-          type="button"
-          onClick={openRollforwardModal}
-          className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-indigo-600 transition hover:text-indigo-500 focus:outline-none dark:text-indigo-300"
-        >
-          <Repeat className="h-3.5 w-3.5" />
-          Rollforward entries
-        </button>
-      </div>
-
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-          <span>Original input balance</span>
-          <ArrowUpRight className="h-4 w-4 text-emerald-500" />
-        </div>
-        <p className="mt-2 text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-          Debits {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(summary.total_debit || 0)}
-        </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          Credits {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(summary.total_credit || 0)}
-        </p>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Net balance {new Intl.NumberFormat('en-US', { style: 'currency', currency: formState.currency || 'USD' }).format(summary.net_balance || 0)}
-        </p>
-        <p className="mt-2 text-[11px] uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-          Period {period} {year}
-        </p>
-      </div>
-
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-          <span>Workflow canvas</span>
-          <GitBranch className="h-4 w-4 text-indigo-500" />
-        </div>
-        <p className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{workflowDraft.length || 1} steps</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">Design how data flows from input to reporting.</p>
-        <div className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-wide text-indigo-500 dark:text-indigo-300">
-          {workflowDraft.slice(0, 3).map((step) => (
-            <span
-              key={step.id}
-              className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 font-semibold text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200"
-            >
-              {step.title || step.type}
-            </span>
-          ))}
-          {workflowDraft.length > 3 && <span className="text-indigo-400 dark:text-indigo-300">+{workflowDraft.length - 3} more</span>}
-        </div>
-      </div>
-    </section>
-  )
-
   return (
     <div className="space-y-6">
 

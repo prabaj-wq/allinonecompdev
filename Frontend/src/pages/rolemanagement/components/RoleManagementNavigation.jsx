@@ -6,7 +6,6 @@ import {
   Database,
   FileText,
   UserCheck,
-  Activity,
   ArrowLeft
 } from 'lucide-react'
 
@@ -49,12 +48,6 @@ const RoleManagementNavigation = () => {
       name: 'Access Requests',
       icon: UserCheck,
       description: 'Manage requests'
-    },
-    {
-      path: '/rolemanagement/system-integration-monitor',
-      name: 'System Integration',
-      icon: Activity,
-      description: 'Monitor connections'
     }
   ]
 
@@ -78,7 +71,7 @@ const RoleManagementNavigation = () => {
         </Link>
       </div>
       
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         {navigationItems.map((item) => {
           const Icon = item.icon
           const active = isActive(item.path)

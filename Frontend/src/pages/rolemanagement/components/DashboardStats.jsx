@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Activity, Clock, AlertTriangle, UserCog, Zap, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Users, Activity, Clock, AlertTriangle, UserCog, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const DashboardStats = ({ stats }) => {
   const statCards = [
@@ -42,14 +42,6 @@ const DashboardStats = ({ stats }) => {
       changeType: 'increase',
       icon: UserCog,
       color: 'secondary'
-    },
-    {
-      title: 'System Integrations',
-      value: stats.systemIntegrations,
-      change: '0',
-      changeType: 'neutral',
-      icon: Zap,
-      color: 'accent'
     }
   ];
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronRight, Grid3X3, UserCog, Users, FileText, Shield, Activity, Home } from 'lucide-react';
+import { ChevronRight, Grid3X3, UserCog, Users, FileText, Shield, Home } from 'lucide-react';
 
 const Breadcrumb = () => {
   const location = useLocation();
@@ -35,11 +35,6 @@ const Breadcrumb = () => {
       title: 'Compliance Audit Center',
       parent: null,
       icon: Shield
-    },
-    '/rolemanagement/system-integration-monitor': {
-      title: 'System Integration Monitor',
-      parent: null,
-      icon: Activity
     }
   };
 

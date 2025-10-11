@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { 
-  Shield, ChevronDown, Grid3X3, UserCog, Users, FileText, Activity, 
+  Shield, ChevronDown, Grid3X3, UserCog, Users, FileText, 
   CheckCircle, AlertTriangle, XCircle, Circle, User, Settings, 
   Calendar, HelpCircle, Download, LogOut, Menu 
 } from 'lucide-react';
@@ -42,7 +42,6 @@ const Header = () => {
     {
       label: 'System',
       items: [
-        { label: 'Integration Monitor', path: '/rolemanagement/system-integration-monitor', icon: Activity },
         { label: 'Compliance Audit', path: '/rolemanagement/compliance-audit-center', icon: Shield }
       ]
     }

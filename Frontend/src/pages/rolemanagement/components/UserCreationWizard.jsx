@@ -287,8 +287,8 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
   if (!isVisible) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
           <div className="flex items-center justify-between">
@@ -328,7 +328,7 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">
           {/* Step 1: Basic Information */}
           {currentStep === 1 && (
             <div className="space-y-6">

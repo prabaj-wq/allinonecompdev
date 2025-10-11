@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { useCompany } from '../../contexts/CompanyContext'
 import { Shield, FileText, AlertTriangle, CheckCircle, Clock, Download, RefreshCw, Filter, Search, X, Calendar, User, Activity, Database, Settings, Eye, Trash2, BarChart3, TrendingUp, AlertCircle, Plus, ExternalLink } from 'lucide-react'
@@ -15,6 +15,7 @@ const ComplianceAuditCenter = () => {
   
   // ===== STATE MANAGEMENT =====
   const [auditLogs, setAuditLogs] = useState([])
+  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -30,63 +31,73 @@ const ComplianceAuditCenter = () => {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // Mock audit data
-  const mockAuditLogs = [
-    {
-      id: 1,
-      timestamp: new Date(Date.now() - 30 * 60 * 1000),
-      user: 'admin',
-      action: 'User Created',
-      resource: 'User: john.doe@company.com',
-      ip: '192.168.1.100',
-      status: 'success',
-      details: 'New user account created with Manager role'
+  const fetchAuditLogs = useCallback(
+    async (showSuccessMessage = false) => {
+      if (!selectedCompany) {
+        setAuditLogs([])
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        const params = new URLSearchParams({
+          company_name: selectedCompany,
+          limit: '200',
+          offset: '0'
+        })
+
+        const response = await fetch(`/api/role-management/audit-logs?${params.toString()}`, {
+          credentials: 'include'
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch audit logs')
+        }
+
+        const data = await response.json()
+        const normalisedLogs = Array.isArray(data.logs)
+          ? data.logs.map((log, index) => ({
+              id: log.id ?? `${index}-${log.timestamp ?? ''}`,
+              timestamp: log.timestamp ? new Date(log.timestamp) : new Date(),
+              user: log.username || log.user || 'unknown',
+              action: log.action || 'Activity',
+              resource: log.resource || log.resource_id || 'N/A',
+              status: log.status || 'success',
+              details: log.details || '',
+              ip: log.ip_address || log.ip || 'N/A'
+            }))
+          : []
+
+        setAuditLogs(normalisedLogs)
+        if (showSuccessMessage) {
+          showToast('Audit logs refreshed', 'success')
+        }
+      } catch (error) {
+        console.error('Failed to load audit logs', error)
+        setAuditLogs([])
+        showToast('Failed to load audit logs', 'error')
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
     },
-    {
-      id: 2,
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      user: 'sarah.johnson',
-      action: 'Permission Modified',
-      resource: 'Role: Manager',
-      ip: '192.168.1.105',
-      status: 'success',
-      details: 'Added database access permission'
-    },
-    {
-      id: 3,
-      timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-      user: 'unknown',
-      action: 'Login Failed',
-      resource: 'User: admin',
-      ip: '203.0.113.45',
-      status: 'failed',
-      details: 'Multiple failed login attempts detected'
-    },
-    {
-      id: 4,
-      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
-      user: 'admin',
-      action: 'Role Deleted',
-      resource: 'Role: Temporary Access',
-      ip: '192.168.1.100',
-      status: 'success',
-      details: 'Temporary role removed after project completion'
-    },
-    {
-      id: 5,
-      timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
-      user: 'michael.chen',
-      action: 'Database Access',
-      resource: 'Database: FinFusion360',
-      ip: '192.168.1.110',
-      status: 'success',
-      details: 'Accessed financial data for Q3 reporting'
-    }
-  ];
+    [selectedCompany]
+  )
 
   useEffect(() => {
-    setAuditLogs(mockAuditLogs);
-  }, []);
+    fetchAuditLogs()
+  }, [fetchAuditLogs])
+
+  useEffect(() => {
+    if (!autoRefresh) {
+      return undefined
+    }
+    const interval = setInterval(() => {
+      fetchAuditLogs()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [autoRefresh, fetchAuditLogs])
 
   // Enhanced filtering with search and date range
   const filteredLogs = auditLogs.filter(log => {
@@ -154,11 +165,11 @@ const ComplianceAuditCenter = () => {
     const csvContent = [
       ['Timestamp', 'User', 'Action', 'Resource', 'IP Address', 'Status', 'Details'],
       ...filteredLogs.map(log => [
-        log.timestamp.toISOString(),
+        (log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp)).toISOString(),
         log.user,
         log.action,
         log.resource,
-        log.ip,
+        log.ip || 'N/A',
         log.status,
         log.details
       ])
@@ -209,10 +220,7 @@ const ComplianceAuditCenter = () => {
                   <button
                     onClick={() => {
                       setRefreshing(true)
-                      setTimeout(() => {
-                        setRefreshing(false)
-                        showToast('Audit logs refreshed', 'success')
-                      }, 1500)
+                      fetchAuditLogs(true)
                     }}
                     disabled={refreshing}
                     className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
@@ -357,22 +365,36 @@ const ComplianceAuditCenter = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {filteredLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="p-4 text-gray-900 dark:text-white">
-                          {log.timestamp.toLocaleString()}
+                    {loading ? (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-gray-500 dark:text-gray-400">
+                          Loading audit logs...
                         </td>
-                        <td className="p-4 text-gray-900 dark:text-white">{log.user}</td>
-                        <td className="p-4 text-gray-900 dark:text-white">{log.action}</td>
-                        <td className="p-4 text-gray-900 dark:text-white">{log.resource}</td>
-                        <td className="p-4">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.status)}`}>
-                            {log.status}
-                          </span>
-                        </td>
-                        <td className="p-4 text-gray-500 dark:text-gray-400">{log.details}</td>
                       </tr>
-                    ))}
+                    ) : filteredLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-gray-500 dark:text-gray-400">
+                          No audit activity found for the selected criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td className="p-4 text-gray-900 dark:text-white">
+                            {(log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp)).toLocaleString()}
+                          </td>
+                          <td className="p-4 text-gray-900 dark:text-white">{log.user}</td>
+                          <td className="p-4 text-gray-900 dark:text-white">{log.action}</td>
+                          <td className="p-4 text-gray-900 dark:text-white">{log.resource}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(log.status)}`}>
+                              {log.status}
+                            </span>
+                          </td>
+                          <td className="p-4 text-gray-500 dark:text-gray-400">{log.details}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

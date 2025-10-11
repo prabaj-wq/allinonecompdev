@@ -63,14 +63,6 @@ const RoleManagementHub = () => {
       icon: UserCheck,
       color: 'indigo',
       features: ['Access Requests', 'Approval Workflow', 'Request History', 'Notifications']
-    },
-    {
-      title: 'System Integration Monitor',
-      description: 'Monitor database connections, system health, and integration status',
-      href: '/rolemanagement/system-integration-monitor',
-      icon: Activity,
-      color: 'teal',
-      features: ['Database Health', 'Connection Status', 'System Metrics', 'Integration Logs']
     }
   ]
 
