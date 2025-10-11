@@ -1545,7 +1545,7 @@ const Process = () => {
         </header>
 
         {activeProcess ? (
-          <>
+          <div className="space-y-6">
             {processSummaryCards}
 
             <div className="grid gap-6 xl:grid-cols-2">
@@ -2151,8 +2151,7 @@ const Process = () => {
                 </div>
               </div>
             </div>
-            </div>
-          </>
+          </div>
         ) : (
           <div className="flex h-full flex-1 items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
             Select a process to view its workspace.
