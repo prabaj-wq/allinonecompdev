@@ -1342,11 +1342,79 @@ async def delete_role_enhanced(role_id: int, company_name: str = Query(...), use
 async def get_users(company_name: str = Query(...), role_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
     """Get all users for a company"""
     try:
-        users = fetch_users_for_company(company_name, role_id=role_id)
-        return {"users": users}
+        return fetch_users_for_company(company_name, role_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(e)}")
 
+@router.get("/available-pages")
+async def get_available_pages(company_name: str = Query(...), role_id: Optional[int] = Query(None)):
+    """Get all available pages for user creation with inheritance logic"""
+    try:
+        # Define all available pages in the system
+        all_pages = {
+            "/dashboard": {"name": "Dashboard", "category": "Core", "risk_level": "low"},
+            "/accounts": {"name": "Chart of Accounts", "category": "Accounting", "risk_level": "medium"},
+            "/entities": {"name": "Entity Management", "category": "Accounting", "risk_level": "medium"},
+            "/consolidation": {"name": "Consolidation", "category": "Accounting", "risk_level": "high"},
+            "/financial-statements": {"name": "Financial Statements", "category": "Reporting", "risk_level": "medium"},
+            "/fst-items": {"name": "FST Items", "category": "Reporting", "risk_level": "medium"},
+            "/trial-balance": {"name": "Trial Balance", "category": "Reporting", "risk_level": "medium"},
+            "/advanced-features": {"name": "Advanced Features", "category": "Advanced", "risk_level": "high"},
+            "/real-time-analytics": {"name": "Real-time Analytics", "category": "Analytics", "risk_level": "medium"},
+            "/narrative-reporting": {"name": "Narrative Reporting", "category": "Reporting", "risk_level": "medium"},
+            "/rolemanagement": {"name": "Role Management", "category": "Administration", "risk_level": "high"},
+            "/system-management": {"name": "System Management", "category": "Administration", "risk_level": "high"},
+            "/database-management": {"name": "Database Management", "category": "Administration", "risk_level": "high"},
+            "/api-management": {"name": "API Management", "category": "Administration", "risk_level": "high"},
+            "/audit": {"name": "Audit Logs", "category": "Administration", "risk_level": "high"},
+            "/etl": {"name": "ETL Management", "category": "Data", "risk_level": "high"}
+        }
+        
+        role_permissions = {}
+        if role_id:
+            # Get role permissions for inheritance
+            conn = psycopg2.connect(
+                host=os.getenv("DB_HOST", "postgres"),
+                database=os.getenv("DB_NAME", "epm_tool"),
+                user=os.getenv("DB_USER", "postgres"),
+                password=os.getenv("DB_PASSWORD", "epm_password"),
+                port=os.getenv("DB_PORT", "5432")
+            )
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cur.execute("""
+                SELECT page_permissions FROM custom_roles 
+                WHERE id = %s AND company_id = %s
+            """, (role_id, company_name))
+            
+            role_data = cur.fetchone()
+            if role_data and role_data['page_permissions']:
+                role_permissions = json.loads(role_data['page_permissions']) if isinstance(role_data['page_permissions'], str) else role_data['page_permissions']
+            
+            cur.close()
+            conn.close()
+        
+        # Format response with inheritance information
+        pages_with_inheritance = []
+        for page_path, page_info in all_pages.items():
+            inherited = role_permissions.get(page_path, False) if role_id else False
+            pages_with_inheritance.append({
+                "path": page_path,
+                "name": page_info["name"],
+                "category": page_info["category"],
+                "risk_level": page_info["risk_level"],
+                "inherited_from_role": inherited,
+                "enabled": inherited  # Default to inherited value
+            })
+        
+        return {
+            "pages": pages_with_inheritance,
+            "role_id": role_id,
+            "total_pages": len(all_pages)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch available pages: {str(e)}")
 
 @router.get("/users/{user_id}")
 async def get_user_detail(user_id: int, company_name: str = Query(...)):
@@ -2272,12 +2340,11 @@ async def review_access_request(
 async def check_user_access(
     module: str = Query(...),
     page: str = Query(...),
-    company_name: str = Query(...),
-    username: str = Query(...)
+    user_id: int = Query(...),
+    company_name: str = Query(...)
 ):
-    """Check if user has access to a specific module/page"""
+    """Check if a user has access to a specific page/module"""
     try:
-        
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "postgres"),
             database=os.getenv("DB_NAME", "epm_tool"),
@@ -2288,47 +2355,37 @@ async def check_user_access(
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Get user's role and permissions
+        # Get user's permissions from user_profiles
         cur.execute("""
-            SELECT 
-                up.id,
-                up.user_id,
-                up.role_id,
-                up.company_id,
-                up.permissions AS user_permissions,
-                up.database_access,
-                up.metadata,
-                cr.permissions AS role_permissions,
-                cr.name AS role_name
+            SELECT up.permissions, up.role_id, r.page_permissions
             FROM user_profiles up
-            LEFT JOIN custom_roles cr 
-                ON up.role_id = cr.id
-               AND cr.company_id = up.company_id
-            WHERE up.username = %s AND up.company_id = %s
-        """, (username, company_name))
+            LEFT JOIN custom_roles r ON up.role_id = r.id
+            WHERE up.user_id = %s AND up.company_id = %s
+        """, (user_id, company_name))
         
-        user_profile = cur.fetchone()
+        user_permissions = cur.fetchone()
         
-        if not user_profile:
-            return {"has_access": False, "reason": "User profile not found"}
+        if not user_permissions:
+            return {
+                "has_access": False,
+                "reason": "User not found or no permissions assigned",
+                "requires_request": True
+            }
         
-        user_permissions_payload = parse_json_field(user_profile.get("user_permissions"), {})
-        role_permissions_payload = parse_json_field(user_profile.get("role_permissions"), {})
-
-        page_permissions = parse_json_field(user_permissions_payload.get("page_permissions"), {})
-        role_page_permissions_map = {}
-        if isinstance(role_permissions_payload, dict):
-            for mod, perm_list in role_permissions_payload.items():
-                if isinstance(perm_list, list):
-                    role_page_permissions_map[mod] = {perm: True for perm in perm_list}
-
-        has_access = bool(page_permissions.get(page) or page_permissions.get(module))
-        if not has_access and module in role_page_permissions_map:
-            module_entries = role_page_permissions_map[module]
-            if isinstance(module_entries, dict):
-                has_access = bool(module_entries.get(page))
-            elif isinstance(module_entries, list):
-                has_access = page in module_entries
+        # Parse permissions
+        user_perms = json.loads(user_permissions['permissions']) if user_permissions['permissions'] else {}
+        role_perms = json.loads(user_permissions['page_permissions']) if user_permissions['page_permissions'] else {}
+        
+        # Check page permissions
+        page_permissions = user_perms.get('page_permissions', {})
+        role_page_permissions = role_perms if isinstance(role_perms, dict) else {}
+        
+        # Combine user and role permissions (user permissions override role permissions)
+        combined_permissions = {**role_page_permissions, **page_permissions}
+        
+        # Check if user has access to the specific page
+        page_path = f"/{page}" if not page.startswith('/') else page
+        has_access = combined_permissions.get(page_path, False)
         
         cur.close()
         conn.close()
@@ -2584,6 +2641,48 @@ async def create_user_with_db_access(
             )
         )
         user_profile = cur.fetchone()
+
+        # Also create user in company-specific database for authentication
+        company_db_name = resolved_company.lower().replace(' ', '_').replace('-', '_')
+        try:
+            company_conn = psycopg2.connect(
+                host=os.getenv("DB_HOST", "postgres"),
+                database=company_db_name,
+                user=os.getenv("DB_USER", "postgres"),
+                password=os.getenv("DB_PASSWORD", "epm_password"),
+                port=os.getenv("DB_PORT", "5432")
+            )
+            company_cur = company_conn.cursor()
+            
+            # Create users table if it doesn't exist
+            company_cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username VARCHAR(255) UNIQUE NOT NULL,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    is_superuser BOOLEAN DEFAULT FALSE,
+                    last_login TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Insert user into company database
+            company_cur.execute("""
+                INSERT INTO users (username, email, password_hash, is_active, is_superuser, created_at, updated_at)
+                VALUES (%s, %s, %s, TRUE, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (username) DO NOTHING
+            """, (user_data["username"], user_data["email"], password_hash))
+            
+            company_conn.commit()
+            company_cur.close()
+            company_conn.close()
+            
+        except Exception as e:
+            print(f"Warning: Could not create user in company database {company_db_name}: {e}")
+            # Don't fail the entire operation if company database creation fails
 
         conn.commit()
 
