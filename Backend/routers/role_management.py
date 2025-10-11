@@ -264,7 +264,8 @@ def ensure_role_management_tables(cursor):
             ADD COLUMN IF NOT EXISTS created_by VARCHAR(255),
             ADD COLUMN IF NOT EXISTS last_action TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
-            ADD COLUMN IF NOT EXISTS role_id INTEGER
+            ADD COLUMN IF NOT EXISTS role_id INTEGER,
+            ADD COLUMN IF NOT EXISTS last_login TIMESTAMP
     """)
 
     cursor.execute("""
@@ -405,6 +406,7 @@ def ensure_role_management_tables(cursor):
 
 def ensure_company_record(cursor: RealDictCursor, company_name: str) -> Dict[str, Any]:
     """Ensure a company exists and return its record."""
+    # First try exact match
     cursor.execute(
         "SELECT id, name, code FROM companies WHERE name = %s",
         (company_name,)
@@ -412,6 +414,15 @@ def ensure_company_record(cursor: RealDictCursor, company_name: str) -> Dict[str
     existing = cursor.fetchone()
     if existing:
         return dict(existing)
+    
+    # If "Default Company" is requested but doesn't exist, try to find the first company
+    if company_name == "Default Company":
+        cursor.execute(
+            "SELECT id, name, code FROM companies ORDER BY created_at ASC LIMIT 1"
+        )
+        first_company = cursor.fetchone()
+        if first_company:
+            return dict(first_company)
 
     base_code = "".join(ch.lower() for ch in company_name if ch.isalnum())
     base_code = base_code[:20] or "company"

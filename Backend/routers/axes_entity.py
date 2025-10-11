@@ -269,14 +269,14 @@ def init_axes_tables(company_name: str):
         # First, add missing columns to existing tables before creating new ones
         try:
             # Add company_id to hierarchies table if it exists
-            cur.execute("""
+            cur.execute(f"""
                 DO $$ 
                 BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='hierarchies') THEN
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                       WHERE table_name='hierarchies' AND column_name='company_id') THEN
-                            ALTER TABLE hierarchies ADD COLUMN company_id VARCHAR(255) DEFAULT 'Default Company';
-                            UPDATE hierarchies SET company_id = 'Default Company' WHERE company_id IS NULL;
+                            ALTER TABLE hierarchies ADD COLUMN company_id VARCHAR(255) DEFAULT '{company_name}';
+                            UPDATE hierarchies SET company_id = '{company_name}' WHERE company_id IS NULL;
                             ALTER TABLE hierarchies ALTER COLUMN company_id SET NOT NULL;
                         END IF;
                     END IF;
@@ -284,14 +284,14 @@ def init_axes_tables(company_name: str):
             """)
             
             # Add company_id to hierarchy_nodes table if it exists
-            cur.execute("""
+            cur.execute(f"""
                 DO $$ 
                 BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='hierarchy_nodes') THEN
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                       WHERE table_name='hierarchy_nodes' AND column_name='company_id') THEN
-                            ALTER TABLE hierarchy_nodes ADD COLUMN company_id VARCHAR(255) DEFAULT 'Default Company';
-                            UPDATE hierarchy_nodes SET company_id = 'Default Company' WHERE company_id IS NULL;
+                            ALTER TABLE hierarchy_nodes ADD COLUMN company_id VARCHAR(255) DEFAULT '{company_name}';
+                            UPDATE hierarchy_nodes SET company_id = '{company_name}' WHERE company_id IS NULL;
                             ALTER TABLE hierarchy_nodes ALTER COLUMN company_id SET NOT NULL;
                         END IF;
                         
@@ -309,14 +309,14 @@ def init_axes_tables(company_name: str):
             """)
             
             # Add company_id to axes_entities table if it exists
-            cur.execute("""
+            cur.execute(f"""
                 DO $$ 
                 BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='axes_entities') THEN
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                       WHERE table_name='axes_entities' AND column_name='company_id') THEN
-                            ALTER TABLE axes_entities ADD COLUMN company_id VARCHAR(255) DEFAULT 'Default Company';
-                            UPDATE axes_entities SET company_id = 'Default Company' WHERE company_id IS NULL;
+                            ALTER TABLE axes_entities ADD COLUMN company_id VARCHAR(255) DEFAULT '{company_name}';
+                            UPDATE axes_entities SET company_id = '{company_name}' WHERE company_id IS NULL;
                             ALTER TABLE axes_entities ALTER COLUMN company_id SET NOT NULL;
                         END IF;
                         
@@ -340,34 +340,46 @@ def init_axes_tables(company_name: str):
         except Exception as e:
             print(f"Note: Column addition phase: {e}")
         
-        # Fix foreign key constraint on axes_entities.parent_id
+        # Fix foreign key constraint on axes_entities.parent_id (only if table exists)
         try:
-            # Drop old constraint if it exists (pointing to axes_entities)
+            # Check if axes_entities table exists first
             cur.execute("""
-                DO $$ 
-                BEGIN
-                    -- Drop the old foreign key constraint if it exists
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.table_constraints 
-                        WHERE constraint_name = 'axes_entities_parent_id_fkey' 
-                        AND table_name = 'axes_entities'
-                    ) THEN
-                        ALTER TABLE axes_entities DROP CONSTRAINT axes_entities_parent_id_fkey;
-                    END IF;
-                    
-                    -- Add the correct foreign key constraint pointing to hierarchy_nodes
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.table_constraints 
-                        WHERE constraint_name = 'axes_entities_parent_id_fkey_nodes' 
-                        AND table_name = 'axes_entities'
-                    ) THEN
-                        ALTER TABLE axes_entities 
-                        ADD CONSTRAINT axes_entities_parent_id_fkey_nodes 
-                        FOREIGN KEY (parent_id) REFERENCES hierarchy_nodes(id) ON DELETE SET NULL;
-                    END IF;
-                END $$;
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'axes_entities'
+                )
             """)
-            print("✅ Fixed axes_entities.parent_id foreign key constraint")
+            table_exists = cur.fetchone()[0]
+            
+            if table_exists:
+                # Drop old constraint if it exists (pointing to axes_entities)
+                cur.execute("""
+                    DO $$ 
+                    BEGIN
+                        -- Drop the old foreign key constraint if it exists
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'axes_entities_parent_id_fkey' 
+                            AND table_name = 'axes_entities'
+                        ) THEN
+                            ALTER TABLE axes_entities DROP CONSTRAINT axes_entities_parent_id_fkey;
+                        END IF;
+                        
+                        -- Add the correct foreign key constraint pointing to hierarchy_nodes
+                        IF NOT EXISTS (
+                            SELECT 1 FROM information_schema.table_constraints 
+                            WHERE constraint_name = 'axes_entities_parent_id_fkey_nodes' 
+                            AND table_name = 'axes_entities'
+                        ) THEN
+                            ALTER TABLE axes_entities 
+                            ADD CONSTRAINT axes_entities_parent_id_fkey_nodes 
+                            FOREIGN KEY (parent_id) REFERENCES hierarchy_nodes(id) ON DELETE SET NULL;
+                        END IF;
+                    END $$;
+                """)
+                print("✅ Fixed axes_entities.parent_id foreign key constraint")
+            else:
+                print("ℹ️ axes_entities table doesn't exist yet, skipping foreign key fix")
         except Exception as e:
             print(f"Note: Foreign key fix: {e}")
         
