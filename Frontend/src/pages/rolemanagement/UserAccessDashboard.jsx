@@ -22,7 +22,9 @@ import {
   Lock,
   Unlock,
   Monitor,
-  FileText
+  FileText,
+  Edit,
+  Trash2
 } from 'lucide-react'
 import AdminAuthWrapper from './components/AdminAuthWrapper'
 import RoleManagementNavigation from './components/RoleManagementNavigation'
@@ -191,6 +193,10 @@ const UserAccessDashboard = () => {
   const [testResults, setTestResults] = useState(null)
   const [userActivity, setUserActivity] = useState([])
   const [testingUser, setTestingUser] = useState(null)
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [editingUser, setEditingUser] = useState(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [userToDelete, setUserToDelete] = useState(null)
   
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -201,17 +207,40 @@ const UserAccessDashboard = () => {
     
     try {
       setLoading(true)
+      console.log(`🔍 Loading users for company: ${selectedCompany}`)
       const response = await fetch(`/api/role-management/users?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       
+      console.log(`📡 Users API response status: ${response.status}`)
+      
       if (response.ok) {
         const data = await response.json()
-        const cleanedUsers = (data.users || []).map((user) => sanitizeUser(user))
+        console.log(`📊 Raw users data:`, data)
+        
+        // Handle both direct array and object with users property
+        let usersArray = []
+        if (Array.isArray(data)) {
+          usersArray = data
+        } else if (data.users && Array.isArray(data.users)) {
+          usersArray = data.users
+        } else if (data && typeof data === 'object') {
+          // If data is an object but not with users property, treat as single user
+          usersArray = [data]
+        }
+        
+        console.log(`👥 Found ${usersArray.length} users`)
+        const cleanedUsers = usersArray.map((user) => sanitizeUser(user))
+        console.log(`✅ Cleaned users:`, cleanedUsers)
         setUsers(cleanedUsers)
+        
+        if (cleanedUsers.length > 0) {
+          showToast(`Loaded ${cleanedUsers.length} users successfully`, 'success')
+        }
       } else {
         const error = await response.json().catch(() => ({}))
         const errorMessage = error && error.detail ? error.detail : 'Failed to load users'
+        console.error(`❌ Failed to load users: ${errorMessage}`)
         showToast(errorMessage, 'error')
         setUsers([])
       }
@@ -443,6 +472,40 @@ const UserAccessDashboard = () => {
     } catch (error) {
       console.error('Error loading activity:', error)
       showToast('Error loading user activity', 'error')
+    }
+  }
+
+  const handleEditUser = (user) => {
+    setEditingUser(user)
+    setShowEditUserModal(true)
+  }
+
+  const handleDeleteUser = (user) => {
+    setUserToDelete(user)
+    setShowDeleteConfirm(true)
+  }
+
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return
+
+    try {
+      const response = await fetch(`/api/role-management/users/${userToDelete.id}?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        showToast('User deleted successfully', 'success')
+        loadUsers() // Refresh the user list
+        setShowDeleteConfirm(false)
+        setUserToDelete(null)
+      } else {
+        const error = await response.json().catch(() => ({}))
+        showToast(error.detail || 'Failed to delete user', 'error')
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error)
+      showToast('Error deleting user', 'error')
     }
   }
 
@@ -816,6 +879,20 @@ const UserAccessDashboard = () => {
                                 >
                                   <Activity className="h-4 w-4" />
                                 </button>
+                                <button
+                                  onClick={() => handleEditUser(user)}
+                                  className="p-1 text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+                                  title="Edit User"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(user)}
+                                  className="p-1 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                                  title="Delete User"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -834,12 +911,11 @@ const UserAccessDashboard = () => {
         <UserCreationWizard
           isVisible={showAddUserModal}
           onClose={() => setShowAddUserModal(false)}
-          onUserCreated={(newUser) => {
-            const normalizedUser = sanitizeUser(newUser)
-            setUsers(prev => [normalizedUser, ...prev])
-            showToast('User created successfully with database access!', 'success')
-            setShowAddUserModal(false)
-            loadUsers() // Refresh the user list
+          onUserCreated={(user) => {
+            console.log(' User created:', user)
+            // Refresh the entire user list to ensure consistency
+            loadUsers()
+            showToast('User created successfully', 'success')
           }}
           selectedCompany={selectedCompany}
         />
@@ -1124,6 +1200,65 @@ const UserAccessDashboard = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && userToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-md w-full p-6">
+              <div className="text-center">
+                <div className="bg-red-100 dark:bg-red-900/20 rounded-full p-4 mx-auto w-16 h-16 flex items-center justify-center mb-4">
+                  <Trash2 className="h-8 w-8 text-red-600 dark:text-red-400" />
+                </div>
+                
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                  Delete User
+                </h2>
+                
+                <p className="text-gray-600 dark:text-gray-300 mb-6">
+                  Are you sure you want to delete <strong>{userToDelete.full_name || userToDelete.username}</strong>? 
+                  This action cannot be undone.
+                </p>
+
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowDeleteConfirm(false)
+                      setUserToDelete(null)
+                    }}
+                    className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-2 px-4 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDeleteUser}
+                    className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Delete User
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit User Modal */}
+        {showEditUserModal && editingUser && (
+          <UserCreationWizard
+            isVisible={showEditUserModal}
+            onClose={() => {
+              setShowEditUserModal(false)
+              setEditingUser(null)
+            }}
+            onUserCreated={(user) => {
+              console.log('🎉 User updated:', user)
+              loadUsers()
+              showToast('User updated successfully', 'success')
+            }}
+            selectedCompany={selectedCompany}
+            editMode={true}
+            existingUser={editingUser}
+          />
         )}
 
         {/* Toast Notification */}

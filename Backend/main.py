@@ -217,11 +217,102 @@ async def check_page_permissions(request: Request, call_next):
     
     session = sessions[session_id]
     
-    # Super admin can access everything
-    if session.get('is_superuser') or session.get('role') == 'admin':
+    # Only allow access for actual admin username, not role-based
+    if session.get('username') == 'admin':
         return await call_next(request)
     
-    # Check specific page permissions for role management
+    # For regular users, check page permissions
+    user_id = session.get('user_id')
+    company_name = session.get('company_name')
+    
+    if user_id and company_name:
+        # Get user's page permissions from database
+        try:
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            
+            conn = psycopg2.connect(
+                host=os.getenv("DB_HOST", "postgres"),
+                database=os.getenv("DB_NAME", "epm_tool"),
+                user=os.getenv("DB_USER", "postgres"),
+                password=os.getenv("DB_PASSWORD", "epm_password"),
+                port=os.getenv("DB_PORT", "5432")
+            )
+            
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get user's permissions from user_profiles
+            cur.execute("""
+                SELECT up.permissions, r.page_permissions as role_permissions
+                FROM user_profiles up
+                LEFT JOIN custom_roles r ON up.role_id = r.id
+                WHERE up.user_id = %s AND up.company_id = %s
+            """, (user_id, company_name))
+            
+            user_perms = cur.fetchone()
+            cur.close()
+            conn.close()
+            
+            if user_perms:
+                # Parse permissions
+                user_permissions = user_perms.get('permissions', {})
+                role_permissions = user_perms.get('role_permissions', {})
+                
+                if isinstance(user_permissions, str):
+                    import json
+                    user_permissions = json.loads(user_permissions)
+                if isinstance(role_permissions, str):
+                    import json
+                    role_permissions = json.loads(role_permissions)
+                
+                # Get page permissions
+                page_perms = user_permissions.get('page_permissions', {})
+                role_page_perms = role_permissions if isinstance(role_permissions, dict) else {}
+                
+                # Combine permissions (user permissions override role permissions)
+                combined_perms = {**role_page_perms, **page_perms}
+                
+                # Map API paths to page permissions
+                page_mappings = {
+                    '/api/role-management/': '/rolemanagement',
+                    '/api/accounts/': '/accounts',
+                    '/api/entities/': '/entities',
+                    '/api/consolidation/': '/consolidation',
+                    '/api/financial-statements/': '/financial-statements',
+                    '/api/trial-balance/': '/trial-balance',
+                    '/api/analytics/': '/real-time-analytics',
+                    '/api/audit/': '/audit',
+                    '/api/etl/': '/etl',
+                    '/api/process/': '/process',
+                    '/api/tax/': '/tax-management',
+                    '/api/journal/': '/journal-entries',
+                    '/api/reports/': '/reports',
+                    '/api/axes/': '/axes',
+                    '/api/axes-entity/': '/entity',
+                    '/api/axes-account/': '/accounts',
+                    '/api/ifrs-accounts/': '/accounts'
+                }
+                
+                # Check if user has permission for this path
+                for api_path, page_path in page_mappings.items():
+                    if path.startswith(api_path):
+                        if not combined_perms.get(page_path, False):
+                            return JSONResponse(
+                                status_code=403,
+                                content={
+                                    "detail": f"Access denied to {page_path}. Contact administrator for access.",
+                                    "requires_permission": True,
+                                    "page": page_path,
+                                    "user_permissions": combined_perms
+                                }
+                            )
+                        break
+                
+        except Exception as e:
+            print(f"Error checking permissions: {e}")
+            # On error, allow access but log it
+    
+    # Special check for role management (most restrictive)
     if path.startswith('/api/role-management/') and path not in ['/api/role-management/login', '/api/role-management/user-info', '/api/role-management/logout']:
         # Only superadmin can access role management
         return JSONResponse(

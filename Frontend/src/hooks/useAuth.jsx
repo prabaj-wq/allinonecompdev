@@ -40,7 +40,6 @@ export const AuthProvider = ({ children }) => {
           const userData = {
             username: userInfo.username,
             company: userInfo.company_name,
-            role: 'admin',
             full_name: userInfo.username,
             user_id: userInfo.user_id,
             email: userInfo.email
@@ -149,7 +148,6 @@ export const AuthProvider = ({ children }) => {
         const userData = {
           username: 'admin', // Default username
           company: companyParam,
-          role: 'admin',
           full_name: 'Admin User',
           user_id: null,
           email: null
@@ -201,7 +199,6 @@ export const AuthProvider = ({ children }) => {
             const userData = {
               username: result.username,
               company: result.company_name,
-              role: 'admin', // Admin role for onboarding users
               full_name: result.username,
               user_id: result.user_id,
               email: result.email

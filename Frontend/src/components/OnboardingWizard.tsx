@@ -213,7 +213,6 @@ const OnboardingWizard: React.FC = () => {
           localStorage.setItem('user', JSON.stringify({
             username: response.data.username,
             company: response.data.company_name,
-            role: 'admin',
             full_name: response.data.username
           }))
         }

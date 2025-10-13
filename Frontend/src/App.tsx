@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth'
 import Login from './pages/Login'
 import { CompanyProvider } from './contexts/CompanyContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { PermissionsProvider } from './contexts/PermissionsContext'
 
 const { Content, Footer } = Layout
 
@@ -47,12 +48,14 @@ const AppContent: React.FC = () => {
   return (
     <ThemeProvider>
       <CompanyProvider>
-        <TwoFactorProvider>
-          <div style={{ minHeight: '100vh', width: '100vw', margin: 0, padding: 0 }}>
-            <TwoFactorWrapper />
-            <ToastContainer />
-          </div>
-        </TwoFactorProvider>
+        <PermissionsProvider>
+          <TwoFactorProvider>
+            <div style={{ minHeight: '100vh', width: '100vw', margin: 0, padding: 0 }}>
+              <TwoFactorWrapper />
+              <ToastContainer />
+            </div>
+          </TwoFactorProvider>
+        </PermissionsProvider>
       </CompanyProvider>
     </ThemeProvider>
   )

@@ -3,6 +3,7 @@ import { useTwoFactor } from '../contexts/TwoFactorContext'
 import TwoFactorVerification from './TwoFactorVerification'
 import Layout from './Layout'
 import ToastContainer from './ToastContainer'
+import PageAccessWrapper from './PageAccessWrapper'
 import { Routes, Route, Navigate } from 'react-router-dom'
 
 // Import all the page components
@@ -106,22 +107,70 @@ const TwoFactorWrapper = () => {
             <Routes>
               <Route path="/dashboard" element={<DashboardEnhanced />} />
               <Route path="/dashboard-enhanced" element={<DashboardEnhanced />} />
-          <Route path="/entity" element={<EntityPage />} />
-          <Route path="/account" element={<AccountPage />} />
+          <Route path="/entity" element={
+            <PageAccessWrapper requiredPage="/entity" pageName="Entity Management">
+              <EntityPage />
+            </PageAccessWrapper>
+          } />
+          <Route path="/account" element={
+            <PageAccessWrapper requiredPage="/accounts" pageName="Account Management">
+              <AccountPage />
+            </PageAccessWrapper>
+          } />
 
-          <Route path="/process" element={<Process />} />
-          <Route path="/etl" element={<ETLPage />} />
-          <Route path="/consolidation" element={<Consolidation />} />
+          <Route path="/process" element={
+            <PageAccessWrapper requiredPage="/process" pageName="Process Management">
+              <Process />
+            </PageAccessWrapper>
+          } />
+          <Route path="/etl" element={
+            <PageAccessWrapper requiredPage="/etl" pageName="ETL Management">
+              <ETLPage />
+            </PageAccessWrapper>
+          } />
+          <Route path="/consolidation" element={
+            <PageAccessWrapper requiredPage="/consolidation" pageName="Consolidation">
+              <Consolidation />
+            </PageAccessWrapper>
+          } />
           <Route path="/support" element={<Support />} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="/financial-statements" element={<FinancialStatements />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/advanced-features" element={<AdvancedFeatures />} />
-          <Route path="/asset-register" element={<AssetRegister />} />
-          <Route path="/backup-restore" element={<BackupRestore />} />
+          <Route path="/financial-statements" element={
+            <PageAccessWrapper requiredPage="/financial-statements" pageName="Financial Statements">
+              <FinancialStatements />
+            </PageAccessWrapper>
+          } />
+          <Route path="/reports" element={
+            <PageAccessWrapper requiredPage="/reports" pageName="Reports">
+              <Reports />
+            </PageAccessWrapper>
+          } />
+          <Route path="/advanced-features" element={
+            <PageAccessWrapper requiredPage="/advanced-features" pageName="Advanced Features">
+              <AdvancedFeatures />
+            </PageAccessWrapper>
+          } />
+          <Route path="/asset-register" element={
+            <PageAccessWrapper requiredPage="/asset-register" pageName="Asset Register">
+              <AssetRegister />
+            </PageAccessWrapper>
+          } />
+          <Route path="/backup-restore" element={
+            <PageAccessWrapper requiredPage="/backup-restore" pageName="Backup & Restore">
+              <BackupRestore />
+            </PageAccessWrapper>
+          } />
           <Route path="/audit-materiality" element={<AuditMateriality />} />
-          <Route path="/audit" element={<Audit />} />
-          <Route path="/audit-trail" element={<AuditTrail />} />
+          <Route path="/audit" element={
+            <PageAccessWrapper requiredPage="/audit" pageName="Audit">
+              <Audit />
+            </PageAccessWrapper>
+          } />
+          <Route path="/audit-trail" element={
+            <PageAccessWrapper requiredPage="/audit-trail" pageName="Audit Trail">
+              <AuditTrail />
+            </PageAccessWrapper>
+          } />
           <Route path="/bills" element={<Bills />} />
           <Route path="/bank-reconciliation" element={<BankReconciliation />} />
           <Route path="/supplier-reconciliation" element={<SupplierReconciliation />} />
@@ -129,19 +178,59 @@ const TwoFactorWrapper = () => {
           <Route path="/ifrs-templates" element={<IFRSTemplates />} />
           <Route path="/fst-items" element={<FSTItems />} />
           <Route path="/forex-rates" element={<ForexRates />} />
-          <Route path="/entities" element={<EntityManagement />} />
-          <Route path="/accounts" element={<AccountManagement />} />
-          <Route path="/journal-entries" element={<JournalEntries />} />
-          <Route path="/trial-balance" element={<TrialBalance />} />
-          <Route path="/financial-ratios" element={<FinancialRatios />} />
-          <Route path="/cash-flow" element={<CashFlow />} />
-          <Route path="/variance-analysis" element={<VarianceAnalysis />} />
-          <Route path="/tax-management" element={<TaxManagement />} />
+          <Route path="/entities" element={
+            <PageAccessWrapper requiredPage="/entity" pageName="Entity Management">
+              <EntityManagement />
+            </PageAccessWrapper>
+          } />
+          <Route path="/accounts" element={
+            <PageAccessWrapper requiredPage="/accounts" pageName="Account Management">
+              <AccountManagement />
+            </PageAccessWrapper>
+          } />
+          <Route path="/journal-entries" element={
+            <PageAccessWrapper requiredPage="/journal-entries" pageName="Journal Entries">
+              <JournalEntries />
+            </PageAccessWrapper>
+          } />
+          <Route path="/trial-balance" element={
+            <PageAccessWrapper requiredPage="/trial-balance" pageName="Trial Balance">
+              <TrialBalance />
+            </PageAccessWrapper>
+          } />
+          <Route path="/financial-ratios" element={
+            <PageAccessWrapper requiredPage="/financial-ratios" pageName="Financial Ratios">
+              <FinancialRatios />
+            </PageAccessWrapper>
+          } />
+          <Route path="/cash-flow" element={
+            <PageAccessWrapper requiredPage="/cash-flow" pageName="Cash Flow">
+              <CashFlow />
+            </PageAccessWrapper>
+          } />
+          <Route path="/variance-analysis" element={
+            <PageAccessWrapper requiredPage="/variance-analysis" pageName="Variance Analysis">
+              <VarianceAnalysis />
+            </PageAccessWrapper>
+          } />
+          <Route path="/tax-management" element={
+            <PageAccessWrapper requiredPage="/tax-management" pageName="Tax Management">
+              <TaxManagement />
+            </PageAccessWrapper>
+          } />
           <Route path="/regulatory-reporting" element={<RegulatoryReporting />} />
           <Route path="/internal-controls" element={<InternalControls />} />
           <Route path="/system-monitoring" element={<SystemMonitoring />} />
-          <Route path="/system-management" element={<SystemManagement />} />
-          <Route path="/api-management" element={<APIManagement />} />
+          <Route path="/system-management" element={
+            <PageAccessWrapper requiredPage="/system-management" pageName="System Management">
+              <SystemManagement />
+            </PageAccessWrapper>
+          } />
+          <Route path="/api-management" element={
+            <PageAccessWrapper requiredPage="/api-management" pageName="API Management">
+              <APIManagement />
+            </PageAccessWrapper>
+          } />
           <Route path="/database-management" element={<DatabaseManagement />} />
           <Route path="/data-import-export" element={<DataImportExport />} />
           <Route path="/third-party-integration" element={<ThirdPartyIntegration />} />
@@ -150,35 +239,99 @@ const TwoFactorWrapper = () => {
           <Route path="/settings" element={<Settings />} />
           <Route path="/hr-management" element={<HRManagementSuite />} />
           
-          {/* New Advanced Features Routes */}
-          <Route path="/workflows" element={<Workflows />} />
-          <Route path="/global-compliance" element={<GlobalCompliance />} />
-          <Route path="/narrative-reporting" element={<NarrativeReporting />} />
-          <Route path="/what-if-analysis" element={<WhatIfAnalysis />} />
-          <Route path="/real-time-analytics" element={<RealTimeAnalytics />} />
+          {/* New Advanced Features Routes - With Access Control */}
+          <Route path="/workflows" element={
+            <PageAccessWrapper requiredPage="/workflows" pageName="Workflow Management">
+              <Workflows />
+            </PageAccessWrapper>
+          } />
+          <Route path="/global-compliance" element={
+            <PageAccessWrapper requiredPage="/global-compliance" pageName="Global Compliance">
+              <GlobalCompliance />
+            </PageAccessWrapper>
+          } />
+          <Route path="/narrative-reporting" element={
+            <PageAccessWrapper requiredPage="/narrative-reporting" pageName="Narrative Reporting">
+              <NarrativeReporting />
+            </PageAccessWrapper>
+          } />
+          <Route path="/what-if-analysis" element={
+            <PageAccessWrapper requiredPage="/what-if-analysis" pageName="What-If Analysis">
+              <WhatIfAnalysis />
+            </PageAccessWrapper>
+          } />
+          <Route path="/real-time-analytics" element={
+            <PageAccessWrapper requiredPage="/real-time-analytics" pageName="Real-Time Analytics">
+              <RealTimeAnalytics />
+            </PageAccessWrapper>
+          } />
           
           {/* Integration App Routes */}
           <Route path="/integration-summary" element={<IntegrationSummary />} />
-          <Route path="/integration-hub" element={<IntegrationHub />} />
+          <Route path="/integration-hub" element={
+            <PageAccessWrapper requiredPage="/integration-hub" pageName="Integration Hub">
+              <IntegrationHub />
+            </PageAccessWrapper>
+          } />
           <Route path="/custom-axes" element={<CustomAxes />} />
           <Route path="/business-valuation" element={<BusinessValuation />} />
           <Route path="/sql-query-console" element={<SQLQueryConsole />} />
           <Route path="/quantum-finance" element={<QuantumFinance />} />
           <Route path="/business-tools" element={<BusinessTools />} />
           
-          {/* Axes Routes */}
-          <Route path="/axes" element={<AxesOverview />} />
-          <Route path="/axes/entity" element={<AxesEntityEnhanced />} />
-          <Route path="/axes/account" element={<AxesAccountsEnhanced />} />
-          <Route path="/axes/:axisName" element={<AxesDynamic />} />
+          {/* Axes Routes - With Access Control */}
+          <Route path="/axes" element={
+            <PageAccessWrapper requiredPage="/axes" pageName="Axes Overview">
+              <AxesOverview />
+            </PageAccessWrapper>
+          } />
+          <Route path="/axes/entity" element={
+            <PageAccessWrapper requiredPage="/entity" pageName="Entity Management">
+              <AxesEntityEnhanced />
+            </PageAccessWrapper>
+          } />
+          <Route path="/axes/account" element={
+            <PageAccessWrapper requiredPage="/accounts" pageName="Account Management">
+              <AxesAccountsEnhanced />
+            </PageAccessWrapper>
+          } />
+          <Route path="/axes/:axisName" element={
+            <PageAccessWrapper requiredPage="/axes" pageName="Dynamic Axes">
+              <AxesDynamic />
+            </PageAccessWrapper>
+          } />
           
-          {/* Role Management Routes */}
-          <Route path="/rolemanagement" element={<RoleManagementHub />} />
-          <Route path="/rolemanagement/user-access-dashboard" element={<UserAccessDashboard />} />
-          <Route path="/rolemanagement/role-profile-management" element={<RoleProfileManagement />} />
-          <Route path="/rolemanagement/permission-matrix-management" element={<PermissionMatrixManagement />} />
-          <Route path="/rolemanagement/compliance-audit-center" element={<ComplianceAuditCenter />} />
-          <Route path="/rolemanagement/access-request-workflow" element={<AccessRequestWorkflow />} />
+          {/* Role Management Routes - Admin Only */}
+          <Route path="/rolemanagement" element={
+            <PageAccessWrapper requiredPage="/rolemanagement" pageName="Role Management">
+              <RoleManagementHub />
+            </PageAccessWrapper>
+          } />
+          <Route path="/rolemanagement/user-access-dashboard" element={
+            <PageAccessWrapper requiredPage="/rolemanagement" pageName="User Access Dashboard">
+              <UserAccessDashboard />
+            </PageAccessWrapper>
+          } />
+          <Route path="/rolemanagement/role-profile-management" element={
+            <PageAccessWrapper requiredPage="/rolemanagement" pageName="Role Profile Management">
+              <RoleProfileManagement />
+            </PageAccessWrapper>
+          } />
+          <Route path="/rolemanagement/permission-matrix-management" element={
+            <PageAccessWrapper requiredPage="/rolemanagement" pageName="Permission Matrix Management">
+              <PermissionMatrixManagement />
+            </PageAccessWrapper>
+          } />
+          <Route path="/rolemanagement/compliance-audit-center" element={
+            <PageAccessWrapper requiredPage="/rolemanagement" pageName="Compliance & Audit Center">
+              <ComplianceAuditCenter />
+            </PageAccessWrapper>
+          } />
+          <Route path="/rolemanagement/access-request-workflow" element={
+            <PageAccessWrapper requiredPage="/rolemanagement" pageName="Access Request Workflow">
+              <AccessRequestWorkflow />
+            </PageAccessWrapper>
+          } />
           
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

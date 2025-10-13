@@ -17,7 +17,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 
-const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany }) => {
+const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany, editMode = false, existingUser = null }) => {
   const parseJsonField = (value, fallback = {}) => {
     if (value === null || value === undefined) {
       return fallback
@@ -166,6 +166,47 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
   const [selectedRole, setSelectedRole] = useState(null)
   const [errors, setErrors] = useState({})
 
+  // Initialize user data for edit mode
+  useEffect(() => {
+    if (editMode && existingUser) {
+      setUserData({
+        username: existingUser.username || '',
+        email: existingUser.email || '',
+        full_name: existingUser.full_name || '',
+        department: existingUser.department || '',
+        position: existingUser.position || '',
+        phone: existingUser.phone || '',
+        password: '', // Don't populate password in edit mode
+        role_id: existingUser.role_id || '',
+        page_permissions: existingUser.page_permissions || {},
+        database_permissions: existingUser.database_permissions || {}
+      })
+      
+      // Find and set the selected role
+      if (existingUser.role_id && roles.length > 0) {
+        const role = roles.find(r => r.id === parseInt(existingUser.role_id))
+        if (role) {
+          setSelectedRole(sanitizeRole(role))
+        }
+      }
+    } else if (!editMode) {
+      // Reset for create mode
+      setUserData({
+        username: '',
+        email: '',
+        full_name: '',
+        department: '',
+        position: '',
+        phone: '',
+        password: '',
+        role_id: '',
+        page_permissions: {},
+        database_permissions: {}
+      })
+      setSelectedRole(null)
+    }
+  }, [editMode, existingUser, roles])
+
   // Load roles and databases
   useEffect(() => {
     if (isVisible) {
@@ -251,14 +292,23 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
   const handleSubmit = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`/api/role-management/users?company_name=${encodeURIComponent(selectedCompany)}`, {
-        method: 'POST',
+      const url = editMode 
+        ? `/api/role-management/users/${existingUser.id}?company_name=${encodeURIComponent(selectedCompany)}`
+        : `/api/role-management/users?company_name=${encodeURIComponent(selectedCompany)}`
+      
+      const method = editMode ? 'PUT' : 'POST'
+      
+      // Don't send password if it's empty in edit mode
+      const submitData = { ...userData, company_name: selectedCompany }
+      if (editMode && !userData.password) {
+        delete submitData.password
+      }
+      
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          ...userData,
-          company_name: selectedCompany
-        })
+        body: JSON.stringify(submitData)
       })
 
       if (response.ok) {
@@ -268,7 +318,7 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
         resetForm()
       } else {
         const error = await response.json()
-        setErrors({ submit: error.detail || 'Failed to create user' })
+        setErrors({ submit: error.detail || `Failed to ${editMode ? 'update' : 'create'} user` })
       }
     } catch (error) {
       setErrors({ submit: 'Network error occurred' })
@@ -296,7 +346,7 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">Create New User</h2>
+              <h2 className="text-2xl font-bold">{editMode ? 'Edit User' : 'Create New User'}</h2>
               <p className="text-blue-100 mt-1">Step {currentStep} of 3</p>
             </div>
             <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
@@ -554,6 +604,17 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
               <div className="space-y-4">
                 {databases.map(database => {
                   const dbPerms = userData.database_permissions[database.name] || { read: false, write: false, execute: false }
+                  
+                  // Check if this database is allowed by the selected role
+                  const roleHasAccess = selectedRole && selectedRole.database_permissions && 
+                    selectedRole.database_permissions[database.name] && 
+                    Object.values(selectedRole.database_permissions[database.name]).some(Boolean)
+                  
+                  // If a role is selected and it doesn't have access to this database, don't show it
+                  if (selectedRole && !roleHasAccess) {
+                    return null
+                  }
+                  
                   return (
                     <div key={database.name} className="border border-gray-200 dark:border-gray-600 rounded-lg p-4">
                       <div className="flex items-center justify-between mb-4">
@@ -561,38 +622,75 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
                           <h4 className="font-medium text-gray-900 dark:text-white flex items-center">
                             <Database className="h-4 w-4 mr-2" />
                             {database.name}
+                            {roleHasAccess && (
+                              <span className="ml-2 px-2 py-1 bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-200 rounded text-xs font-medium">
+                                Role Access
+                              </span>
+                            )}
                           </h4>
                           <p className="text-sm text-gray-500 dark:text-gray-400">Database access configuration</p>
                         </div>
                       </div>
                       
                       <div className="grid grid-cols-3 gap-4">
-                        {['read', 'write', 'execute'].map(permission => (
-                          <label key={permission} className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={dbPerms[permission]}
-                              onChange={(e) => setUserData(prev => ({
-                                ...prev,
-                                database_permissions: {
-                                  ...prev.database_permissions,
-                                  [database.name]: {
-                                    ...dbPerms,
-                                    [permission]: e.target.checked
+                        {['read', 'write', 'execute'].map(permission => {
+                          // Check if this permission is granted by the role
+                          const roleHasPermission = selectedRole && selectedRole.database_permissions && 
+                            selectedRole.database_permissions[database.name] && 
+                            selectedRole.database_permissions[database.name][permission]
+                          
+                          return (
+                            <label key={permission} className="flex items-center space-x-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={dbPerms[permission]}
+                                onChange={(e) => setUserData(prev => ({
+                                  ...prev,
+                                  database_permissions: {
+                                    ...prev.database_permissions,
+                                    [database.name]: {
+                                      ...dbPerms,
+                                      [permission]: e.target.checked
+                                    }
                                   }
-                                }
-                              }))}
-                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
-                            />
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 capitalize">
-                              {permission}
-                            </span>
-                          </label>
-                        ))}
+                                }))}
+                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                              />
+                              <span className={`text-sm font-medium capitalize ${
+                                roleHasPermission 
+                                  ? 'text-green-700 dark:text-green-300' 
+                                  : 'text-gray-700 dark:text-gray-300'
+                              }`}>
+                                {permission}
+                                {roleHasPermission && (
+                                  <span className="ml-1 text-xs text-green-600 dark:text-green-400">(inherited)</span>
+                                )}
+                              </span>
+                            </label>
+                          )
+                        })}
                       </div>
                     </div>
                   )
                 })}
+                
+                {/* Show message if no databases are available for the selected role */}
+                {selectedRole && databases.every(db => {
+                  const roleHasAccess = selectedRole.database_permissions && 
+                    selectedRole.database_permissions[db.name] && 
+                    Object.values(selectedRole.database_permissions[db.name]).some(Boolean)
+                  return !roleHasAccess
+                }) && (
+                  <div className="text-center py-8">
+                    <Database className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-500 dark:text-gray-400">
+                      The selected role "{selectedRole.name}" does not have access to any databases.
+                    </p>
+                    <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+                      You can modify the role permissions or select a different role.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -644,12 +742,12 @@ const UserCreationWizard = ({ isVisible, onClose, onUserCreated, selectedCompany
                 {loading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Creating...
+                    {editMode ? 'Updating...' : 'Creating...'}
                   </>
                 ) : (
                   <>
                     <Check className="h-4 w-4 mr-2" />
-                    Create User
+                    {editMode ? 'Update User' : 'Create User'}
                   </>
                 )}
               </button>

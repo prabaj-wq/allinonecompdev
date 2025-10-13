@@ -34,14 +34,34 @@ def get_db_config():
     return {
         'host': POSTGRES_HOST,
         'port': os.getenv('POSTGRES_PORT', '5432'),
-        'user': 'postgres',
-        'password': 'root@123'
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'epm_password')
     }
 
 @router.get("/")
-def get_ifrs_accounts(company_name: str = Query(...)):
+def get_ifrs_accounts(company_name: str = Query(None)):
     """Get IFRS account structure for current company"""
     try:
+        # Fix company name resolution
+        if not company_name or company_name == "Default Company":
+            # Get actual company name from database
+            try:
+                db_config = get_db_config()
+                conn = psycopg2.connect(database="epm_tool", **db_config)
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM companies WHERE status = 'active' ORDER BY created_at ASC LIMIT 1")
+                company_result = cur.fetchone()
+                if company_result:
+                    company_name = company_result[0]
+                    print(f"🔧 IFRS: Fixed company name → '{company_name}'")
+                else:
+                    company_name = "finfusion360"  # Fallback
+                cur.close()
+                conn.close()
+            except Exception as e:
+                print(f"Error resolving company for IFRS: {e}")
+                company_name = "finfusion360"  # Fallback
+        
         db_config = get_db_config()
         company_db_name = company_name.lower().replace(' ', '_').replace('-', '_')
         

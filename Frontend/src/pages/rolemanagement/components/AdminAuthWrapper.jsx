@@ -11,8 +11,8 @@ const AdminAuthWrapper = ({ children }) => {
   // Use the company from auth context as primary, fallback to company context
   const selectedCompany = authSelectedCompany || companyContextCompany
   
-  // Check if user is admin
-  const isAdmin = user?.role === 'admin' || user?.is_admin || user?.username === 'admin'
+  // Check if user is admin (only by username, not role field)
+  const isAdmin = user?.username === 'admin'
   
   // Show loading state while authentication is being checked
   if (loading) {
