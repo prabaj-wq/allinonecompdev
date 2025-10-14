@@ -93,8 +93,8 @@ const AxesAccounts = () => {
     
     setLoading(true)
     try {
-      // Load hierarchies from the same endpoint as EntityManagement
-      const hierarchiesResponse = await fetch('/api/hierarchies', {
+      // Load hierarchies from the axes-account endpoint for account-specific hierarchies
+      const hierarchiesResponse = await fetch(`/api/axes-account/hierarchies?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       if (hierarchiesResponse.ok) {
@@ -125,8 +125,8 @@ const AxesAccounts = () => {
         console.log('✅ Loaded account hierarchies from PostgreSQL:', transformedHierarchies.length)
         setHierarchies(transformedHierarchies)
         
-        // Load all accounts directly from API
-        const accountsResponse = await fetch('/api/ifrs-accounts', {
+        // Load all accounts directly from API with company context
+        const accountsResponse = await fetch(`/api/axes-account/accounts?company_name=${encodeURIComponent(selectedCompany)}`, {
           credentials: 'include'
         })
         if (accountsResponse.ok) {
@@ -205,7 +205,7 @@ const AxesAccounts = () => {
     const hierarchyName = prompt('Enter hierarchy name:')
     if (hierarchyName) {
       try {
-        const response = await fetch('/api/hierarchies', {
+        const response = await fetch(`/api/axes-account/hierarchies?company_name=${encodeURIComponent(selectedCompany)}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -252,7 +252,7 @@ const AxesAccounts = () => {
       
       console.log('Processed account data:', accountData)
       
-      const response = await fetch('/api/ifrs-accounts', {
+      const response = await fetch(`/api/axes-account/accounts?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -313,7 +313,7 @@ const AxesAccounts = () => {
     try {
       console.log('Loading account hierarchy structure for hierarchy ID:', hierarchyId)
       
-      const response = await fetch(`/api/account-hierarchy-structure/${hierarchyId}`, {
+      const response = await fetch(`/api/axes-account/hierarchy-structure/${hierarchyId}?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       
@@ -406,7 +406,7 @@ const AxesAccounts = () => {
 
       console.log('New element data:', newElementData)
 
-      const response = await fetch('/api/ifrs-accounts', {
+      const response = await fetch(`/api/axes-account/accounts?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -437,7 +437,7 @@ const AxesAccounts = () => {
       const accountCode = elementData.account_code || elementData.code
       console.log('Updating account with code:', accountCode)
       
-      const response = await fetch(`/api/ifrs-accounts/${accountCode}`, {
+      const response = await fetch(`/api/axes-account/accounts/${accountCode}?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -473,7 +473,7 @@ const AxesAccounts = () => {
 
   const handleDeleteElement = async (elementCode) => {
     try {
-      const response = await fetch(`/api/ifrs-accounts/${elementCode}`, {
+      const response = await fetch(`/api/axes-account/accounts/${elementCode}?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'DELETE',
         credentials: 'include'
       })

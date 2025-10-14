@@ -21,6 +21,7 @@ import {
   Calculator,
   ArrowUpDown
 } from 'lucide-react'
+import { useCompany } from '../contexts/CompanyContext'
 import SummaryCard from '../components/SummaryCard'
 import CustomFieldsManager from '../components/CustomFieldsManager'
 import FSTDesigner from '../components/FSTDesigner'
@@ -36,6 +37,7 @@ import HierarchyNodesPanel from '../components/HierarchyNodesPanel'
 import HierarchyEditorPanel from '../components/HierarchyEditorPanel'
 
 const AxesEntity = () => {
+  const { selectedCompany } = useCompany()
   const [activeTab, setActiveTab] = useState('overview')
   const [viewMode, setViewMode] = useState('list') // list, tree, graph
   const [hierarchies, setHierarchies] = useState([])
@@ -54,17 +56,19 @@ const AxesEntity = () => {
     unassigned_entities: [],
     hierarchy_id: null
   })
-  // Load data on component mount
+  // Load data on component mount and when company changes
   useEffect(() => {
-    loadEntityData()
-  }, [])
+    if (selectedCompany) {
+      loadEntityData()
+    }
+  }, [selectedCompany])
 
   const loadEntityData = async () => {
     setLoading(true)
     try {
       console.log('Loading hierarchies...')
       // Load hierarchies from the new axes-entity endpoint
-      const hierarchiesResponse = await fetch('/api/axes-entity/hierarchies?company_name=Default%20Company', {
+      const hierarchiesResponse = await fetch(`/api/axes-entity/hierarchies?company_name=${encodeURIComponent(selectedCompany || 'Default Company')}`, {
         credentials: 'include'
       })
       if (hierarchiesResponse.ok) {
@@ -86,7 +90,7 @@ const AxesEntity = () => {
         
         console.log('Loading entities...')
         // Load entities from the new axes-entity endpoint
-        const entitiesResponse = await fetch('/api/axes-entity/entities?company_name=Default%20Company', {
+        const entitiesResponse = await fetch(`/api/axes-entity/entities?company_name=${encodeURIComponent(selectedCompany || 'Default Company')}`, {
           credentials: 'include'
         })
         if (entitiesResponse.ok) {
@@ -170,7 +174,7 @@ const AxesEntity = () => {
     const hierarchyName = prompt('Enter hierarchy name:')
     if (hierarchyName) {
       try {
-        const response = await fetch('/api/axes-entity/hierarchies?company_name=Default%20Company', {
+        const response = await fetch(`/api/axes-entity/hierarchies?company_name=${encodeURIComponent(selectedCompany || 'Default Company')}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -217,7 +221,7 @@ const AxesEntity = () => {
       
       console.log('Processed entity data for new API:', entityData)
       
-      const response = await fetch('/api/axes-entity/entities?company_name=Default%20Company', {
+      const response = await fetch(`/api/axes-entity/entities?company_name=${encodeURIComponent(selectedCompany || 'Default Company')}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -279,7 +283,7 @@ const AxesEntity = () => {
     try {
       console.log('Loading hierarchy structure for hierarchy ID:', hierarchyId)
       
-      const response = await fetch(`/api/axes-entity/hierarchy-structure/${hierarchyId}?company_name=Default%20Company`, {
+      const response = await fetch(`/api/axes-entity/hierarchy-structure/${hierarchyId}?company_name=${encodeURIComponent(selectedCompany || 'Default Company')}`, {
         credentials: 'include'
       })
       

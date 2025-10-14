@@ -59,10 +59,12 @@ const CustomAxes = () => {
   }, [selectedCompany])
 
   const loadAxesData = async () => {
+    if (!selectedCompany) return
+    
     setLoading(true)
     try {
-      // Load axes from API
-      const response = await fetch('/api/axes', {
+      // Load axes from API with company context
+      const response = await fetch(`/api/custom-axes?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       
@@ -87,7 +89,7 @@ const CustomAxes = () => {
     try {
       setLoading(true)
       
-      const response = await fetch('/api/axes', {
+      const response = await fetch(`/api/custom-axes?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -129,7 +131,7 @@ const CustomAxes = () => {
     try {
       setLoading(true)
       
-      const response = await fetch(`/api/axes/${selectedAxis.id}`, {
+      const response = await fetch(`/api/custom-axes/${selectedAxis.id}?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -175,7 +177,7 @@ const CustomAxes = () => {
     try {
       setLoading(true)
       
-      const response = await fetch(`/api/axes/${axisId}`, {
+      const response = await fetch(`/api/custom-axes/${axisId}?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'DELETE',
         credentials: 'include'
       })
@@ -548,7 +550,7 @@ const CustomAxes = () => {
                         Edit
                       </button>
                       <button
-                        onClick={() => window.location.href = `/axes/${axis.axis_name.toLowerCase().replace(/\s+/g, '_')}`}
+                        onClick={() => window.location.href = `/custom-axes/${axis.axis_name.toLowerCase().replace(/\s+/g, '_')}/manage`}
                         className="inline-flex items-center px-3 py-1.5 border border-transparent rounded text-xs font-medium text-white bg-purple-600 hover:bg-purple-700"
                       >
                         <Eye className="w-3 h-3 mr-1" />
