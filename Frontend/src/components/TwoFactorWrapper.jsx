@@ -56,6 +56,7 @@ import WhatIfAnalysis from '../pages/WhatIfAnalysis'
 import RealTimeAnalytics from '../pages/RealTimeAnalytics'
 import HRManagementSuite from '../pages/hrmanagament'
 import CustomAxes from '../pages/CustomAxes'
+import CustomAxesManager from '../pages/CustomAxesManager'
 import ETLPage from '../components/ETLPage'
 import BusinessValuation from '../pages/BusinessValuation'
 import SQLQueryConsole from '../components/SQLQueryConsole'
@@ -274,6 +275,7 @@ const TwoFactorWrapper = () => {
             </PageAccessWrapper>
           } />
           <Route path="/custom-axes" element={<CustomAxes />} />
+          <Route path="/custom-axes/:axisName/manage" element={<CustomAxesManager />} />
           <Route path="/business-valuation" element={<BusinessValuation />} />
           <Route path="/sql-query-console" element={<SQLQueryConsole />} />
           <Route path="/quantum-finance" element={<QuantumFinance />} />

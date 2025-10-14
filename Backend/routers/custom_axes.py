@@ -11,6 +11,11 @@ from contextlib import contextmanager
 
 router = APIRouter(prefix="/custom-axes", tags=["Custom Axes"])
 
+@router.get("/test")
+def test_endpoint():
+    """Simple test endpoint to verify API is working"""
+    return {"message": "Custom axes API is working!", "status": "success"}
+
 class CustomFieldDefinition(BaseModel):
     column_name: str
     field_type: str  # text, number, date, dropdown, checkbox
@@ -138,6 +143,38 @@ def get_custom_axes(company_name: str = Query(...)):
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Also ensure hierarchies table exists for custom axes
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS hierarchies (
+                    id SERIAL PRIMARY KEY,
+                    hierarchy_name VARCHAR(255) NOT NULL,
+                    hierarchy_type VARCHAR(50) NOT NULL,
+                    description TEXT,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create hierarchy_nodes table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS hierarchy_nodes (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    code VARCHAR(100) NOT NULL,
+                    parent_id INTEGER REFERENCES hierarchy_nodes(id) ON DELETE CASCADE,
+                    hierarchy_id INTEGER REFERENCES hierarchies(id) ON DELETE CASCADE,
+                    company_id VARCHAR(255) NOT NULL,
+                    level INTEGER DEFAULT 0,
+                    path VARCHAR(500),
+                    is_leaf BOOLEAN DEFAULT TRUE,
+                    custom_fields JSONB DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
             conn.commit()
             
             # Get all custom axes

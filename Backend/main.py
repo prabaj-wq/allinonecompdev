@@ -120,10 +120,10 @@ app.openapi = custom_openapi
 # Add middleware for security and performance
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Configure CORS
+# Configure CORS - Allow all origins for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=["*"] if settings.is_development else settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -534,7 +534,7 @@ def verify_credentials(company_name: str, username: str, password: str) -> Optio
 from routers import (
     auth, users, onboarding, roles, entities, accounts, 
     company_management, dashboard, fst, trial_balance, consolidation, 
-    ifrs_accounts, custom_axes, hierarchies, database_management, 
+    ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
     upload, process, financial_statements, assets, audit, 
     budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management
 )
@@ -551,6 +551,7 @@ app.include_router(ifrs_accounts.router, prefix="/api")
 app.include_router(custom_axes.router, prefix="/api")
 app.include_router(hierarchies.router, prefix="/api")
 app.include_router(database_management.router, prefix="/api")
+app.include_router(database_info.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(process.router, prefix="/api")
 app.include_router(company_management.router, prefix="/api")

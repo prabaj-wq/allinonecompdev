@@ -198,6 +198,94 @@ def update_node_paths(node_id: int, company_name: str):
         
         conn.commit()
 
+def ensure_tables_exist(company_name: str):
+    """Ensure all necessary tables exist for the company database"""
+    try:
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            
+            # Create axes_settings table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS axes_settings (
+                    id SERIAL PRIMARY KEY,
+                    axes_type VARCHAR(50) NOT NULL DEFAULT 'entity',
+                    custom_fields JSONB DEFAULT '[]',
+                    linked_axes JSONB DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create hierarchies table with company isolation
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS hierarchies (
+                    id SERIAL PRIMARY KEY,
+                    hierarchy_name VARCHAR(255) NOT NULL,
+                    hierarchy_type VARCHAR(100) DEFAULT 'entity',
+                    description TEXT,
+                    company_id VARCHAR(255) NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(hierarchy_name, company_id)
+                )
+            """)
+            
+            # Create hierarchy_nodes table with Materialized Path pattern
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS hierarchy_nodes (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    code VARCHAR(100) NOT NULL,
+                    parent_id INTEGER REFERENCES hierarchy_nodes(id) ON DELETE CASCADE,
+                    hierarchy_id INTEGER REFERENCES hierarchies(id) ON DELETE CASCADE,
+                    company_id VARCHAR(255) NOT NULL,
+                    level INTEGER DEFAULT 0,
+                    path VARCHAR(500),
+                    is_leaf BOOLEAN DEFAULT TRUE,
+                    custom_fields JSONB DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(code, hierarchy_id, company_id)
+                )
+            """)
+            
+            # Create axes_entities table with company isolation
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS axes_entities (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    code VARCHAR(100) NOT NULL,
+                    parent_id INTEGER REFERENCES hierarchy_nodes(id) ON DELETE SET NULL,
+                    node_id INTEGER REFERENCES hierarchy_nodes(id) ON DELETE SET NULL,
+                    hierarchy_id INTEGER REFERENCES hierarchies(id) ON DELETE SET NULL,
+                    company_id VARCHAR(255) NOT NULL,
+                    level INTEGER DEFAULT 0,
+                    is_leaf BOOLEAN DEFAULT TRUE,
+                    entity_type VARCHAR(50) DEFAULT 'Subsidiary',
+                    geography VARCHAR(100),
+                    currency VARCHAR(10) DEFAULT 'USD',
+                    custom_fields JSONB DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(code, company_id)
+                )
+            """)
+            
+            # Create indexes for better performance
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchies_company ON hierarchies(company_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_company ON hierarchy_nodes(company_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_hierarchy ON hierarchy_nodes(hierarchy_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_company ON axes_entities(company_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_hierarchy ON axes_entities(hierarchy_id)")
+            
+            conn.commit()
+            print(f"✅ All tables ensured for company: {company_name}")
+            
+    except Exception as e:
+        print(f"❌ Error ensuring tables for company {company_name}: {e}")
+        raise
+
 @contextmanager
 def get_company_connection(company_name: str):
     """Get database connection for specific company"""
@@ -976,7 +1064,7 @@ async def get_entities(
     """Get entities with optional filtering and hierarchical structure"""
     try:
         # Ensure all tables exist first
-        init_axes_tables(company_name)
+        ensure_tables_exist(company_name)
         
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -1397,7 +1485,7 @@ async def get_hierarchies(company_name: str = Query(...)):
     """Get all hierarchies for a company"""
     try:
         # Ensure all tables exist first
-        init_axes_tables(company_name)
+        ensure_tables_exist(company_name)
         
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

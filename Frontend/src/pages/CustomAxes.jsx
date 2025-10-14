@@ -550,7 +550,11 @@ const CustomAxes = () => {
                         Edit
                       </button>
                       <button
-                        onClick={() => window.location.href = `/custom-axes/${axis.axis_name.toLowerCase().replace(/\s+/g, '_')}/manage`}
+                        onClick={() => {
+                          const axisNameForUrl = axis.axis_name.toLowerCase().replace(/\s+/g, '_')
+                          console.log('Navigating to:', `/custom-axes/${axisNameForUrl}/manage`)
+                          window.location.href = `/custom-axes/${axisNameForUrl}/manage`
+                        }}
                         className="inline-flex items-center px-3 py-1.5 border border-transparent rounded text-xs font-medium text-white bg-purple-600 hover:bg-purple-700"
                       >
                         <Eye className="w-3 h-3 mr-1" />

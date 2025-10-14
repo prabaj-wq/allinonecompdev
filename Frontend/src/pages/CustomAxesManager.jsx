@@ -48,7 +48,7 @@ const CustomAxesManager = () => {
   const [canvasItem, setCanvasItem] = useState(null)
   const [hierarchyStructure, setHierarchyStructure] = useState({
     nodes: [],
-    unassigned_elements: [],
+    unassigned_entities: [],
     hierarchy_id: null
   })
 
@@ -64,7 +64,7 @@ const CustomAxesManager = () => {
     try {
       console.log('Loading custom axis data for:', axisName)
       
-      // Load axis information
+      // Load axis information from custom-axes API
       const axisResponse = await fetch(`/api/custom-axes/${axisName}?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
@@ -75,8 +75,8 @@ const CustomAxesManager = () => {
         console.log('✅ Loaded axis info:', axisData.axis)
       }
 
-      // Load hierarchies for this custom axis
-      const hierarchiesResponse = await fetch(`/api/custom-axes/${axisName}/hierarchies?company_name=${encodeURIComponent(selectedCompany)}`, {
+      // Load hierarchies using axes-entity API (same as entity management)
+      const hierarchiesResponse = await fetch(`/api/axes-entity/hierarchies?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       
@@ -84,32 +84,47 @@ const CustomAxesManager = () => {
         const hierarchiesData = await hierarchiesResponse.json()
         const hierarchiesList = hierarchiesData.hierarchies || []
         
-        console.log('✅ Loaded custom axis hierarchies:', hierarchiesList.length)
-        setHierarchies(hierarchiesList)
+        // Filter for custom type hierarchies or create custom ones
+        const customHierarchies = hierarchiesList.filter(h => 
+          h.hierarchy_type === 'custom' || 
+          h.hierarchy_type === axisName ||
+          h.hierarchy_name.toLowerCase().includes(axisName.toLowerCase())
+        )
         
-        // Load elements for this custom axis
-        const elementsResponse = await fetch(`/api/custom-axes/${axisName}/elements?company_name=${encodeURIComponent(selectedCompany)}`, {
+        console.log('✅ Loaded custom axis hierarchies:', customHierarchies.length)
+        setHierarchies(customHierarchies)
+        
+        // Load elements using axes-entity API (same as entity management)
+        const elementsResponse = await fetch(`/api/axes-entity/entities?company_name=${encodeURIComponent(selectedCompany)}`, {
           credentials: 'include'
         })
         
         if (elementsResponse.ok) {
           const elementsData = await elementsResponse.json()
-          const elementsList = elementsData.elements || []
+          const elementsList = elementsData.entities || []
+          
+          // Filter elements that belong to custom hierarchies
+          const customElements = elementsList.filter(element => 
+            customHierarchies.some(h => h.id === element.hierarchy_id)
+          )
           
           // Transform elements to match expected format
-          const transformedElements = elementsList.map(element => ({
+          const transformedElements = customElements.map(element => ({
             id: element.id,
-            code: element.code || element.name,
+            code: element.code,
             name: element.name,
-            type: element.type || 'Element',
+            type: element.entity_type || 'Element',
             status: 'Active',
             hierarchy: 'No Hierarchy',
             hierarchy_id: element.hierarchy_id,
-            ...element.custom_fields // Spread custom fields
+            entity_type: element.entity_type,
+            geography: element.geography,
+            currency: element.currency,
+            custom_fields: element.custom_fields || {}
           }))
           
           // Update hierarchy counts
-          const updatedHierarchies = hierarchiesList.map(hierarchy => {
+          const updatedHierarchies = customHierarchies.map(hierarchy => {
             const elementCount = transformedElements.filter(element => element.hierarchy_id === hierarchy.id).length
             return {
               ...hierarchy,
@@ -122,7 +137,7 @@ const CustomAxesManager = () => {
             const hierarchy = updatedHierarchies.find(h => h.id === element.hierarchy_id)
             return {
               ...element,
-              hierarchy: hierarchy ? hierarchy.name : 'No Hierarchy'
+              hierarchy: hierarchy ? hierarchy.hierarchy_name : 'No Hierarchy'
             }
           })
           
@@ -161,7 +176,7 @@ const CustomAxesManager = () => {
     const hierarchyName = prompt('Enter hierarchy name:')
     if (hierarchyName) {
       try {
-        const response = await fetch(`/api/custom-axes/${axisName}/hierarchies?company_name=${encodeURIComponent(selectedCompany)}`, {
+        const response = await fetch(`/api/axes-entity/hierarchies?company_name=${encodeURIComponent(selectedCompany)}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -169,7 +184,7 @@ const CustomAxesManager = () => {
           credentials: 'include',
           body: JSON.stringify({
             hierarchy_name: hierarchyName,
-            hierarchy_type: 'custom',
+            hierarchy_type: axisName, // Use axis name as hierarchy type
             description: `Custom hierarchy for ${axisName}: ${hierarchyName}`
           })
         })
@@ -192,13 +207,26 @@ const CustomAxesManager = () => {
     try {
       console.log('Creating custom axis element with data:', elementData)
       
-      const response = await fetch(`/api/custom-axes/${axisName}/elements?company_name=${encodeURIComponent(selectedCompany)}`, {
+      // Transform element data to match entity format
+      const entityData = {
+        name: elementData.name || elementData.entity_name || '',
+        code: elementData.code || elementData.entity_code || '',
+        entity_type: elementData.entity_type || elementData.type || 'Custom',
+        geography: elementData.geography || elementData.country || '',
+        currency: elementData.currency || 'USD',
+        hierarchy_id: elementData.hierarchy_id || null,
+        parent_id: elementData.parent_id || null,
+        level: elementData.level || 0,
+        custom_fields: elementData.custom_fields || {}
+      }
+      
+      const response = await fetch(`/api/axes-entity/entities?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify(elementData)
+        body: JSON.stringify(entityData)
       })
       
       if (response.ok) {
@@ -230,7 +258,7 @@ const CustomAxesManager = () => {
     try {
       console.log('Loading hierarchy structure for hierarchy ID:', hierarchyId)
       
-      const response = await fetch(`/api/custom-axes/${axisName}/hierarchy-structure/${hierarchyId}?company_name=${encodeURIComponent(selectedCompany)}`, {
+      const response = await fetch(`/api/axes-entity/hierarchy-structure/${hierarchyId}?company_name=${encodeURIComponent(selectedCompany)}`, {
         credentials: 'include'
       })
       
@@ -242,7 +270,7 @@ const CustomAxesManager = () => {
         console.error('Failed to load hierarchy structure:', response.status)
         setHierarchyStructure({
           nodes: [],
-          unassigned_elements: [],
+          unassigned_entities: [],
           hierarchy_id: hierarchyId
         })
       }
@@ -250,7 +278,7 @@ const CustomAxesManager = () => {
       console.error('Error loading hierarchy structure:', error)
       setHierarchyStructure({
         nodes: [],
-        unassigned_elements: [],
+        unassigned_entities: [],
         hierarchy_id: hierarchyId
       })
     }
@@ -279,13 +307,26 @@ const CustomAxesManager = () => {
       const elementCode = elementData.code
       console.log('Updating element with code:', elementCode)
       
-      const response = await fetch(`/api/custom-axes/${axisName}/elements/${elementCode}?company_name=${encodeURIComponent(selectedCompany)}`, {
+      // Transform element data to match entity format
+      const entityData = {
+        name: elementData.name || elementData.entity_name || '',
+        code: elementData.code || elementData.entity_code || '',
+        entity_type: elementData.entity_type || elementData.type || 'Custom',
+        geography: elementData.geography || elementData.country || '',
+        currency: elementData.currency || 'USD',
+        hierarchy_id: elementData.hierarchy_id || null,
+        parent_id: elementData.parent_id || null,
+        level: elementData.level || 0,
+        custom_fields: elementData.custom_fields || {}
+      }
+      
+      const response = await fetch(`/api/axes-entity/entities/${elementCode}?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify(elementData)
+        body: JSON.stringify(entityData)
       })
       
       if (response.ok) {
@@ -304,7 +345,7 @@ const CustomAxesManager = () => {
 
   const handleDeleteElement = async (elementCode) => {
     try {
-      const response = await fetch(`/api/custom-axes/${axisName}/elements/${elementCode}?company_name=${encodeURIComponent(selectedCompany)}`, {
+      const response = await fetch(`/api/axes-entity/entities/${elementCode}?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'DELETE',
         credentials: 'include'
       })

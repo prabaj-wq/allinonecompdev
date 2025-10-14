@@ -21,7 +21,11 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://allinonecomp-1.onrender.com"
+        "https://allinonecomp-1.onrender.com",
+        "https://symmetrical-disco-g44gvj5wqpvv3xxw-3000.app.github.dev",
+        "https://symmetrical-disco-g44gvj5wqpvv3xxw-80.app.github.dev",
+        "https://*.app.github.dev",
+        "https://*.github.dev"
     ]
     
     # Database settings
@@ -44,7 +48,7 @@ class Settings(BaseSettings):
     SESSION_SECRET_KEY: str = os.getenv("SESSION_SECRET_KEY", "your-session-secret-key")
     
     # Frontend URL for CORS and redirects
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://symmetrical-disco-g44gvj5wqpvv3xxw-3000.app.github.dev")
     
     # Email settings
     SMTP_TLS: bool = True
