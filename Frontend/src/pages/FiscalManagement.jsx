@@ -29,6 +29,54 @@ import {
   Zap
 } from 'lucide-react'
 
+// Simple Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('🚨 Component Error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <h3 className="text-red-800 font-medium">Something went wrong</h3>
+          <p className="text-red-600 text-sm mt-1">{this.state.error?.message}</p>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
+// Utility functions (moved outside component to be accessible by all components)
+const getStatusIcon = (status) => {
+  switch (status) {
+    case 'active': return <CheckCircle className="h-4 w-4 text-green-500" />
+    case 'locked': return <XCircle className="h-4 w-4 text-red-500" />
+    case 'archived': return <History className="h-4 w-4 text-gray-500" />
+    default: return <AlertCircle className="h-4 w-4 text-yellow-500" />
+  }
+}
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case 'active': return 'bg-green-100 text-green-800 border-green-200'
+    case 'locked': return 'bg-red-100 text-red-800 border-red-200'
+    case 'archived': return 'bg-gray-100 text-gray-800 border-gray-200'
+    default: return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+  }
+}
+
 const FiscalManagement = () => {
   const { selectedCompany } = useCompany()
   const [fiscalYears, setFiscalYears] = useState([])
@@ -83,24 +131,6 @@ const FiscalManagement = () => {
     const matchesStatus = statusFilter === 'all' || year.status === statusFilter
     return matchesSearch && matchesStatus
   })
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'active': return <CheckCircle className="h-4 w-4 text-green-500" />
-      case 'locked': return <XCircle className="h-4 w-4 text-red-500" />
-      case 'archived': return <History className="h-4 w-4 text-gray-500" />
-      default: return <AlertCircle className="h-4 w-4 text-yellow-500" />
-    }
-  }
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active': return 'bg-green-100 text-green-800 border-green-200'
-      case 'locked': return 'bg-red-100 text-red-800 border-red-200'
-      case 'archived': return 'bg-gray-100 text-gray-800 border-gray-200'
-      default: return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-    }
-  }
 
   const FiscalYearCard = ({ year }) => (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
@@ -492,10 +522,13 @@ const FiscalManagement = () => {
 
 // Fiscal Year Details Component (will be implemented separately)
 const FiscalYearDetails = ({ year, onBack }) => {
+  console.log('🏢 FiscalYearDetails rendered with year:', year)
   const [activeTab, setActiveTab] = useState('periods')
   const [periods, setPeriods] = useState([])
   const [scenarios, setScenarios] = useState([])
   const [loading, setLoading] = useState(false)
+  
+  console.log('📋 Active tab:', activeTab)
 
   const tabs = [
     { id: 'periods', name: 'Periods', icon: Clock, count: periods.length },
@@ -546,7 +579,10 @@ const FiscalYearDetails = ({ year, onBack }) => {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  console.log('🔄 Tab clicked:', tab.id)
+                  setActiveTab(tab.id)
+                }}
                 className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -568,10 +604,46 @@ const FiscalYearDetails = ({ year, onBack }) => {
 
       {/* Tab Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'periods' && <PeriodsTab year={year} />}
-        {activeTab === 'scenarios' && <ScenariosTab year={year} />}
-        {activeTab === 'settings' && <SettingsTab year={year} />}
-        {activeTab === 'audit' && <AuditTab year={year} />}
+        {activeTab === 'periods' && (
+          <div>
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800">🔄 Loading Periods Tab for year: {year.year_name}</p>
+            </div>
+            <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Periods Tab</div>}>
+              <PeriodsTab year={year} />
+            </ErrorBoundary>
+          </div>
+        )}
+        {activeTab === 'scenarios' && (
+          <div>
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800">🔄 Loading Scenarios Tab for year: {year.year_name}</p>
+            </div>
+            <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Scenarios Tab</div>}>
+              <ScenariosTab year={year} />
+            </ErrorBoundary>
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <div>
+            <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+              <p className="text-purple-800">🔄 Loading Settings Tab for year: {year.year_name}</p>
+            </div>
+            <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Settings Tab</div>}>
+              <SettingsTab year={year} />
+            </ErrorBoundary>
+          </div>
+        )}
+        {activeTab === 'audit' && (
+          <div>
+            <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <p className="text-orange-800">🔄 Loading Audit Tab for year: {year.year_name}</p>
+            </div>
+            <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Audit Tab</div>}>
+              <AuditTab year={year} />
+            </ErrorBoundary>
+          </div>
+        )}
       </div>
     </div>
   )
