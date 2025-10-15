@@ -921,6 +921,7 @@ const AxesEntity = () => {
           isVisible={showSettings}
           onClose={() => setShowSettings(false)}
           onSave={(fields) => handleCustomFieldChange(settingsType, fields)}
+          companyName={selectedCompany}
         />
       )}
 

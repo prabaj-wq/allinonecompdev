@@ -1046,6 +1046,7 @@ const AxesAccounts = () => {
           isVisible={showSettings}
           onClose={() => setShowSettings(false)}
           onSave={(fields) => handleCustomFieldChange(settingsType, fields)}
+          companyName={selectedCompany}
         />
       )}
 

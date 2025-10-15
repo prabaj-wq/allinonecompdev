@@ -9,6 +9,7 @@ import {
   ChevronUp, 
   Settings, 
   ToggleRight,
+  ToggleLeft,
   Hash,
   Calendar,
   Type,
@@ -17,7 +18,9 @@ import {
   Info,
   Eye,
   EyeOff,
-  ArrowUpDown
+  ArrowUpDown,
+  Database,
+  List
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 
@@ -28,6 +31,7 @@ const CustomFieldsManager = ({
   onSave,
   companyName = 'Default Company'
 }) => {
+  console.log('🔧 CustomFieldsManager render:', { type, isVisible, companyName })
   const [fields, setFields] = useState([])
   const [editingField, setEditingField] = useState(null)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -48,6 +52,7 @@ const CustomFieldsManager = ({
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
+    console.log('🔧 CustomFieldsManager useEffect:', { isVisible, type, companyName })
     if (isVisible) {
       loadExistingFields()
     }
@@ -55,12 +60,19 @@ const CustomFieldsManager = ({
 
   const loadExistingFields = async () => {
     try {
+      // Determine the correct API endpoint based on type
+      let apiEndpoint = '/api/axes-entity/settings'
+      if (type === 'accounts' || type === 'account') {
+        apiEndpoint = '/api/axes-account/settings'
+      }
+      
       // Load existing custom fields from axes settings
-      const response = await fetch(`/api/axes-entity/settings?company_name=${encodeURIComponent(companyName)}`, {
+      const response = await fetch(`${apiEndpoint}?company_name=${encodeURIComponent(companyName)}`, {
         credentials: 'include'
       })
       if (response.ok) {
         const data = await response.json()
+        console.log('✅ Loaded custom fields data:', data)
         const customFields = data.custom_fields || []
         
         // Convert backend array format to UI array format
@@ -77,9 +89,10 @@ const CustomFieldsManager = ({
           display_order: field.display_order || index,
           sql_query: field.sql_query || ''
         }))
+        console.log('✅ Converted fields array:', fieldsArray)
         setFields(fieldsArray)
       } else {
-        console.warn('Failed to load custom fields, using mock data')
+        console.warn('❌ Failed to load custom fields, response:', response.status, response.statusText)
         setFields(getMockFields())
       }
     } catch (error) {
