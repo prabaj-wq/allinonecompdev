@@ -20,7 +20,8 @@ import {
   EyeOff,
   ArrowUpDown,
   Database,
-  List
+  List,
+  Save
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 

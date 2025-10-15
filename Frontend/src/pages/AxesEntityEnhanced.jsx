@@ -507,8 +507,17 @@ const AxesEntityEnhanced = () => {
   }
 
   // Export hierarchy data as CSV
-  const handleExportHierarchy = async () => {
+  const handleExportHierarchy = async (e) => {
     try {
+      console.log('🔄 Export hierarchy button clicked - Event:', e)
+      console.log('🔄 Selected hierarchy:', selectedHierarchy)
+      
+      // Prevent event bubbling
+      if (e) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      
       if (!selectedHierarchy) {
         showToast('❌ No hierarchy selected to export', 'error')
         return
@@ -889,8 +898,17 @@ const AxesEntityEnhanced = () => {
   }
 
   // Export entities data as CSV
-  const handleExportEntities = async () => {
+  const handleExportEntities = async (e) => {
     try {
+      console.log('🔄 Export button clicked - Event:', e)
+      console.log('🔄 Export button clicked - Entities length:', entities.length)
+      
+      // Prevent event bubbling
+      if (e) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      
       if (entities.length === 0) {
         showToast('❌ No entities to export', 'error')
         return
@@ -1447,8 +1465,13 @@ const AxesEntityEnhanced = () => {
           <div className="flex items-center space-x-2">
             {/* Export/Import buttons for entities */}
             <button
-              onClick={handleExportEntities}
-              className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg"
+              onClick={(e) => {
+                console.log('🔄 Export button clicked in embedded view')
+                handleExportEntities(e)
+              }}
+              className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg relative z-10"
+              style={{ pointerEvents: 'auto' }}
+              title="Export entities to CSV"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
