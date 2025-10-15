@@ -159,7 +159,26 @@ class FiscalYearCreate(BaseModel):
 @router.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "ok", "service": "fiscal_management"}
+    print("🏥 Health check called")
+    return {"status": "ok", "service": "fiscal_management", "timestamp": datetime.now().isoformat()}
+
+@router.get("/test-db/{company_name}")
+async def test_database_connection(company_name: str):
+    """Test database connection for a company"""
+    try:
+        print(f"🧪 Testing database connection for: {company_name}")
+        ensure_fiscal_tables(company_name)
+        
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 as test")
+            result = cur.fetchone()
+            
+        print(f"✅ Database connection successful for: {company_name}")
+        return {"status": "ok", "company": company_name, "test_result": result[0]}
+    except Exception as e:
+        print(f"❌ Database connection failed for {company_name}: {str(e)}")
+        return {"status": "error", "company": company_name, "error": str(e)}
 
 @router.get("/fiscal-years")
 async def get_fiscal_years(
@@ -167,6 +186,7 @@ async def get_fiscal_years(
 ):
     """Get all fiscal years"""
     try:
+        print(f"📡 Fetching fiscal years for company: {x_company_database}")
         ensure_fiscal_tables(x_company_database)
         
         with get_company_connection(x_company_database) as conn:
@@ -175,11 +195,13 @@ async def get_fiscal_years(
             cur.execute("SELECT * FROM fiscal_years ORDER BY start_date DESC")
             fiscal_years = cur.fetchall()
             
+            print(f"✅ Found {len(fiscal_years)} fiscal years")
             return {
                 "fiscal_years": fiscal_years,
                 "total": len(fiscal_years)
             }
     except Exception as e:
+        print(f"❌ Error fetching fiscal years: {str(e)}")
         return {
             "fiscal_years": [],
             "total": 0,
@@ -210,11 +232,14 @@ async def get_fiscal_year(
 
 @router.post("/fiscal-years")
 async def create_fiscal_year(
-    fiscal_year_data: FiscalYearCreate,
+    fiscal_year_data: dict,
     x_company_database: str = Header(..., alias="X-Company-Database")
 ):
     """Create a new fiscal year"""
     try:
+        print(f"🚀 Creating fiscal year for company: {x_company_database}")
+        print(f"📊 Fiscal year data: {fiscal_year_data}")
+        
         ensure_fiscal_tables(x_company_database)
         
         with get_company_connection(x_company_database) as conn:
@@ -223,25 +248,30 @@ async def create_fiscal_year(
             # Simple insert
             insert_query = """
                 INSERT INTO fiscal_years (
-                    year_code, year_name, start_date, end_date, status, description
-                ) VALUES (%s, %s, %s, %s, %s, %s)
+                    year_code, year_name, start_date, end_date, status, description,
+                    is_consolidation_year, consolidation_method
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """
             
             cur.execute(insert_query, (
-                fiscal_year_data.year_code,
-                fiscal_year_data.year_name,
-                fiscal_year_data.start_date,
-                fiscal_year_data.end_date,
-                fiscal_year_data.status,
-                fiscal_year_data.description
+                fiscal_year_data.get('year_code'),
+                fiscal_year_data.get('year_name'),
+                fiscal_year_data.get('start_date'),
+                fiscal_year_data.get('end_date'),
+                fiscal_year_data.get('status', 'draft'),
+                fiscal_year_data.get('description'),
+                fiscal_year_data.get('is_consolidation_year', True),
+                fiscal_year_data.get('consolidation_method', 'full')
             ))
             
             fiscal_year = cur.fetchone()
             conn.commit()
             
+            print(f"✅ Fiscal year created successfully: {fiscal_year}")
             return fiscal_year
     except Exception as e:
+        print(f"❌ Error creating fiscal year: {str(e)}")
         return {"error": str(e)}
 
 @router.get("/fiscal-years/{fiscal_year_id}/periods")

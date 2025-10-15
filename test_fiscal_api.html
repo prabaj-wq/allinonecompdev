@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fiscal Management API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { margin: 5px; padding: 10px; }
+        .result { margin: 10px 0; padding: 10px; border: 1px solid #ccc; background: #f9f9f9; }
+        .error { background: #ffe6e6; border-color: #ff9999; }
+        .success { background: #e6ffe6; border-color: #99ff99; }
+    </style>
+</head>
+<body>
+    <h1>Fiscal Management API Test</h1>
+    
+    <div>
+        <h3>Company Name:</h3>
+        <input type="text" id="companyName" value="FinFusion360" placeholder="Enter company name">
+    </div>
+    
+    <div>
+        <h3>API Tests:</h3>
+        <button onclick="testHealth()">Test Health Check</button>
+        <button onclick="testDatabaseConnection()">Test Database Connection</button>
+        <button onclick="fetchFiscalYears()">Fetch Fiscal Years</button>
+        <button onclick="createTestFiscalYear()">Create Test Fiscal Year</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <script>
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        async function testHealth() {
+            try {
+                log('Testing health check...', 'info');
+                const response = await fetch('/api/fiscal-management/health');
+                const data = await response.json();
+                log(`Health check: ${JSON.stringify(data, null, 2)}`, response.ok ? 'success' : 'error');
+            } catch (error) {
+                log(`Health check error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testDatabaseConnection() {
+            try {
+                const companyName = document.getElementById('companyName').value;
+                log(`Testing database connection for: ${companyName}`, 'info');
+                const response = await fetch(`/api/fiscal-management/test-db/${companyName}`);
+                const data = await response.json();
+                log(`Database test: ${JSON.stringify(data, null, 2)}`, data.status === 'ok' ? 'success' : 'error');
+            } catch (error) {
+                log(`Database test error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function fetchFiscalYears() {
+            try {
+                const companyName = document.getElementById('companyName').value;
+                log(`Fetching fiscal years for: ${companyName}`, 'info');
+                const response = await fetch('/api/fiscal-management/fiscal-years', {
+                    headers: {
+                        'X-Company-Database': companyName
+                    }
+                });
+                const data = await response.json();
+                log(`Fiscal years: ${JSON.stringify(data, null, 2)}`, response.ok ? 'success' : 'error');
+            } catch (error) {
+                log(`Fetch fiscal years error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function createTestFiscalYear() {
+            try {
+                const companyName = document.getElementById('companyName').value;
+                const testData = {
+                    year_code: 'TEST2024',
+                    year_name: 'Test Fiscal Year 2024',
+                    start_date: '2024-01-01',
+                    end_date: '2024-12-31',
+                    description: 'Test fiscal year created via API test',
+                    status: 'draft',
+                    is_consolidation_year: true,
+                    consolidation_method: 'full'
+                };
+                
+                log(`Creating test fiscal year for: ${companyName}`, 'info');
+                log(`Data: ${JSON.stringify(testData, null, 2)}`, 'info');
+                
+                const response = await fetch('/api/fiscal-management/fiscal-years', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Company-Database': companyName
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                const result = await response.json();
+                log(`Create result: ${JSON.stringify(result, null, 2)}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    log('✅ Fiscal year created successfully! Now fetching updated list...', 'success');
+                    setTimeout(fetchFiscalYears, 1000);
+                }
+            } catch (error) {
+                log(`Create fiscal year error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Auto-test on load
+        window.onload = function() {
+            log('🚀 Starting API tests...', 'info');
+            testHealth();
+        };
+    </script>
+</body>
+</html>

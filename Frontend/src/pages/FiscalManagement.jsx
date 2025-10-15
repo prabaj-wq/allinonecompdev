@@ -41,22 +41,32 @@ const FiscalManagement = () => {
 
   // Fetch fiscal years
   const fetchFiscalYears = async () => {
-    if (!selectedCompany) return
+    if (!selectedCompany) {
+      console.log('🏢 No company selected, skipping fetch')
+      return
+    }
     
+    console.log('📡 Fetching fiscal years for company:', selectedCompany)
     setLoading(true)
     try {
-      const response = await fetch(`/api/fiscal-management/fiscal-years?include_periods=true&include_scenarios=true`, {
+      const response = await fetch(`/api/fiscal-management/fiscal-years`, {
         headers: {
           'X-Company-Database': selectedCompany
         }
       })
       
+      console.log('📡 Fetch response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
+        console.log('✅ Fetched fiscal years:', data)
         setFiscalYears(data.fiscal_years || [])
+      } else {
+        const error = await response.json()
+        console.error('❌ Fetch error:', error)
       }
     } catch (error) {
-      console.error('Error fetching fiscal years:', error)
+      console.error('❌ Network error fetching fiscal years:', error)
     } finally {
       setLoading(false)
     }
@@ -181,9 +191,17 @@ const FiscalManagement = () => {
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault()
-    if (!selectedCompany) return
+    console.log('🚀 Form submitted with data:', formData)
+    console.log('🏢 Selected company:', selectedCompany)
+    
+    if (!selectedCompany) {
+      console.error('❌ No company selected')
+      window.showToast?.('Please select a company first', 'error')
+      return
+    }
     
     try {
+      console.log('📡 Making API call to create fiscal year...')
       const response = await fetch('/api/fiscal-management/fiscal-years', {
         method: 'POST',
         headers: {
@@ -193,7 +211,13 @@ const FiscalManagement = () => {
         body: JSON.stringify(formData)
       })
       
+      console.log('📡 Response status:', response.status)
+      console.log('📡 Response ok:', response.ok)
+      
       if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Fiscal year created successfully:', result)
+        
         setShowCreateModal(false)
         setFormData({
           year_code: '',
@@ -209,11 +233,12 @@ const FiscalManagement = () => {
         window.showToast?.('Fiscal year created successfully!', 'success')
       } else {
         const error = await response.json()
-        window.showToast?.(error.error || 'Failed to create fiscal year', 'error')
+        console.error('❌ API Error:', error)
+        window.showToast?.(error.error || `Failed to create fiscal year (${response.status})`, 'error')
       }
     } catch (error) {
-      console.error('Error creating fiscal year:', error)
-      window.showToast?.('Failed to create fiscal year', 'error')
+      console.error('❌ Network/Parse Error:', error)
+      window.showToast?.('Network error - please check if backend is running', 'error')
     }
   }
 
