@@ -389,7 +389,7 @@ async def create_bulk_periods(
                         RETURNING *
                     """
 
-                    period_code = f"M{i+1"02d"}"
+                    period_code = f"M{i+1:02d}"
                     period_name = current_date.strftime("%B %Y")
 
                     cur.execute(insert_query, (
