@@ -336,6 +336,9 @@ async def create_period(
             conn.commit()
             
             return period
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating period: {str(e)}")
+
 @router.post("/fiscal-years/{fiscal_year_id}/periods/bulk")
 async def create_bulk_periods(
     fiscal_year_id: int,
@@ -534,6 +537,9 @@ async def create_scenario(
             conn.commit()
             
             return scenario
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating scenario: {str(e)}")
+
 @router.get("/scenarios/{scenario_id}/custom-fields")
 async def get_scenario_custom_fields(
     scenario_id: int,
