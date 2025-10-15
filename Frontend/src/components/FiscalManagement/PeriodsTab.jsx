@@ -303,6 +303,7 @@ const PeriodsTab = ({ year }) => {
     
     const handleBulkCreate = async () => {
       try {
+        console.log('🚀 Creating bulk periods for year:', year.id)
         const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/periods/bulk`, {
           method: 'POST',
           headers: {
@@ -316,12 +317,22 @@ const PeriodsTab = ({ year }) => {
           })
         })
 
+        console.log('📡 Bulk create response status:', response.status)
+
         if (response.ok) {
+          const result = await response.json()
+          console.log('✅ Bulk periods created:', result)
           setShowBulkCreateModal(false)
           fetchPeriods()
+          window.showToast?.(`${result.message}`, 'success')
+        } else {
+          const error = await response.json()
+          console.error('❌ Bulk create error:', error)
+          window.showToast?.(error.error || 'Failed to create periods', 'error')
         }
       } catch (error) {
-        console.error('Error creating bulk periods:', error)
+        console.error('❌ Network error creating bulk periods:', error)
+        window.showToast?.('Network error - please check if backend is running', 'error')
       }
     }
 

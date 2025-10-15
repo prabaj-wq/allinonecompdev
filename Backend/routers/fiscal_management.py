@@ -5,7 +5,7 @@ Clean working version - no syntax errors
 
 from fastapi import APIRouter, HTTPException, Query, Header
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pydantic import BaseModel, Field
 import psycopg2
 import psycopg2.extras
@@ -126,6 +126,7 @@ def ensure_fiscal_tables(company_name: str):
                     approved_at TIMESTAMP,
                     settings JSONB DEFAULT '{}',
                     custom_fields JSONB DEFAULT '{}',
+                    custom_field_definitions JSONB DEFAULT '[]',
                     created_by INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_by INTEGER,
@@ -335,10 +336,139 @@ async def create_period(
             conn.commit()
             
             return period
-    except Exception as e:
-        return {"error": str(e)}
+@router.post("/fiscal-years/{fiscal_year_id}/periods/bulk")
+async def create_bulk_periods(
+    fiscal_year_id: int,
+    bulk_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Create multiple periods at once (auto-generate)"""
+    try:
+        print(f"🚀 Creating bulk periods for fiscal year: {fiscal_year_id}")
+        print(f"📊 Bulk data: {bulk_data}")
 
-@router.get("/fiscal-years/{fiscal_year_id}/scenarios")
+        ensure_fiscal_tables(x_company_database)
+
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Get fiscal year info
+            cur.execute("SELECT * FROM fiscal_years WHERE id = %s", (fiscal_year_id,))
+            fiscal_year = cur.fetchone()
+
+            if not fiscal_year:
+                return {"error": "Fiscal year not found"}
+
+            start_date = fiscal_year['start_date']
+            end_date = fiscal_year['end_date']
+            period_type = bulk_data.get('period_type', 'month')
+
+            created_periods = []
+
+            if period_type == 'month':
+                # Generate 12 monthly periods
+                current_date = start_date
+                for i in range(12):
+                    month_start = current_date
+                    if i == 11:  # Last month
+                        month_end = end_date
+                    else:
+                        # Calculate next month
+                        if current_date.month == 12:
+                            month_end = date(current_date.year + 1, 1, 31)
+                        else:
+                            month_end = date(current_date.year, current_date.month + 1, 1) - timedelta(days=1)
+
+                    # Insert period
+                    insert_query = """
+                        INSERT INTO periods (
+                            fiscal_year_id, period_code, period_name, period_type,
+                            start_date, end_date, status, sort_order, description,
+                            is_rollup_period, consolidation_enabled
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING *
+                    """
+
+                    period_code = f"M{i+1"02d"}"
+                    period_name = current_date.strftime("%B %Y")
+
+                    cur.execute(insert_query, (
+                        fiscal_year_id,
+                        period_code,
+                        period_name,
+                        'month',
+                        month_start,
+                        month_end,
+                        'open',
+                        i,
+                        f"Monthly period {i+1}",
+                        False,
+                        True
+                    ))
+
+                    created_period = cur.fetchone()
+                    created_periods.append(created_period)
+
+                    # Move to next month
+                    if i < 11:  # Don't advance past last month
+                        current_date = month_end + timedelta(days=1)
+
+            elif period_type == 'quarter':
+                # Generate 4 quarterly periods
+                quarters = [
+                    (1, 3, "Q1"),
+                    (4, 6, "Q2"),
+                    (7, 9, "Q3"),
+                    (10, 12, "Q4")
+                ]
+
+                for i, (start_month, end_month, quarter_name) in enumerate(quarters):
+                    quarter_start = date(start_date.year, start_month, 1)
+                    quarter_end = date(start_date.year, end_month, 28)  # Approximate
+
+                    # Adjust for actual fiscal year end
+                    if i == 3:  # Last quarter
+                        quarter_end = end_date
+
+                    # Insert period
+                    insert_query = """
+                        INSERT INTO periods (
+                            fiscal_year_id, period_code, period_name, period_type,
+                            start_date, end_date, status, sort_order, description,
+                            is_rollup_period, consolidation_enabled
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING *
+                    """
+
+                    cur.execute(insert_query, (
+                        fiscal_year_id,
+                        quarter_name,
+                        f"{quarter_name} {start_date.year}",
+                        'quarter',
+                        quarter_start,
+                        quarter_end,
+                        'open',
+                        i,
+                        f"Quarterly period {quarter_name}",
+                        True,
+                        True
+                    ))
+
+                    created_period = cur.fetchone()
+                    created_periods.append(created_period)
+
+            conn.commit()
+            print(f"✅ Created {len(created_periods)} periods successfully")
+
+            return {
+                "message": f"Successfully created {len(created_periods)} {period_type}ly periods",
+                "periods": created_periods,
+                "total": len(created_periods)
+            }
+
+    except Exception as e:
+        print(f"❌ Error creating bulk periods: {str(e)}")
+        return {"error": str(e)}
 async def get_scenarios(
     fiscal_year_id: int,
     x_company_database: str = Header(..., alias="X-Company-Database")
@@ -379,8 +509,9 @@ async def create_scenario(
                 INSERT INTO scenarios (
                     fiscal_year_id, scenario_code, scenario_name, scenario_type, 
                     description, status, version_number, is_baseline, 
-                    allow_overrides, auto_calculate, consolidation_method
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    allow_overrides, auto_calculate, consolidation_method,
+                    custom_field_definitions
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """
             
@@ -395,17 +526,193 @@ async def create_scenario(
                 scenario_data.get('is_baseline', False),
                 scenario_data.get('allow_overrides', True),
                 scenario_data.get('auto_calculate', True),
-                scenario_data.get('consolidation_method', 'full')
+                scenario_data.get('consolidation_method', 'full'),
+                scenario_data.get('custom_field_definitions', [])
             ))
             
             scenario = cur.fetchone()
             conn.commit()
             
             return scenario
+@router.get("/scenarios/{scenario_id}/custom-fields")
+async def get_scenario_custom_fields(
+    scenario_id: int,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Get custom field definitions for a scenario"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cur.execute("SELECT custom_field_definitions FROM scenarios WHERE id = %s", (scenario_id,))
+            scenario = cur.fetchone()
+
+            if not scenario:
+                return {"error": "Scenario not found"}
+
+            return {
+                "scenario_id": scenario_id,
+                "custom_fields": scenario['custom_field_definitions'] or []
+            }
     except Exception as e:
         return {"error": str(e)}
 
-@router.get("/scenarios/types")
+@router.post("/scenarios/{scenario_id}/custom-fields")
+async def add_scenario_custom_field(
+    scenario_id: int,
+    field_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Add a custom field definition to a scenario"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Get current custom field definitions
+            cur.execute("SELECT custom_field_definitions FROM scenarios WHERE id = %s", (scenario_id,))
+            scenario = cur.fetchone()
+
+            if not scenario:
+                return {"error": "Scenario not found"}
+
+            current_fields = scenario['custom_field_definitions'] or []
+
+            # Add new field
+            new_field = {
+                "id": f"field_{len(current_fields) + 1}",
+                "name": field_data.get('name'),
+                "label": field_data.get('label'),
+                "type": field_data.get('type', 'text'),
+                "required": field_data.get('required', False),
+                "options": field_data.get('options', []),
+                "validation": field_data.get('validation', {}),
+                "default_value": field_data.get('default_value'),
+                "description": field_data.get('description')
+            }
+
+            current_fields.append(new_field)
+
+            # Update scenario
+            cur.execute("""
+                UPDATE scenarios
+                SET custom_field_definitions = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (current_fields, scenario_id))
+
+            conn.commit()
+
+            return {
+                "message": "Custom field added successfully",
+                "field": new_field,
+                "custom_fields": current_fields
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.put("/scenarios/{scenario_id}/custom-fields/{field_id}")
+async def update_scenario_custom_field(
+    scenario_id: int,
+    field_id: str,
+    field_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Update a custom field definition"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Get current custom field definitions
+            cur.execute("SELECT custom_field_definitions FROM scenarios WHERE id = %s", (scenario_id,))
+            scenario = cur.fetchone()
+
+            if not scenario:
+                return {"error": "Scenario not found"}
+
+            current_fields = scenario['custom_field_definitions'] or []
+
+            # Find and update field
+            field_updated = False
+            for field in current_fields:
+                if field['id'] == field_id:
+                    field.update({
+                        "name": field_data.get('name', field['name']),
+                        "label": field_data.get('label', field['label']),
+                        "type": field_data.get('type', field['type']),
+                        "required": field_data.get('required', field['required']),
+                        "options": field_data.get('options', field['options']),
+                        "validation": field_data.get('validation', field['validation']),
+                        "default_value": field_data.get('default_value', field['default_value']),
+                        "description": field_data.get('description', field['description'])
+                    })
+                    field_updated = True
+                    break
+
+            if not field_updated:
+                return {"error": "Field not found"}
+
+            # Update scenario
+            cur.execute("""
+                UPDATE scenarios
+                SET custom_field_definitions = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (current_fields, scenario_id))
+
+            conn.commit()
+
+            return {
+                "message": "Custom field updated successfully",
+                "field": current_fields,
+                "custom_fields": current_fields
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.delete("/scenarios/{scenario_id}/custom-fields/{field_id}")
+async def delete_scenario_custom_field(
+    scenario_id: int,
+    field_id: str,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Delete a custom field definition"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Get current custom field definitions
+            cur.execute("SELECT custom_field_definitions FROM scenarios WHERE id = %s", (scenario_id,))
+            scenario = cur.fetchone()
+
+            if not scenario:
+                return {"error": "Scenario not found"}
+
+            current_fields = scenario['custom_field_definitions'] or []
+
+            # Remove field
+            current_fields = [field for field in current_fields if field['id'] != field_id]
+
+            # Update scenario
+            cur.execute("""
+                UPDATE scenarios
+                SET custom_field_definitions = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (current_fields, scenario_id))
+
+            conn.commit()
+
+            return {
+                "message": "Custom field deleted successfully",
+                "custom_fields": current_fields
+            }
+    except Exception as e:
+        return {"error": str(e)}
 async def get_scenario_types():
     """Get available scenario types"""
     return {

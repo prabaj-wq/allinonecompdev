@@ -654,7 +654,6 @@ const SettingsTab = ({ year }) => (
   <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Fiscal Year Settings</h3>
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Consolidation Method</label>
           <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
@@ -663,15 +662,6 @@ const SettingsTab = ({ year }) => (
             <option value="equity">Equity Method</option>
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Currency</label>
-          <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
-            <option value="USD">USD - US Dollar</option>
-            <option value="EUR">EUR - Euro</option>
-            <option value="GBP">GBP - British Pound</option>
-          </select>
-        </div>
-      </div>
       <div className="flex items-center space-x-4">
         <label className="flex items-center space-x-2">
           <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
