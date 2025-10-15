@@ -1,15 +1,37 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, HTTPException, status
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, validator, Field
-from ..models.fiscal import FiscalYear, Period, Scenario, AuditLog, FiscalYearStatus, PeriodType, PeriodStatus, ScenarioType, ScenarioStatus
-from ..auth.dependencies import get_current_user
-from ..database import get_db
+from pydantic import BaseModel
+from enum import Enum
 import json
 
 router = APIRouter(prefix="/fiscal", tags=["fiscal"])
+
+# Define enums locally to avoid import issues
+class FiscalYearStatus(str, Enum):
+    active = "active"
+    closed = "closed"
+    draft = "draft"
+
+class PeriodType(str, Enum):
+    monthly = "monthly"
+    quarterly = "quarterly"
+    yearly = "yearly"
+
+class PeriodStatus(str, Enum):
+    open = "open"
+    closed = "closed"
+    locked = "locked"
+
+class ScenarioType(str, Enum):
+    actual = "actual"
+    budget = "budget"
+    forecast = "forecast"
+
+class ScenarioStatus(str, Enum):
+    draft = "draft"
+    active = "active"
+    archived = "archived"
 
 # Pydantic models for request validation
 class PeriodBase(BaseModel):
