@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 # Create base class for company-specific models
-CompanyBase = declarative_base()
+from company_database_base import CompanyBase
 
 # Association table for many-to-many relationship between roles and permissions
 role_permission = Table(
@@ -435,6 +435,12 @@ class AuditTrail(CompanyBase):
     timestamp = Column(DateTime, default=datetime.utcnow)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
+
+# Import fiscal management models
+from models.fiscal_management import (
+    FiscalYear, Period, Scenario, ScenarioData, 
+    ScenarioComparison, ConsolidationRule
+)
 
 def create_company_database_schema(engine):
     """Create all tables for a company database"""

@@ -549,7 +549,7 @@ from routers import (
     company_management, dashboard, fst, trial_balance, consolidation, 
     ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
     upload, process, financial_statements, assets, audit, 
-    budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal
+    budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal, fiscal_management
 )
 
 # Include all routers with /api prefix
@@ -582,6 +582,7 @@ app.include_router(axes_entity.router, prefix="/api")
 app.include_router(axes_account.router, prefix="/api")
 app.include_router(sql.router, prefix="/api")
 app.include_router(fiscal.router, prefix="/api")
+app.include_router(fiscal_management.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status

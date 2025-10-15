@@ -57,6 +57,7 @@ import RealTimeAnalytics from '../pages/RealTimeAnalytics'
 import HRManagementSuite from '../pages/hrmanagament'
 import CustomAxes from '../pages/CustomAxes'
 import CustomAxesManager from '../pages/CustomAxesManager'
+import FiscalManagement from '../pages/FiscalManagement'
 import ETLPage from '../components/ETLPage'
 import BusinessValuation from '../pages/BusinessValuation'
 import SQLQueryConsole from '../components/SQLQueryConsole'
@@ -280,6 +281,11 @@ const TwoFactorWrapper = () => {
           <Route path="/sql-query-console" element={<SQLQueryConsole />} />
           <Route path="/quantum-finance" element={<QuantumFinance />} />
           <Route path="/business-tools" element={<BusinessTools />} />
+          <Route path="/fiscal-management" element={
+            <PageAccessWrapper requiredPage="/fiscal-management" pageName="Fiscal Management">
+              <FiscalManagement />
+            </PageAccessWrapper>
+          } />
           
           {/* Axes Routes - With Access Control */}
           <Route path="/axes" element={

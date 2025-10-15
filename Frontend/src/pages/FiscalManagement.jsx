@@ -1,1134 +1,531 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
-import fiscalService from '../services/fiscalService';
-import { toast } from 'react-toastify';
+import React, { useState, useEffect } from 'react'
+import { useCompany } from '../contexts/CompanyContext'
+import PeriodsTab from '../components/FiscalManagement/PeriodsTab'
+import ScenariosTab from '../components/FiscalManagement/ScenariosTab'
+import { 
+  Calendar, 
+  Plus, 
+  Edit, 
+  Eye, 
+  Trash2, 
+  Settings, 
+  History, 
+  BarChart3,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  TrendingUp,
+  Copy,
+  Filter,
+  Search,
+  Download,
+  Upload,
+  RefreshCw,
+  ChevronRight,
+  ChevronDown,
+  Layers,
+  Target,
+  Zap
+} from 'lucide-react'
 
 const FiscalManagement = () => {
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [fiscalYears, setFiscalYears] = useState([]);
-  const [selectedFiscalYear, setSelectedFiscalYear] = useState(null);
-  const [periods, setPeriods] = useState([]);
-  const [scenarios, setScenarios] = useState([]);
-  const [activeTab, setActiveTab] = useState('years'); // years, periods, scenarios
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [currentItem, setCurrentItem] = useState(null);
-  
-  // Form states
-  const [fiscalYearForm, setFiscalYearForm] = useState({
-    name: '',
-    code: '',
-    start_date: '',
-    end_date: '',
-    status: 'active',
-    metadata: {}
-  });
-  
-  const [periodForm, setPeriodForm] = useState({
-    code: '',
-    name: '',
-    start_date: '',
-    end_date: '',
-    type: 'month',
-    status: 'open',
-    is_rollup: false,
-    parent_period_id: null
-  });
-  
-  const [scenarioForm, setScenarioForm] = useState({
-    code: '',
-    name: '',
-    description: '',
-    type: 'base',
-    parent_scenario_id: null,
-    version: 1,
-    status: 'draft',
-    tags: '',
-    custom_fields: {}
-  });
-  
-  // Fetch fiscal years on component mount
-  useEffect(() => {
-    fetchFiscalYears();
-  }, []);
-  
-  // Fetch periods and scenarios when a fiscal year is selected
-  useEffect(() => {
-    if (selectedFiscalYear) {
-      fetchPeriods(selectedFiscalYear.id);
-      fetchScenarios(selectedFiscalYear.id);
-    } else {
-      setPeriods([]);
-      setScenarios([]);
-    }
-  }, [selectedFiscalYear]);
-  
+  const { selectedCompany } = useCompany()
+  const [fiscalYears, setFiscalYears] = useState([])
+  const [selectedYear, setSelectedYear] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview')
+  const [loading, setLoading] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+
+  // Fetch fiscal years
   const fetchFiscalYears = async () => {
-    setLoading(true);
+    if (!selectedCompany) return
+    
+    setLoading(true)
     try {
-      const data = await fiscalService.getAllFiscalYears();
-      setFiscalYears(data);
-      if (data.length > 0 && !selectedFiscalYear) {
-        setSelectedFiscalYear(data[0]);
+      const response = await fetch(`/api/fiscal-management/fiscal-years?include_periods=true&include_scenarios=true`, {
+        headers: {
+          'X-Company-Database': selectedCompany
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setFiscalYears(data.fiscal_years || [])
       }
     } catch (error) {
-      toast.error('Failed to fetch fiscal years');
-      console.error('Error fetching fiscal years:', error);
+      console.error('Error fetching fiscal years:', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
-  
-  const fetchPeriods = async (fiscalYearId) => {
-    try {
-      const data = await fiscalService.getPeriods(fiscalYearId);
-      setPeriods(data);
-    } catch (error) {
-      toast.error('Failed to fetch periods');
-      console.error('Error fetching periods:', error);
+  }
+
+  useEffect(() => {
+    fetchFiscalYears()
+  }, [selectedCompany])
+
+  // Filter fiscal years based on search and status
+  const filteredFiscalYears = fiscalYears.filter(year => {
+    const matchesSearch = year.year_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         year.year_code.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = statusFilter === 'all' || year.status === statusFilter
+    return matchesSearch && matchesStatus
+  })
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'active': return <CheckCircle className="h-4 w-4 text-green-500" />
+      case 'locked': return <XCircle className="h-4 w-4 text-red-500" />
+      case 'archived': return <History className="h-4 w-4 text-gray-500" />
+      default: return <AlertCircle className="h-4 w-4 text-yellow-500" />
     }
-  };
-  
-  const fetchScenarios = async (fiscalYearId) => {
-    try {
-      const data = await fiscalService.getScenarios(fiscalYearId);
-      setScenarios(data);
-    } catch (error) {
-      toast.error('Failed to fetch scenarios');
-      console.error('Error fetching scenarios:', error);
+  }
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'active': return 'bg-green-100 text-green-800 border-green-200'
+      case 'locked': return 'bg-red-100 text-red-800 border-red-200'
+      case 'archived': return 'bg-gray-100 text-gray-800 border-gray-200'
+      default: return 'bg-yellow-100 text-yellow-800 border-yellow-200'
     }
-  };
-  
-  // Fiscal Year CRUD operations
-  const handleCreateFiscalYear = async () => {
-    try {
-      const newFiscalYear = await fiscalService.createFiscalYear(fiscalYearForm);
-      setFiscalYears([...fiscalYears, newFiscalYear]);
-      setSelectedFiscalYear(newFiscalYear);
-      setShowCreateModal(false);
-      resetForms();
-      toast.success('Fiscal year created successfully');
-    } catch (error) {
-      toast.error('Failed to create fiscal year');
-      console.error('Error creating fiscal year:', error);
-    }
-  };
-  
-  const handleUpdateFiscalYear = async () => {
-    try {
-      const updatedFiscalYear = await fiscalService.updateFiscalYear(currentItem.id, fiscalYearForm);
-      setFiscalYears(fiscalYears.map(fy => fy.id === updatedFiscalYear.id ? updatedFiscalYear : fy));
-      setSelectedFiscalYear(updatedFiscalYear);
-      setShowEditModal(false);
-      resetForms();
-      toast.success('Fiscal year updated successfully');
-    } catch (error) {
-      toast.error('Failed to update fiscal year');
-      console.error('Error updating fiscal year:', error);
-    }
-  };
-  
-  const handleDeleteFiscalYear = async () => {
-    try {
-      await fiscalService.deleteFiscalYear(currentItem.id);
-      setFiscalYears(fiscalYears.filter(fy => fy.id !== currentItem.id));
-      if (selectedFiscalYear && selectedFiscalYear.id === currentItem.id) {
-        setSelectedFiscalYear(fiscalYears.length > 1 ? fiscalYears.find(fy => fy.id !== currentItem.id) : null);
-      }
-      setShowDeleteModal(false);
-      resetForms();
-      toast.success('Fiscal year deleted successfully');
-    } catch (error) {
-      toast.error('Failed to delete fiscal year');
-      console.error('Error deleting fiscal year:', error);
-    }
-  };
-  
-  // Period CRUD operations
-  const handleCreatePeriod = async () => {
-    try {
-      const newPeriod = await fiscalService.createPeriod(selectedFiscalYear.id, periodForm);
-      setPeriods([...periods, newPeriod]);
-      setShowCreateModal(false);
-      resetForms();
-      toast.success('Period created successfully');
-    } catch (error) {
-      toast.error('Failed to create period');
-      console.error('Error creating period:', error);
-    }
-  };
-  
-  const handleUpdatePeriod = async () => {
-    try {
-      const updatedPeriod = await fiscalService.updatePeriod(currentItem.id, periodForm);
-      setPeriods(periods.map(p => p.id === updatedPeriod.id ? updatedPeriod : p));
-      setShowEditModal(false);
-      resetForms();
-      toast.success('Period updated successfully');
-    } catch (error) {
-      toast.error('Failed to update period');
-      console.error('Error updating period:', error);
-    }
-  };
-  
-  const handleDeletePeriod = async () => {
-    try {
-      await fiscalService.deletePeriod(currentItem.id);
-      setPeriods(periods.filter(p => p.id !== currentItem.id));
-      setShowDeleteModal(false);
-      resetForms();
-      toast.success('Period deleted successfully');
-    } catch (error) {
-      toast.error('Failed to delete period');
-      console.error('Error deleting period:', error);
-    }
-  };
-  
-  // Scenario CRUD operations
-  const handleCreateScenario = async () => {
-    try {
-      const newScenario = await fiscalService.createScenario(selectedFiscalYear.id, scenarioForm);
-      setScenarios([...scenarios, newScenario]);
-      setShowCreateModal(false);
-      resetForms();
-      toast.success('Scenario created successfully');
-    } catch (error) {
-      toast.error('Failed to create scenario');
-      console.error('Error creating scenario:', error);
-    }
-  };
-  
-  const handleUpdateScenario = async () => {
-    try {
-      const updatedScenario = await fiscalService.updateScenario(currentItem.id, scenarioForm);
-      setScenarios(scenarios.map(s => s.id === updatedScenario.id ? updatedScenario : s));
-      setShowEditModal(false);
-      resetForms();
-      toast.success('Scenario updated successfully');
-    } catch (error) {
-      toast.error('Failed to update scenario');
-      console.error('Error updating scenario:', error);
-    }
-  };
-  
-  const handleDeleteScenario = async () => {
-    try {
-      await fiscalService.deleteScenario(currentItem.id);
-      setScenarios(scenarios.filter(s => s.id !== currentItem.id));
-      setShowDeleteModal(false);
-      resetForms();
-      toast.success('Scenario deleted successfully');
-    } catch (error) {
-      toast.error('Failed to delete scenario');
-      console.error('Error deleting scenario:', error);
-    }
-  };
-  
-  // Helper functions
-  const resetForms = () => {
-    setFiscalYearForm({
-      name: '',
-      code: '',
-      start_date: '',
-      end_date: '',
-      status: 'active',
-      metadata: {}
-    });
-    
-    setPeriodForm({
-      code: '',
-      name: '',
-      start_date: '',
-      end_date: '',
-      type: 'month',
-      status: 'open',
-      is_rollup: false,
-      parent_period_id: null
-    });
-    
-    setScenarioForm({
-      code: '',
-      name: '',
-      description: '',
-      type: 'base',
-      parent_scenario_id: null,
-      version: 1,
-      status: 'draft',
-      tags: '',
-      custom_fields: {}
-    });
-    
-    setCurrentItem(null);
-  };
-  
-  const handleEditClick = (item) => {
-    setCurrentItem(item);
-    
-    if (activeTab === 'years') {
-      setFiscalYearForm({
-        name: item.name,
-        code: item.code,
-        start_date: item.start_date.split('T')[0],
-        end_date: item.end_date.split('T')[0],
-        status: item.status,
-        metadata: item.metadata || {}
-      });
-    } else if (activeTab === 'periods') {
-      setPeriodForm({
-        code: item.code,
-        name: item.name,
-        start_date: item.start_date.split('T')[0],
-        end_date: item.end_date.split('T')[0],
-        type: item.type,
-        status: item.status,
-        is_rollup: item.is_rollup,
-        parent_period_id: item.parent_period_id
-      });
-    } else if (activeTab === 'scenarios') {
-      setScenarioForm({
-        code: item.code,
-        name: item.name,
-        description: item.description || '',
-        type: item.type,
-        parent_scenario_id: item.parent_scenario_id,
-        version: item.version,
-        status: item.status,
-        tags: item.tags || '',
-        custom_fields: item.custom_fields || {}
-      });
-    }
-    
-    setShowEditModal(true);
-  };
-  
-  const handleDeleteClick = (item) => {
-    setCurrentItem(item);
-    setShowDeleteModal(true);
-  };
-  
-  const handleCreateClick = () => {
-    resetForms();
-    
-    // Set default dates for fiscal year and period forms
-    if (activeTab === 'years') {
-      const currentYear = new Date().getFullYear();
-      setFiscalYearForm({
-        ...fiscalYearForm,
-        name: `Fiscal Year ${currentYear}`,
-        code: `FY${currentYear}`,
-        start_date: `${currentYear}-01-01`,
-        end_date: `${currentYear}-12-31`
-      });
-    } else if (activeTab === 'periods' && selectedFiscalYear) {
-      setPeriodForm({
-        ...periodForm,
-        start_date: selectedFiscalYear.start_date.split('T')[0],
-        end_date: selectedFiscalYear.end_date.split('T')[0]
-      });
-    }
-    
-    setShowCreateModal(true);
-  };
-  
-  const handleGeneratePeriodsClick = () => {
-    if (!selectedFiscalYear) return;
-    
-    try {
-      // Generate monthly periods
-      const monthlyPeriods = fiscalService.generateMonthlyPeriods(
-        selectedFiscalYear.id,
-        selectedFiscalYear.start_date,
-        selectedFiscalYear.end_date
-      );
-      
-      // Generate quarterly periods
-      const quarterlyPeriods = fiscalService.generateQuarterlyPeriods(
-        selectedFiscalYear.id,
-        selectedFiscalYear.start_date,
-        selectedFiscalYear.end_date
-      );
-      
-      // Combine periods
-      const allPeriods = [...monthlyPeriods, ...quarterlyPeriods];
-      
-      // Create periods in bulk
-      fiscalService.createPeriodsInBulk(selectedFiscalYear.id, allPeriods)
-        .then(newPeriods => {
-          setPeriods([...periods, ...newPeriods]);
-          toast.success('Periods generated successfully');
-        })
-        .catch(error => {
-          toast.error('Failed to generate periods');
-          console.error('Error generating periods:', error);
-        });
-    } catch (error) {
-      toast.error('Failed to generate periods');
-      console.error('Error generating periods:', error);
-    }
-  };
-  
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    try {
-      const date = new Date(dateString);
-      return format(date, 'MMM dd, yyyy');
-    } catch (error) {
-      return dateString;
-    }
-  };
-  
-  // Render functions
-  const renderFiscalYearsList = () => {
-    if (loading) {
-      return <div className="text-center py-4">Loading fiscal years...</div>;
-    }
-    
-    if (fiscalYears.length === 0) {
-      return (
-        <div className="text-center py-4">
-          <p className="text-gray-500">No fiscal years found</p>
+  }
+
+  const FiscalYearCard = ({ year }) => (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+      <div className="p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {year.year_name}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {year.year_code} • {new Date(year.start_date).toLocaleDateString()} - {new Date(year.end_date).toLocaleDateString()}
+              </p>
+            </div>
+          </div>
+          <div className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(year.status)}`}>
+            <div className="flex items-center space-x-1">
+              {getStatusIcon(year.status)}
+              <span className="capitalize">{year.status}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Statistics */}
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+              {year.periods?.length || 0}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Periods</div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+              {year.scenarios?.length || 0}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Scenarios</div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+              {year.is_consolidation_year ? 'Yes' : 'No'}
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Consolidation</div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-600">
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setSelectedYear(year)}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
+            >
+              <Eye className="h-4 w-4" />
+              <span>View Details</span>
+            </button>
+            <button className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
+              <Edit className="h-4 w-4" />
+              <span>Edit</span>
+            </button>
+          </div>
+          <div className="flex space-x-1">
+            <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+              <Copy className="h-4 w-4" />
+            </button>
+            <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const CreateFiscalYearModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Create New Fiscal Year
+          </h2>
           <button
-            onClick={handleCreateClick}
-            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            onClick={() => setShowCreateModal(false)}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
-            Create First Fiscal Year
+            <XCircle className="h-6 w-6" />
           </button>
         </div>
-      );
-    }
-    
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {fiscalYears.map((fiscalYear) => (
-              <tr 
-                key={fiscalYear.id} 
-                className={`hover:bg-gray-50 ${selectedFiscalYear && selectedFiscalYear.id === fiscalYear.id ? 'bg-blue-50' : ''}`}
-                onClick={() => setSelectedFiscalYear(fiscalYear)}
-              >
-                <td className="px-6 py-4 whitespace-nowrap">{fiscalYear.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{fiscalYear.code}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{formatDate(fiscalYear.start_date)}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{formatDate(fiscalYear.end_date)}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${fiscalYear.status === 'active' ? 'bg-green-100 text-green-800' : fiscalYear.status === 'locked' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {fiscalYear.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleEditClick(fiscalYear); }}
-                    className="text-indigo-600 hover:text-indigo-900 mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteClick(fiscalYear); }}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-  
-  const renderPeriodsList = () => {
-    if (!selectedFiscalYear) {
-      return <div className="text-center py-4">Please select a fiscal year first</div>;
-    }
-    
-    if (periods.length === 0) {
-      return (
-        <div className="text-center py-4">
-          <p className="text-gray-500">No periods found for this fiscal year</p>
-          <div className="mt-4 flex justify-center space-x-4">
-            <button
-              onClick={handleCreateClick}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            >
-              Create Period
-            </button>
-            <button
-              onClick={handleGeneratePeriodsClick}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-            >
-              Generate Standard Periods
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="overflow-x-auto">
-        <div className="mb-4 flex justify-between items-center">
-          <h3 className="text-lg font-medium">Periods for {selectedFiscalYear.name}</h3>
-          <div className="space-x-2">
-            <button
-              onClick={handleCreateClick}
-              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-            >
-              Add Period
-            </button>
-            <button
-              onClick={handleGeneratePeriodsClick}
-              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm"
-            >
-              Generate Standard Periods
-            </button>
-          </div>
-        </div>
-        
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {periods.map((period) => (
-              <tr key={period.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">{period.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{period.code}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{formatDate(period.start_date)}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{formatDate(period.end_date)}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${period.type === 'month' ? 'bg-blue-100 text-blue-800' : period.type === 'quarter' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {period.type}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${period.status === 'open' ? 'bg-green-100 text-green-800' : period.status === 'closed' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                    {period.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button
-                    onClick={() => handleEditClick(period)}
-                    className="text-indigo-600 hover:text-indigo-900 mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteClick(period)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-  
-  const renderScenariosList = () => {
-    if (!selectedFiscalYear) {
-      return <div className="text-center py-4">Please select a fiscal year first</div>;
-    }
-    
-    if (scenarios.length === 0) {
-      return (
-        <div className="text-center py-4">
-          <p className="text-gray-500">No scenarios found for this fiscal year</p>
-          <button
-            onClick={handleCreateClick}
-            className="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-          >
-            Create Scenario
-          </button>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="overflow-x-auto">
-        <div className="mb-4 flex justify-between items-center">
-          <h3 className="text-lg font-medium">Scenarios for {selectedFiscalYear.name}</h3>
-          <button
-            onClick={handleCreateClick}
-            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-          >
-            Add Scenario
-          </button>
-        </div>
-        
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {scenarios.map((scenario) => (
-              <tr key={scenario.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">{scenario.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{scenario.code}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${scenario.type === 'base' ? 'bg-blue-100 text-blue-800' : scenario.type === 'budget' ? 'bg-green-100 text-green-800' : scenario.type === 'forecast' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {scenario.type}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">{scenario.version}</td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${scenario.status === 'active' ? 'bg-green-100 text-green-800' : scenario.status === 'draft' ? 'bg-yellow-100 text-yellow-800' : scenario.status === 'final' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
-                    {scenario.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <button
-                    onClick={() => handleEditClick(scenario)}
-                    className="text-indigo-600 hover:text-indigo-900 mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteClick(scenario)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-  
-  const renderSettingsTab = () => {
-    if (!selectedFiscalYear) {
-      return <div className="text-center py-4">Please select a fiscal year first</div>;
-    }
 
-    return (
-      <div>
-        <h3 className="text-lg font-medium">Settings for {selectedFiscalYear.name}</h3>
-        <p className="text-gray-500 mt-2">Settings will be available here in a future update.</p>
-      </div>
-    );
-  };
-
-  const renderAuditTab = () => {
-    if (!selectedFiscalYear) {
-      return <div className="text-center py-4">Please select a fiscal year first</div>;
-    }
-
-    return (
-      <div>
-        <h3 className="text-lg font-medium">Audit History for {selectedFiscalYear.name}</h3>
-        <p className="text-gray-500 mt-2">Audit trail will be available here in a future update.</p>
-      </div>
-    );
-  };
-  
-  // Modal components
-  const renderCreateModal = () => {
-    let title = '';
-    let form = null;
-    let handleSubmit = null;
-    
-    if (activeTab === 'years') {
-      title = 'Create Fiscal Year';
-      form = renderFiscalYearForm();
-      handleSubmit = handleCreateFiscalYear;
-    } else if (activeTab === 'periods') {
-      title = 'Create Period';
-      form = renderPeriodForm();
-      handleSubmit = handleCreatePeriod;
-    } else if (activeTab === 'scenarios') {
-      title = 'Create Scenario';
-      form = renderScenarioForm();
-      handleSubmit = handleCreateScenario;
-    }
-    
-    return (
-      <div className={`fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 ${showCreateModal ? '' : 'hidden'}`}>
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium">{title}</h3>
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="text-gray-400 hover:text-gray-500"
-            >
-              <span className="sr-only">Close</span>
-              ×
-            </button>
-          </div>
-          {form}
-          <div className="mt-4 flex justify-end space-x-2">
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-            >
-              Create
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderEditModal = () => {
-    let title = '';
-    let form = null;
-    let handleSubmit = null;
-    
-    if (activeTab === 'years') {
-      title = 'Edit Fiscal Year';
-      form = renderFiscalYearForm();
-      handleSubmit = handleUpdateFiscalYear;
-    } else if (activeTab === 'periods') {
-      title = 'Edit Period';
-      form = renderPeriodForm();
-      handleSubmit = handleUpdatePeriod;
-    } else if (activeTab === 'scenarios') {
-      title = 'Edit Scenario';
-      form = renderScenarioForm();
-      handleSubmit = handleUpdateScenario;
-    }
-    
-    return (
-      <div className={`fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 ${showEditModal ? '' : 'hidden'}`}>
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium">{title}</h3>
-            <button
-              onClick={() => setShowEditModal(false)}
-              className="text-gray-400 hover:text-gray-500"
-            >
-              <span className="sr-only">Close</span>
-              ×
-            </button>
-          </div>
-          {form}
-          <div className="mt-4 flex justify-end space-x-2">
-            <button
-              onClick={() => setShowEditModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-            >
-              Save Changes
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderDeleteModal = () => {
-    let title = '';
-    let message = '';
-    let handleSubmit = null;
-    
-    if (activeTab === 'years') {
-      title = 'Delete Fiscal Year';
-      message = `Are you sure you want to delete the fiscal year "${currentItem?.name}"? This action cannot be undone.`;
-      handleSubmit = handleDeleteFiscalYear;
-    } else if (activeTab === 'periods') {
-      title = 'Delete Period';
-      message = `Are you sure you want to delete the period "${currentItem?.name}"? This action cannot be undone.`;
-      handleSubmit = handleDeletePeriod;
-    } else if (activeTab === 'scenarios') {
-      title = 'Delete Scenario';
-      message = `Are you sure you want to delete the scenario "${currentItem?.name}"? This action cannot be undone.`;
-      handleSubmit = handleDeleteScenario;
-    }
-    
-    return (
-      <div className={`fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 ${showDeleteModal ? '' : 'hidden'}`}>
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium text-red-600">{title}</h3>
-            <button
-              onClick={() => setShowDeleteModal(false)}
-              className="text-gray-400 hover:text-gray-500"
-            >
-              <span className="sr-only">Close</span>
-              ×
-            </button>
-          </div>
-          <p className="text-gray-500 mb-4">{message}</p>
-          <div className="mt-4 flex justify-end space-x-2">
-            <button
-              onClick={() => setShowDeleteModal(false)}
-              className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Fiscal Management</h1>
-        <p className="text-gray-600">Manage fiscal years, periods, and scenarios</p>
-      </div>
-
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-            <button
-              onClick={() => setActiveTab('years')}
-              className={`${activeTab === 'years' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Fiscal Years
-            </button>
-            <button
-              onClick={() => setActiveTab('periods')}
-              className={`${activeTab === 'periods' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Periods
-            </button>
-            <button
-              onClick={() => setActiveTab('scenarios')}
-              className={`${activeTab === 'scenarios' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Scenarios
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`${activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Settings
-            </button>
-            <button
-              onClick={() => setActiveTab('audit')}
-              className={`${activeTab === 'audit' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Audit History
-            </button>
-          </nav>
-        </div>
-
-        <div className="p-4">
-          <div className="mb-4 flex justify-between items-center">
-            <div className="flex-1">
-              {activeTab === 'years' && (
-                <button
-                  onClick={handleCreateClick}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Create Fiscal Year
-                </button>
-              )}
+        <form className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Year Code
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., FY2024"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Year Name
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., Fiscal Year 2024"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              />
             </div>
           </div>
 
-          {activeTab === 'years' && renderFiscalYearsList()}
-          {activeTab === 'periods' && renderPeriodsList()}
-          {activeTab === 'scenarios' && renderScenariosList()}
-          {activeTab === 'settings' && renderSettingsTab()}
-          {activeTab === 'audit' && renderAuditTab()}
-        </div>
-      </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Start Date
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                End Date
+              </label>
+              <input
+                type="date"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+          </div>
 
-      {renderCreateModal()}
-      {renderEditModal()}
-      {renderDeleteModal()}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Description
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Optional description for this fiscal year..."
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+            />
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                defaultChecked
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Enable Consolidation</span>
+            </label>
+            <select className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white">
+              <option value="full">Full Consolidation</option>
+              <option value="proportional">Proportional Consolidation</option>
+              <option value="equity">Equity Method</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-600">
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(false)}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Create Fiscal Year
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
-  );
-};
+  )
 
-export default FiscalManagement;
+  if (selectedYear) {
+    return <FiscalYearDetails year={selectedYear} onBack={() => setSelectedYear(null)} />
+  }
 
-  const renderFiscalYearForm = () => {
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Name</label>
-          <input
-            type="text"
-            value={fiscalYearForm.name}
-            onChange={(e) => setFiscalYearForm({ ...fiscalYearForm, name: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Code</label>
-          <input
-            type="text"
-            value={fiscalYearForm.code}
-            onChange={(e) => setFiscalYearForm({ ...fiscalYearForm, code: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Start Date</label>
-          <input
-            type="date"
-            value={fiscalYearForm.start_date}
-            onChange={(e) => setFiscalYearForm({ ...fiscalYearForm, start_date: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">End Date</label>
-          <input
-            type="date"
-            value={fiscalYearForm.end_date}
-            onChange={(e) => setFiscalYearForm({ ...fiscalYearForm, end_date: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Status</label>
-          <select
-            value={fiscalYearForm.status}
-            onChange={(e) => setFiscalYearForm({ ...fiscalYearForm, status: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="active">Active</option>
-            <option value="locked">Locked</option>
-            <option value="closed">Closed</option>
-          </select>
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Fiscal Management
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Manage fiscal years, periods, and scenarios for {selectedCompany}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                <span>New Fiscal Year</span>
+              </button>
+              <button
+                onClick={fetchFiscalYears}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    );
-  };
 
-  const renderPeriodForm = () => {
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Name</label>
-          <input
-            type="text"
-            value={periodForm.name}
-            onChange={(e) => setPeriodForm({ ...periodForm, name: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
+      {/* Filters and Search */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search fiscal years..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+            >
+              <option value="all">All Status</option>
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="locked">Locked</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button className="flex items-center space-x-2 px-3 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+              <Download className="h-4 w-4" />
+              <span>Export</span>
+            </button>
+            <button className="flex items-center space-x-2 px-3 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+              <Upload className="h-4 w-4" />
+              <span>Import</span>
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Code</label>
-          <input
-            type="text"
-            value={periodForm.code}
-            onChange={(e) => setPeriodForm({ ...periodForm, code: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Start Date</label>
-          <input
-            type="date"
-            value={periodForm.start_date}
-            onChange={(e) => setPeriodForm({ ...periodForm, start_date: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">End Date</label>
-          <input
-            type="date"
-            value={periodForm.end_date}
-            onChange={(e) => setPeriodForm({ ...periodForm, end_date: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Type</label>
-          <select
-            value={periodForm.type}
-            onChange={(e) => setPeriodForm({ ...periodForm, type: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="month">Month</option>
-            <option value="quarter">Quarter</option>
-            <option value="year">Year</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Status</label>
-          <select
-            value={periodForm.status}
-            onChange={(e) => setPeriodForm({ ...periodForm, status: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-            <option value="locked">Locked</option>
-          </select>
-        </div>
-        <div className="flex items-center">
-          <input
-            type="checkbox"
-            checked={periodForm.is_rollup}
-            onChange={(e) => setPeriodForm({ ...periodForm, is_rollup: e.target.checked })}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-          />
-          <label className="ml-2 block text-sm text-gray-900">Is Rollup Period</label>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Parent Period</label>
-          <select
-            value={periodForm.parent_period_id || ''}
-            onChange={(e) => setPeriodForm({ ...periodForm, parent_period_id: e.target.value ? parseInt(e.target.value) : null })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="">None</option>
-            {periods.filter(p => p.is_rollup).map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+
+        {/* Fiscal Years Grid */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+          </div>
+        ) : filteredFiscalYears.length === 0 ? (
+          <div className="text-center py-12">
+            <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              No Fiscal Years Found
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              {searchTerm || statusFilter !== 'all' 
+                ? 'Try adjusting your search or filter criteria.'
+                : 'Get started by creating your first fiscal year.'
+              }
+            </p>
+            {!searchTerm && statusFilter === 'all' && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors mx-auto"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create First Fiscal Year</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredFiscalYears.map((year) => (
+              <FiscalYearCard key={year.id} year={year} />
             ))}
-          </select>
-        </div>
+          </div>
+        )}
       </div>
-    );
-  };
 
-  const renderScenarioForm = () => {
-    return (
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Name</label>
-          <input
-            type="text"
-            value={scenarioForm.name}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, name: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Code</label>
-          <input
-            type="text"
-            value={scenarioForm.code}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, code: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea
-            value={scenarioForm.description}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, description: e.target.value })}
-            rows="3"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Type</label>
-          <select
-            value={scenarioForm.type}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, type: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="base">Base</option>
-            <option value="budget">Budget</option>
-            <option value="forecast">Forecast</option>
-            <option value="what-if">What-if</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Version</label>
-          <input
-            type="number"
-            value={scenarioForm.version}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, version: parseInt(e.target.value) || 1 })}
-            min="1"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Status</label>
-          <select
-            value={scenarioForm.status}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, status: e.target.value })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="final">Final</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Tags</label>
-          <input
-            type="text"
-            value={scenarioForm.tags}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, tags: e.target.value })}
-            placeholder="Comma-separated tags"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Parent Scenario</label>
-          <select
-            value={scenarioForm.parent_scenario_id || ''}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, parent_scenario_id: e.target.value ? parseInt(e.target.value) : null })}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="">None</option>
-            {scenarios.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Custom Fields (JSON)</label>
-          <textarea
-            value={typeof scenarioForm.custom_fields === 'string' ? scenarioForm.custom_fields : JSON.stringify(scenarioForm.custom_fields, null, 2)}
-            onChange={(e) => setScenarioForm({ ...scenarioForm, custom_fields: e.target.value })}
-            rows="4"
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            placeholder='{\"key\": \"value\"}'
-          />
+      {/* Create Modal */}
+      {showCreateModal && <CreateFiscalYearModal />}
+    </div>
+  )
+}
+
+// Fiscal Year Details Component (will be implemented separately)
+const FiscalYearDetails = ({ year, onBack }) => {
+  const [activeTab, setActiveTab] = useState('periods')
+  const [periods, setPeriods] = useState([])
+  const [scenarios, setScenarios] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const tabs = [
+    { id: 'periods', name: 'Periods', icon: Clock, count: periods.length },
+    { id: 'scenarios', name: 'Scenarios', icon: Layers, count: scenarios.length },
+    { id: 'settings', name: 'Settings', icon: Settings, count: null },
+    { id: 'audit', name: 'Audit Trail', icon: History, count: null }
+  ]
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={onBack}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <ChevronRight className="h-5 w-5 transform rotate-180" />
+              </button>
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {year.year_name}
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {year.year_code} • {new Date(year.start_date).toLocaleDateString()} - {new Date(year.end_date).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+            <div className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(year.status)}`}>
+              <div className="flex items-center space-x-1">
+                {getStatusIcon(year.status)}
+                <span className="capitalize">{year.status}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    );
-  };
+
+      {/* Tabs */}
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                <tab.icon className="h-4 w-4" />
+                <span>{tab.name}</span>
+                {tab.count !== null && (
+                  <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full text-xs">
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {activeTab === 'periods' && <PeriodsTab year={year} />}
+        {activeTab === 'scenarios' && <ScenariosTab year={year} />}
+        {activeTab === 'settings' && <SettingsTab year={year} />}
+        {activeTab === 'audit' && <AuditTab year={year} />}
+      </div>
+    </div>
+  )
+}
+
+// Tab Components
+const SettingsTab = ({ year }) => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Fiscal Year Settings</h3>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Consolidation Method</label>
+          <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="full">Full Consolidation</option>
+            <option value="proportional">Proportional Consolidation</option>
+            <option value="equity">Equity Method</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Currency</label>
+          <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+            <option value="USD">USD - US Dollar</option>
+            <option value="EUR">EUR - Euro</option>
+            <option value="GBP">GBP - British Pound</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center space-x-4">
+        <label className="flex items-center space-x-2">
+          <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+          <span className="text-sm text-gray-700 dark:text-gray-300">Enable Inter-company Eliminations</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+          <span className="text-sm text-gray-700 dark:text-gray-300">Auto-calculate Minority Interest</span>
+        </label>
+      </div>
+    </div>
+  </div>
+)
+
+const AuditTab = ({ year }) => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Audit Trail</h3>
+    <p className="text-gray-500 dark:text-gray-400">Audit trail functionality will be implemented here.</p>
+  </div>
+)
+
+export default FiscalManagement
