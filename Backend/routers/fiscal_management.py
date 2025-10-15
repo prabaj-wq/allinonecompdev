@@ -267,6 +267,47 @@ async def get_periods(
     except Exception as e:
         return {"error": str(e), "periods": [], "total": 0}
 
+@router.post("/fiscal-years/{fiscal_year_id}/periods")
+async def create_period(
+    fiscal_year_id: int,
+    period_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Create a new period"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Simple insert
+            insert_query = """
+                INSERT INTO periods (
+                    fiscal_year_id, period_code, period_name, period_type, 
+                    start_date, end_date, status, sort_order, description
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """
+            
+            cur.execute(insert_query, (
+                fiscal_year_id,
+                period_data.get('period_code'),
+                period_data.get('period_name'),
+                period_data.get('period_type', 'month'),
+                period_data.get('start_date'),
+                period_data.get('end_date'),
+                period_data.get('status', 'open'),
+                period_data.get('sort_order', 0),
+                period_data.get('description')
+            ))
+            
+            period = cur.fetchone()
+            conn.commit()
+            
+            return period
+    except Exception as e:
+        return {"error": str(e)}
+
 @router.get("/fiscal-years/{fiscal_year_id}/scenarios")
 async def get_scenarios(
     fiscal_year_id: int,
@@ -289,6 +330,50 @@ async def get_scenarios(
             }
     except Exception as e:
         return {"error": str(e), "scenarios": [], "total": 0}
+
+@router.post("/fiscal-years/{fiscal_year_id}/scenarios")
+async def create_scenario(
+    fiscal_year_id: int,
+    scenario_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Create a new scenario"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Simple insert
+            insert_query = """
+                INSERT INTO scenarios (
+                    fiscal_year_id, scenario_code, scenario_name, scenario_type, 
+                    description, status, version_number, is_baseline, 
+                    allow_overrides, auto_calculate, consolidation_method
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """
+            
+            cur.execute(insert_query, (
+                fiscal_year_id,
+                scenario_data.get('scenario_code'),
+                scenario_data.get('scenario_name'),
+                scenario_data.get('scenario_type', 'budget'),
+                scenario_data.get('description'),
+                scenario_data.get('status', 'draft'),
+                scenario_data.get('version_number', '1.0'),
+                scenario_data.get('is_baseline', False),
+                scenario_data.get('allow_overrides', True),
+                scenario_data.get('auto_calculate', True),
+                scenario_data.get('consolidation_method', 'full')
+            ))
+            
+            scenario = cur.fetchone()
+            conn.commit()
+            
+            return scenario
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.get("/scenarios/types")
 async def get_scenario_types():

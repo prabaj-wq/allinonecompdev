@@ -87,10 +87,20 @@ const ScenariosTab = ({ year }) => {
 
         if (response.ok) {
           setShowCreateModal(false)
+          setFormData({
+            scenario_code: '', scenario_name: '', scenario_type: 'budget', description: '',
+            parent_scenario_id: null, version_number: '1.0', status: 'draft', is_baseline: false,
+            allow_overrides: true, auto_calculate: true, consolidation_method: 'full'
+          })
           fetchScenarios()
+          window.showToast?.('Scenario created successfully!', 'success')
+        } else {
+          const error = await response.json()
+          window.showToast?.(error.error || 'Failed to create scenario', 'error')
         }
       } catch (error) {
         console.error('Error creating scenario:', error)
+        window.showToast?.('Failed to create scenario', 'error')
       }
     }
 

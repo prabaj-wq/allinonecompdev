@@ -168,6 +168,55 @@ const FiscalManagement = () => {
     </div>
   )
 
+  const [formData, setFormData] = useState({
+    year_code: '',
+    year_name: '',
+    start_date: '',
+    end_date: '',
+    description: '',
+    status: 'draft',
+    is_consolidation_year: true,
+    consolidation_method: 'full'
+  })
+
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault()
+    if (!selectedCompany) return
+    
+    try {
+      const response = await fetch('/api/fiscal-management/fiscal-years', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany
+        },
+        body: JSON.stringify(formData)
+      })
+      
+      if (response.ok) {
+        setShowCreateModal(false)
+        setFormData({
+          year_code: '',
+          year_name: '',
+          start_date: '',
+          end_date: '',
+          description: '',
+          status: 'draft',
+          is_consolidation_year: true,
+          consolidation_method: 'full'
+        })
+        fetchFiscalYears()
+        window.showToast?.('Fiscal year created successfully!', 'success')
+      } else {
+        const error = await response.json()
+        window.showToast?.(error.error || 'Failed to create fiscal year', 'error')
+      }
+    } catch (error) {
+      console.error('Error creating fiscal year:', error)
+      window.showToast?.('Failed to create fiscal year', 'error')
+    }
+  }
+
   const CreateFiscalYearModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4">
@@ -183,7 +232,7 @@ const FiscalManagement = () => {
           </button>
         </div>
 
-        <form className="space-y-4">
+        <form onSubmit={handleCreateSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -192,6 +241,9 @@ const FiscalManagement = () => {
               <input
                 type="text"
                 placeholder="e.g., FY2024"
+                value={formData.year_code}
+                onChange={(e) => setFormData({...formData, year_code: e.target.value})}
+                required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
             </div>
@@ -202,6 +254,9 @@ const FiscalManagement = () => {
               <input
                 type="text"
                 placeholder="e.g., Fiscal Year 2024"
+                value={formData.year_name}
+                onChange={(e) => setFormData({...formData, year_name: e.target.value})}
+                required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
             </div>
@@ -214,6 +269,9 @@ const FiscalManagement = () => {
               </label>
               <input
                 type="date"
+                value={formData.start_date}
+                onChange={(e) => setFormData({...formData, start_date: e.target.value})}
+                required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
             </div>
@@ -223,6 +281,9 @@ const FiscalManagement = () => {
               </label>
               <input
                 type="date"
+                value={formData.end_date}
+                onChange={(e) => setFormData({...formData, end_date: e.target.value})}
+                required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
             </div>
@@ -235,6 +296,8 @@ const FiscalManagement = () => {
             <textarea
               rows={3}
               placeholder="Optional description for this fiscal year..."
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
             />
           </div>
@@ -243,12 +306,17 @@ const FiscalManagement = () => {
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
-                defaultChecked
+                checked={formData.is_consolidation_year}
+                onChange={(e) => setFormData({...formData, is_consolidation_year: e.target.checked})}
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700 dark:text-gray-300">Enable Consolidation</span>
             </label>
-            <select className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white">
+            <select 
+              value={formData.consolidation_method}
+              onChange={(e) => setFormData({...formData, consolidation_method: e.target.value})}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+            >
               <option value="full">Full Consolidation</option>
               <option value="proportional">Proportional Consolidation</option>
               <option value="equity">Equity Method</option>
