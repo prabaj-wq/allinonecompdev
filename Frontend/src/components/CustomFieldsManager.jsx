@@ -23,6 +23,9 @@ import {
   List,
   Save
 } from 'lucide-react'
+
+// Debug log to verify this file is being loaded
+console.log('✅ CustomFieldsManager loaded with Save icon import - Version 2.0')
 import { toast } from 'react-hot-toast'
 
 const CustomFieldsManager = ({ 

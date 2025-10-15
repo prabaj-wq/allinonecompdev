@@ -629,6 +629,32 @@ const FiscalManagement = () => {
     );
   };
   
+  const renderSettingsTab = () => {
+    if (!selectedFiscalYear) {
+      return <div className="text-center py-4">Please select a fiscal year first</div>;
+    }
+
+    return (
+      <div>
+        <h3 className="text-lg font-medium">Settings for {selectedFiscalYear.name}</h3>
+        <p className="text-gray-500 mt-2">Settings will be available here in a future update.</p>
+      </div>
+    );
+  };
+
+  const renderAuditTab = () => {
+    if (!selectedFiscalYear) {
+      return <div className="text-center py-4">Please select a fiscal year first</div>;
+    }
+
+    return (
+      <div>
+        <h3 className="text-lg font-medium">Audit History for {selectedFiscalYear.name}</h3>
+        <p className="text-gray-500 mt-2">Audit trail will be available here in a future update.</p>
+      </div>
+    );
+  };
+  
   // Modal components
   const renderCreateModal = () => {
     let title = '';
@@ -814,6 +840,18 @@ const FiscalManagement = () => {
             >
               Scenarios
             </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`${activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Settings
+            </button>
+            <button
+              onClick={() => setActiveTab('audit')}
+              className={`${activeTab === 'audit' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Audit History
+            </button>
           </nav>
         </div>
 
@@ -834,6 +872,8 @@ const FiscalManagement = () => {
           {activeTab === 'years' && renderFiscalYearsList()}
           {activeTab === 'periods' && renderPeriodsList()}
           {activeTab === 'scenarios' && renderScenariosList()}
+          {activeTab === 'settings' && renderSettingsTab()}
+          {activeTab === 'audit' && renderAuditTab()}
         </div>
       </div>
 
@@ -973,6 +1013,19 @@ export default FiscalManagement;
           />
           <label className="ml-2 block text-sm text-gray-900">Is Rollup Period</label>
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Parent Period</label>
+          <select
+            value={periodForm.parent_period_id || ''}
+            onChange={(e) => setPeriodForm({ ...periodForm, parent_period_id: e.target.value ? parseInt(e.target.value) : null })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          >
+            <option value="">None</option>
+            {periods.filter(p => p.is_rollup).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
     );
   };
@@ -1051,6 +1104,29 @@ export default FiscalManagement;
             onChange={(e) => setScenarioForm({ ...scenarioForm, tags: e.target.value })}
             placeholder="Comma-separated tags"
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Parent Scenario</label>
+          <select
+            value={scenarioForm.parent_scenario_id || ''}
+            onChange={(e) => setScenarioForm({ ...scenarioForm, parent_scenario_id: e.target.value ? parseInt(e.target.value) : null })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+          >
+            <option value="">None</option>
+            {scenarios.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Custom Fields (JSON)</label>
+          <textarea
+            value={typeof scenarioForm.custom_fields === 'string' ? scenarioForm.custom_fields : JSON.stringify(scenarioForm.custom_fields, null, 2)}
+            onChange={(e) => setScenarioForm({ ...scenarioForm, custom_fields: e.target.value })}
+            rows="4"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            placeholder='{\"key\": \"value\"}'
           />
         </div>
       </div>

@@ -83,6 +83,10 @@ class ScenarioCreate(BaseModel):
     description: Optional[str] = None
     type: ScenarioType
     status: ScenarioStatus = ScenarioStatus.draft
+    parent_scenario_id: Optional[int] = None
+    version: Optional[int] = 1
+    tags: Optional[str] = None
+    custom_fields: Optional[dict] = None
 
 class ScenarioUpdate(BaseModel):
     code: Optional[str] = None
@@ -90,6 +94,10 @@ class ScenarioUpdate(BaseModel):
     description: Optional[str] = None
     type: Optional[ScenarioType] = None
     status: Optional[ScenarioStatus] = None
+    parent_scenario_id: Optional[int] = None
+    version: Optional[int] = None
+    tags: Optional[str] = None
+    custom_fields: Optional[dict] = None
 
 class FiscalYearCreate(BaseModel):
     name: str
@@ -97,6 +105,7 @@ class FiscalYearCreate(BaseModel):
     start_date: datetime
     end_date: datetime
     status: FiscalYearStatus = FiscalYearStatus.active
+    metadata: Optional[dict] = None
 
 class FiscalYearUpdate(BaseModel):
     name: Optional[str] = None
@@ -104,6 +113,7 @@ class FiscalYearUpdate(BaseModel):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     status: Optional[FiscalYearStatus] = None
+    metadata: Optional[dict] = None
 
 # Fiscal Year Endpoints
 @router.post("/years", response_model=FiscalYearResponse, status_code=status.HTTP_201_CREATED)
