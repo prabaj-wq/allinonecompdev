@@ -23,6 +23,7 @@ import {
   Calculator,
   ArrowUpDown
 } from 'lucide-react'
+import { toast } from 'react-hot-toast'
 import SummaryCard from '../components/SummaryCard'
 import CustomFieldsManager from '../components/CustomFieldsManager'
 import FSTDesigner from '../components/FSTDesigner'
@@ -191,9 +192,52 @@ const AxesAccounts = () => {
     setShowSettings(true)
   }
 
-  const handleCustomFieldChange = (type, fields) => {
-    console.log(`Custom fields updated for ${type}:`, fields)
-    // TODO: Save to backend and update database schema
+  const handleCustomFieldChange = async (type, fields) => {
+    try {
+      console.log(`Saving custom fields for ${type}:`, fields)
+      
+      // Convert fields object to array format expected by backend
+      const fieldsArray = Object.values(fields).map(field => ({
+        field_name: field.name,
+        field_type: field.type,
+        label: field.label || field.name,
+        is_required: field.is_required || false,
+        is_unique: field.is_unique || false,
+        options: field.options || [],
+        default_value: field.default_value || '',
+        validation_rules: field.validation_rules || {},
+        display_order: field.display_order || 0,
+        sql_query: field.sql_query || ''
+      }))
+      
+      const response = await fetch(`/api/axes-account/settings?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          axes_type: 'account',
+          custom_fields: fieldsArray,
+          linked_axes: []
+        })
+      })
+      
+      if (response.ok) {
+        console.log('✅ Custom fields saved successfully')
+        toast.success('Custom fields saved successfully!')
+        
+        // Reload data to reflect changes
+        await loadAccountData()
+      } else {
+        const errorData = await response.json()
+        console.error('❌ Failed to save custom fields:', errorData)
+        toast.error(errorData.detail || 'Failed to save custom fields')
+      }
+    } catch (error) {
+      console.error('❌ Error saving custom fields:', error)
+      toast.error('Error saving custom fields')
+    }
   }
 
   const handleViewHierarchy = (hierarchy) => {

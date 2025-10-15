@@ -50,7 +50,8 @@ const CustomAxes = () => {
     is_required: false,
     options: [], // For dropdown/checkbox options
     default_value: '',
-    validation_rules: {}
+    validation_rules: {},
+    sql_query: ''
   })
 
   // Load data on component mount
@@ -244,7 +245,8 @@ const CustomAxes = () => {
       is_required: false,
       options: [],
       default_value: '',
-      validation_rules: {}
+      validation_rules: {},
+      sql_query: ''
     })
     
     toast.success('Column added successfully!')
@@ -656,10 +658,12 @@ const CustomAxes = () => {
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-600 dark:text-white text-sm"
                         >
                           <option value="text">Text</option>
+                          <option value="textarea">Text Area</option>
                           <option value="number">Number</option>
                           <option value="date">Date</option>
-                          <option value="checkbox">Checkbox</option>
-                          <option value="dropdown">Dropdown</option>
+                          <option value="select">Dropdown</option>
+                          <option value="boolean">Yes/No</option>
+                          <option value="sql_query">SQL Query</option>
                         </select>
                       </div>
                       
@@ -674,8 +678,8 @@ const CustomAxes = () => {
                       </div>
                     </div>
                     
-                    {/* Options for dropdown/checkbox */}
-                    {(columnForm.field_type === 'dropdown' || columnForm.field_type === 'checkbox') && (
+                    {/* Options for dropdown/select */}
+                    {(columnForm.field_type === 'select' || columnForm.field_type === 'dropdown') && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                           Options (one per line)
@@ -687,6 +691,25 @@ const CustomAxes = () => {
                           rows={3}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-600 dark:text-white text-sm"
                         />
+                      </div>
+                    )}
+                    
+                    {/* SQL Query for sql_query field type */}
+                    {columnForm.field_type === 'sql_query' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          SQL Query
+                        </label>
+                        <textarea
+                          value={columnForm.sql_query || ''}
+                          onChange={(e) => setColumnForm({...columnForm, sql_query: e.target.value})}
+                          placeholder="SELECT value, label FROM your_table WHERE condition"
+                          rows={3}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-600 dark:text-white text-sm"
+                        />
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Query should return 'value' and 'label' columns
+                        </p>
                       </div>
                     )}
                     

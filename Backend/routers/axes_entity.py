@@ -212,7 +212,8 @@ def ensure_tables_exist(company_name: str):
                     custom_fields JSONB DEFAULT '[]',
                     linked_axes JSONB DEFAULT '[]',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(axes_type)
                 )
             """)
             
@@ -278,6 +279,19 @@ def ensure_tables_exist(company_name: str):
             cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_hierarchy ON hierarchy_nodes(hierarchy_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_company ON axes_entities(company_id)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_hierarchy ON axes_entities(hierarchy_id)")
+            
+            # Add unique constraint on axes_type if it doesn't exist
+            cur.execute("""
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint 
+                        WHERE conname = 'axes_settings_axes_type_key'
+                    ) THEN
+                        ALTER TABLE axes_settings ADD CONSTRAINT axes_settings_axes_type_key UNIQUE (axes_type);
+                    END IF;
+                END $$;
+            """)
             
             conn.commit()
             print(f"✅ All tables ensured for company: {company_name}")

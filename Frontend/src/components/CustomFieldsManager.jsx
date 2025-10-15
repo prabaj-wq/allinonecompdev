@@ -3,11 +3,11 @@ import {
   Plus, 
   Edit, 
   Trash2, 
-  Save, 
   X, 
-  Database,
-  List,
-  ToggleLeft,
+  Check, 
+  ChevronDown, 
+  ChevronUp, 
+  Settings, 
   ToggleRight,
   Hash,
   Calendar,
@@ -20,6 +20,7 @@ import {
   EyeOff,
   ArrowUpDown
 } from 'lucide-react'
+import { toast } from 'react-hot-toast'
 
 const CustomFieldsManager = ({ 
   type, 
@@ -171,10 +172,10 @@ const CustomFieldsManager = ({
       
       // Call parent's save function
       onSave(fieldsObject)
-      alert('Field deleted successfully!')
+      toast.success('Field deleted successfully!')
     } catch (error) {
       console.error('Error deleting field:', error)
-      alert('Error deleting field')
+      toast.error('Error deleting field')
     } finally {
       setLoading(false)
     }
@@ -257,7 +258,7 @@ const CustomFieldsManager = ({
       // Call parent's save function
       onSave(fieldsObject)
       
-      alert(editingField ? 'Field updated successfully!' : 'Field added successfully!')
+      toast.success(editingField ? 'Field updated successfully!' : 'Field added successfully!')
       
       setShowAddForm(false)
       setEditingField(null)

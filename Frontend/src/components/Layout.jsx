@@ -441,6 +441,12 @@ const Layout = ({ children }) => {
       description: 'Advanced business analysis tools and frameworks'
     },
     { 
+      name: 'Fiscal Management', 
+      href: '/fiscal-management', 
+      icon: Calendar,
+      description: 'Fiscal year, period and scenario management'
+    },
+    { 
       name: 'Quantum Finance', 
       href: '/quantum-finance', 
       icon: Zap,

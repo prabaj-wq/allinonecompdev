@@ -283,6 +283,19 @@ def init_axes_tables(company_name: str):
             )
         """)
 
+        # Add unique constraint on axes_type if it doesn't exist
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint 
+                    WHERE conname = 'axes_settings_axes_type_key'
+                ) THEN
+                    ALTER TABLE axes_settings ADD CONSTRAINT axes_settings_axes_type_key UNIQUE (axes_type);
+                END IF;
+            END $$;
+        """)
+
         # First, add missing columns to existing tables before creating new ones
         try:
             # Add company_id to hierarchies table if it exists

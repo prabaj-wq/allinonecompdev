@@ -76,6 +76,10 @@ def start_application():
     try:
         logger.info("🚀 Starting FastAPI application...")
         
+        # Set multiprocessing start method for Docker compatibility
+        import multiprocessing
+        multiprocessing.set_start_method("fork")
+        
         # Import and start the app
         import uvicorn
         from main import app

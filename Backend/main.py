@@ -120,11 +120,18 @@ app.openapi = custom_openapi
 # Add middleware for security and performance
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Configure CORS - Allow all origins for development
+# Configure CORS - Flexible origin handling
+cors_origins = settings.BACKEND_CORS_ORIGINS
+allow_credentials = True
+
+# If using wildcard (*), we need to disable credentials for security
+if "*" in cors_origins:
+    allow_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.is_development else settings.allowed_origins,
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
@@ -132,16 +139,22 @@ app.add_middleware(
 )
 
 # Add trusted hosts middleware
-allowed_hosts = [
-    host.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
-    for host in settings.allowed_origins
-    if host.startswith(('http://', 'https://'))
-]
-
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=allowed_hosts if settings.is_production else ["*"],
-)
+if "*" not in cors_origins:
+    allowed_hosts = [
+        host.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
+        for host in cors_origins
+        if host.startswith(('http://', 'https://'))
+    ]
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=allowed_hosts,
+    )
+else:
+    # Allow all hosts when using wildcard CORS
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["*"],
+    )
 
 # Add session middleware if needed
 app.add_middleware(
@@ -536,7 +549,7 @@ from routers import (
     company_management, dashboard, fst, trial_balance, consolidation, 
     ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
     upload, process, financial_statements, assets, audit, 
-    budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management
+    budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal
 )
 
 # Include all routers with /api prefix
@@ -568,6 +581,7 @@ app.include_router(business_tools.router, prefix="/api")
 app.include_router(axes_entity.router, prefix="/api")
 app.include_router(axes_account.router, prefix="/api")
 app.include_router(sql.router, prefix="/api")
+app.include_router(fiscal.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status

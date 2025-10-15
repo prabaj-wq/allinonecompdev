@@ -17,16 +17,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     
-    # CORS settings
-    BACKEND_CORS_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://allinonecomp-1.onrender.com",
-        "https://symmetrical-disco-g44gvj5wqpvv3xxw-3000.app.github.dev",
-        "https://symmetrical-disco-g44gvj5wqpvv3xxw-80.app.github.dev",
-        "https://*.app.github.dev",
-        "https://*.github.dev"
-    ]
+    # CORS settings - Allow all origins in development, specific origins in production
+    BACKEND_CORS_ORIGINS: list[str] = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
     
     # Database settings
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:postgres123@localhost:5432/epm_tool")
@@ -47,8 +39,8 @@ class Settings(BaseSettings):
     SESSION_COOKIE_NAME: str = "session"
     SESSION_SECRET_KEY: str = os.getenv("SESSION_SECRET_KEY", "your-session-secret-key")
     
-    # Frontend URL for CORS and redirects
-    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://symmetrical-disco-g44gvj5wqpvv3xxw-3000.app.github.dev")
+    # Frontend URL for CORS and redirects - defaults to localhost for development
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
     
     # Email settings
     SMTP_TLS: bool = True
