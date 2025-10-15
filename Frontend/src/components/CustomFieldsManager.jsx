@@ -15,7 +15,6 @@ import {
   AlertCircle,
   CheckCircle,
   Info,
-  Settings,
   Eye,
   EyeOff,
   ArrowUpDown
