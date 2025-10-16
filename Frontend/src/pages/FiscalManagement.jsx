@@ -655,9 +655,16 @@ const SettingsTab = ({ year }) => {
   const { selectedCompany } = useCompany();
   const [settings, setSettings] = useState({
     allow_simulations: year.settings?.allow_simulations ?? false,
+    roll_forward_enabled: year.settings?.roll_forward_enabled ?? false,
+    roll_forward_method: year.settings?.roll_forward_method ?? 'copy',
+    roll_forward_adjustment: year.settings?.roll_forward_adjustment ?? 0,
     opening_balances_source: year.settings?.opening_balances_source ?? 'normal',
     opening_balances_scenario_id: year.settings?.opening_balances_scenario_id ?? null,
-    opening_balances_period_id: year.settings?.opening_balances_period_id ?? null
+    opening_balances_period_id: year.settings?.opening_balances_period_id ?? null,
+    enable_intercompany_eliminations: year.settings?.enable_intercompany_eliminations ?? true,
+    auto_calculate_minority_interest: year.settings?.auto_calculate_minority_interest ?? true,
+    enable_currency_translation: year.settings?.enable_currency_translation ?? true,
+    consolidation_method: year.settings?.consolidation_method ?? 'full'
   });
   
   const [scenarios, setScenarios] = useState([]);
@@ -759,6 +766,61 @@ const SettingsTab = ({ year }) => {
           </label>
         </div>
         
+        {/* Roll Forward Settings */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Roll Forward Options</label>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Configure how data is rolled forward between periods</p>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-md font-medium text-gray-900 dark:text-white">Enable Roll Forward</h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Allow automatic data roll forward between periods</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.roll_forward_enabled || false}
+                  onChange={(e) => handleSettingChange('roll_forward_enabled', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Roll Forward Method</label>
+              <select
+                value={settings.roll_forward_method || 'copy'}
+                onChange={(e) => handleSettingChange('roll_forward_method', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="copy">Copy Previous Period Data</option>
+                <option value="adjust">Copy with Adjustments</option>
+                <option value="zero">Start with Zero Balances</option>
+                <option value="formula">Apply Formula-Based Roll Forward</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default Adjustment Percentage</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="-100"
+                  max="100"
+                  step="0.1"
+                  value={settings.roll_forward_adjustment || 0}
+                  onChange={(e) => handleSettingChange('roll_forward_adjustment', parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                />
+                <span className="absolute right-3 top-2.5 text-gray-500 dark:text-gray-400">%</span>
+              </div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Default percentage adjustment for rolled forward data</p>
+            </div>
+          </div>
+        </div>
+        
         {/* Opening Balances Source */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Opening Balances Source</label>
@@ -827,22 +889,66 @@ const SettingsTab = ({ year }) => {
         {/* Existing Consolidation Settings */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Consolidation Method</label>
-          <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
+          <select 
+            value={settings.consolidation_method || 'full'}
+            onChange={(e) => handleSettingChange('consolidation_method', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+          >
             <option value="full">Full Consolidation</option>
             <option value="proportional">Proportional Consolidation</option>
             <option value="equity">Equity Method</option>
           </select>
         </div>
         
-        <div className="flex items-center space-x-4">
-          <label className="flex items-center space-x-2">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-            <span className="text-sm text-gray-700 dark:text-gray-300">Enable Inter-company Eliminations</span>
-          </label>
-          <label className="flex items-center space-x-2">
-            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-            <span className="text-sm text-gray-700 dark:text-gray-300">Auto-calculate Minority Interest</span>
-          </label>
+        {/* Additional Settings */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-md font-medium text-gray-900 dark:text-white">Enable Inter-company Eliminations</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically eliminate inter-company transactions</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.enable_intercompany_eliminations ?? true}
+                onChange={(e) => handleSettingChange('enable_intercompany_eliminations', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-md font-medium text-gray-900 dark:text-white">Auto-calculate Minority Interest</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically calculate minority interest amounts</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.auto_calculate_minority_interest ?? true}
+                onChange={(e) => handleSettingChange('auto_calculate_minority_interest', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-md font-medium text-gray-900 dark:text-white">Enable Currency Translation</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Enable foreign currency translation for consolidation</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.enable_currency_translation ?? true}
+                onChange={(e) => handleSettingChange('enable_currency_translation', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
         </div>
         
         {/* Save Button */}

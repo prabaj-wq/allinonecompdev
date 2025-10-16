@@ -135,6 +135,15 @@ def ensure_fiscal_tables(company_name: str):
                 )
             """)
             
+            # Add custom_field_definitions column if it doesn't exist (for existing tables)
+            try:
+                cur.execute("""
+                    ALTER TABLE scenarios 
+                    ADD COLUMN IF NOT EXISTS custom_field_definitions JSONB DEFAULT '[]'
+                """)
+            except Exception as e:
+                print(f"Note: Could not add custom_field_definitions column: {e}")
+            
             conn.commit()
             return True
     except Exception as e:
@@ -346,6 +355,30 @@ async def get_periods(
     except Exception as e:
         return {"error": str(e), "periods": [], "total": 0}
 
+@router.get("/periods/{period_id}")
+async def get_period(
+    period_id: int,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Get a specific period"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cur.execute("SELECT * FROM periods WHERE id = %s", (period_id,))
+            period = cur.fetchone()
+            
+            if not period:
+                raise HTTPException(status_code=404, detail="Period not found")
+            
+            return period
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching period: {str(e)}")
+
 @router.post("/fiscal-years/{fiscal_year_id}/periods")
 async def create_period(
     fiscal_year_id: int,
@@ -386,6 +419,81 @@ async def create_period(
             return period
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating period: {str(e)}")
+
+@router.put("/periods/{period_id}")
+async def update_period(
+    period_id: int,
+    period_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Update a period"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Update query
+            update_query = """
+                UPDATE periods 
+                SET period_code = %s, period_name = %s, period_type = %s, 
+                    start_date = %s, end_date = %s, status = %s, sort_order = %s, 
+                    description = %s, is_rollup_period = %s, consolidation_enabled = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+            """
+            
+            cur.execute(update_query, (
+                period_data.get('period_code'),
+                period_data.get('period_name'),
+                period_data.get('period_type', 'month'),
+                period_data.get('start_date'),
+                period_data.get('end_date'),
+                period_data.get('status', 'open'),
+                period_data.get('sort_order', 0),
+                period_data.get('description'),
+                period_data.get('is_rollup_period', False),
+                period_data.get('consolidation_enabled', True),
+                period_id
+            ))
+            
+            period = cur.fetchone()
+            conn.commit()
+            
+            if not period:
+                raise HTTPException(status_code=404, detail="Period not found")
+            
+            return period
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating period: {str(e)}")
+
+@router.delete("/periods/{period_id}")
+async def delete_period(
+    period_id: int,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Delete a period"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor()
+            
+            cur.execute("DELETE FROM periods WHERE id = %s RETURNING id", (period_id,))
+            result = cur.fetchone()
+            conn.commit()
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Period not found")
+            
+            return {"message": "Period deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting period: {str(e)}")
 
 @router.post("/fiscal-years/{fiscal_year_id}/periods/bulk")
 async def create_bulk_periods(
@@ -520,6 +628,7 @@ async def create_bulk_periods(
     except Exception as e:
         print(f"❌ Error creating bulk periods: {str(e)}")
         return {"error": str(e)}
+@router.get("/fiscal-years/{fiscal_year_id}/scenarios")
 async def get_scenarios(
     fiscal_year_id: int,
     x_company_database: str = Header(..., alias="X-Company-Database")
@@ -578,7 +687,7 @@ async def create_scenario(
                 scenario_data.get('allow_overrides', True),
                 scenario_data.get('auto_calculate', True),
                 scenario_data.get('consolidation_method', 'full'),
-                scenario_data.get('custom_field_definitions', [])
+                json.dumps(scenario_data.get('custom_field_definitions', []))
             ))
             
             scenario = cur.fetchone()
@@ -587,6 +696,106 @@ async def create_scenario(
             return scenario
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating scenario: {str(e)}")
+
+@router.get("/scenarios/{scenario_id}")
+async def get_scenario(
+    scenario_id: int,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Get a specific scenario"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            cur.execute("SELECT * FROM scenarios WHERE id = %s", (scenario_id,))
+            scenario = cur.fetchone()
+            
+            if not scenario:
+                raise HTTPException(status_code=404, detail="Scenario not found")
+            
+            return scenario
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching scenario: {str(e)}")
+
+@router.put("/scenarios/{scenario_id}")
+async def update_scenario(
+    scenario_id: int,
+    scenario_data: dict,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Update a scenario"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Update query
+            update_query = """
+                UPDATE scenarios 
+                SET scenario_code = %s, scenario_name = %s, scenario_type = %s, 
+                    description = %s, status = %s, version_number = %s, is_baseline = %s, 
+                    allow_overrides = %s, auto_calculate = %s, consolidation_method = %s,
+                    custom_field_definitions = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+            """
+            
+            cur.execute(update_query, (
+                scenario_data.get('scenario_code'),
+                scenario_data.get('scenario_name'),
+                scenario_data.get('scenario_type', 'budget'),
+                scenario_data.get('description'),
+                scenario_data.get('status', 'draft'),
+                scenario_data.get('version_number', '1.0'),
+                scenario_data.get('is_baseline', False),
+                scenario_data.get('allow_overrides', True),
+                scenario_data.get('auto_calculate', True),
+                scenario_data.get('consolidation_method', 'full'),
+                json.dumps(scenario_data.get('custom_field_definitions', [])),
+                scenario_id
+            ))
+            
+            scenario = cur.fetchone()
+            conn.commit()
+            
+            if not scenario:
+                raise HTTPException(status_code=404, detail="Scenario not found")
+            
+            return scenario
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating scenario: {str(e)}")
+
+@router.delete("/scenarios/{scenario_id}")
+async def delete_scenario(
+    scenario_id: int,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Delete a scenario"""
+    try:
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor()
+            
+            cur.execute("DELETE FROM scenarios WHERE id = %s RETURNING id", (scenario_id,))
+            result = cur.fetchone()
+            conn.commit()
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Scenario not found")
+            
+            return {"message": "Scenario deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting scenario: {str(e)}")
 
 @router.get("/scenarios/{scenario_id}/custom-fields")
 async def get_scenario_custom_fields(

@@ -26,6 +26,7 @@ const PeriodsTab = ({ year }) => {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showBulkCreateModal, setShowBulkCreateModal] = useState(false)
   const [selectedPeriod, setSelectedPeriod] = useState(null)
+  const [editingPeriod, setEditingPeriod] = useState(null)
   const [filterType, setFilterType] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
 
@@ -49,6 +50,33 @@ const PeriodsTab = ({ year }) => {
       console.error('Error fetching periods:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleEditPeriod = (period) => {
+    setEditingPeriod(period)
+    setShowCreateModal(true)
+  }
+
+  const handleDeletePeriod = async (periodId) => {
+    if (!selectedCompany || !window.confirm('Are you sure you want to delete this period?')) return
+
+    try {
+      const response = await fetch(`/api/fiscal-management/periods/${periodId}`, {
+        method: 'DELETE',
+        headers: { 'X-Company-Database': selectedCompany }
+      })
+
+      if (response.ok) {
+        window.showToast?.('Period deleted successfully!', 'success')
+        fetchPeriods() // Refresh the list
+      } else {
+        const error = await response.json()
+        window.showToast?.(error.detail || 'Failed to delete period', 'error')
+      }
+    } catch (error) {
+      console.error('Error deleting period:', error)
+      window.showToast?.('Failed to delete period', 'error')
     }
   }
 
@@ -90,30 +118,35 @@ const PeriodsTab = ({ year }) => {
     return matchesType && matchesStatus
   })
 
-  const CreatePeriodModal = () => {
+  const CreatePeriodModal = ({ editPeriod = null }) => {
     const [formData, setFormData] = useState({
-      period_code: '',
-      period_name: '',
-      period_type: 'month',
-      start_date: '',
-      end_date: '',
-      status: 'open',
-      is_rollup_period: false,
-      consolidation_enabled: true,
-      description: ''
+      period_code: editPeriod?.period_code || '',
+      period_name: editPeriod?.period_name || '',
+      period_type: editPeriod?.period_type || 'month',
+      start_date: editPeriod?.start_date ? new Date(editPeriod.start_date).toISOString().split('T')[0] : '',
+      end_date: editPeriod?.end_date ? new Date(editPeriod.end_date).toISOString().split('T')[0] : '',
+      status: editPeriod?.status || 'open',
+      is_rollup_period: editPeriod?.is_rollup_period || false,
+      consolidation_enabled: editPeriod?.consolidation_enabled || true,
+      description: editPeriod?.description || ''
     })
 
     const handleSubmit = async (e) => {
       e.preventDefault()
       
       try {
-        const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/periods`, {
-          method: 'POST',
+        const method = editPeriod ? 'PUT' : 'POST'
+        const url = editPeriod 
+          ? `/api/fiscal-management/periods/${editPeriod.id}`
+          : `/api/fiscal-management/fiscal-years/${year.id}/periods`
+
+        const response = await fetch(url, {
+          method: method,
           headers: {
             'Content-Type': 'application/json',
             'X-Company-Database': selectedCompany
           },
-          body: JSON.stringify({
+          body: JSON.stringify(editPeriod ? formData : {
             ...formData,
             fiscal_year_id: year.id
           })
@@ -122,6 +155,12 @@ const PeriodsTab = ({ year }) => {
         if (response.ok) {
           setShowCreateModal(false)
           fetchPeriods()
+          window.showToast?.(
+            editPeriod 
+              ? 'Period updated successfully!' 
+              : 'Period created successfully!', 
+            'success'
+          )
           setFormData({
             period_code: '',
             period_name: '',
@@ -133,9 +172,13 @@ const PeriodsTab = ({ year }) => {
             consolidation_enabled: true,
             description: ''
           })
+        } else {
+          const error = await response.json()
+          window.showToast?.(error.error || `Failed to ${editPeriod ? 'update' : 'create'} period`, 'error')
         }
       } catch (error) {
-        console.error('Error creating period:', error)
+        console.error(`Error ${editPeriod ? 'updating' : 'creating'} period:`, error)
+        window.showToast?.(`Failed to ${editPeriod ? 'update' : 'create'} period`, 'error')
       }
     }
 
@@ -144,10 +187,13 @@ const PeriodsTab = ({ year }) => {
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-              Create New Period
+              {editPeriod ? 'Edit Period' : 'Create New Period'}
             </h2>
             <button
-              onClick={() => setShowCreateModal(false)}
+              onClick={() => {
+                setShowCreateModal(false)
+                setEditingPeriod(null)
+              }}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <XCircle className="h-6 w-6" />
@@ -289,7 +335,7 @@ const PeriodsTab = ({ year }) => {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
-                Create Period
+                {editPeriod ? 'Update Period' : 'Create Period'}
               </button>
             </div>
           </form>
@@ -344,7 +390,10 @@ const PeriodsTab = ({ year }) => {
               Auto-Generate Periods
             </h2>
             <button
-              onClick={() => setShowBulkCreateModal(false)}
+              onClick={() => {
+                setShowBulkCreateModal(false)
+                setEditingPeriod(null)
+              }}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <XCircle className="h-6 w-6" />
@@ -548,10 +597,16 @@ const PeriodsTab = ({ year }) => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
-                        <button className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300">
+                        <button 
+                          onClick={() => handleEditPeriod(period)}
+                          className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <button 
+                          onClick={() => handleDeletePeriod(period.id)}
+                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </button>
                         <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
@@ -568,7 +623,7 @@ const PeriodsTab = ({ year }) => {
       )}
 
       {/* Modals */}
-      {showCreateModal && <CreatePeriodModal />}
+      {showCreateModal && <CreatePeriodModal editPeriod={editingPeriod} />}
       {showBulkCreateModal && <BulkCreateModal />}
     </div>
   )

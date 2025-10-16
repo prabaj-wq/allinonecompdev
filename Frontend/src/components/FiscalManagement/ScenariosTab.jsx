@@ -12,6 +12,7 @@ const ScenariosTab = ({ year }) => {
   const [scenarios, setScenarios] = useState([])
   const [loading, setLoading] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingScenario, setEditingScenario] = useState(null)
   const [selectedScenario, setSelectedScenario] = useState(null)
   const [filterType, setFilterType] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
@@ -33,6 +34,33 @@ const ScenariosTab = ({ year }) => {
       console.error('Error fetching scenarios:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleEditScenario = (scenario) => {
+    setEditingScenario(scenario)
+    setShowCreateModal(true)
+  }
+
+  const handleDeleteScenario = async (scenarioId) => {
+    if (!selectedCompany || !window.confirm('Are you sure you want to delete this scenario?')) return
+
+    try {
+      const response = await fetch(`/api/fiscal-management/scenarios/${scenarioId}`, {
+        method: 'DELETE',
+        headers: { 'X-Company-Database': selectedCompany }
+      })
+
+      if (response.ok) {
+        window.showToast?.('Scenario deleted successfully!', 'success')
+        fetchScenarios() // Refresh the list
+      } else {
+        const error = await response.json()
+        window.showToast?.(error.detail || 'Failed to delete scenario', 'error')
+      }
+    } catch (error) {
+      console.error('Error deleting scenario:', error)
+      window.showToast?.('Failed to delete scenario', 'error')
     }
   }
 
@@ -213,13 +241,19 @@ const ScenariosTab = ({ year }) => {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <button 
+                          onClick={() => handleEditScenario(scenario)}
+                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
                           <Edit className="h-4 w-4" />
                         </button>
                         <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                           <Copy className="h-4 w-4" />
                         </button>
-                        <button className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <button 
+                          onClick={() => handleDeleteScenario(scenario.id)}
+                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -232,12 +266,16 @@ const ScenariosTab = ({ year }) => {
         </div>
       )}
 
-      {/* Create Modal */}
+      {/* Create/Edit Modal */}
       {showCreateModal && (
         <CreateScenarioModal
           year={year}
-          onClose={() => setShowCreateModal(false)}
+          onClose={() => {
+            setShowCreateModal(false)
+            setEditingScenario(null)
+          }}
           onSuccess={fetchScenarios}
+          editScenario={editingScenario}
         />
       )}
     </div>
@@ -385,28 +423,33 @@ const ScenarioOverviewTab = ({ scenario, year }) => {
   )
 }
 
-// Create Scenario Modal Component (simplified version)
-const CreateScenarioModal = ({ year, onClose, onSuccess }) => {
+// Create/Edit Scenario Modal Component
+const CreateScenarioModal = ({ year, onClose, onSuccess, editScenario = null }) => {
   const { selectedCompany } = useCompany()
   const [formData, setFormData] = useState({
-    scenario_code: '',
-    scenario_name: '',
-    scenario_type: 'budget',
-    description: '',
-    version_number: '1.0',
-    status: 'draft',
-    is_baseline: false,
-    allow_overrides: true,
-    auto_calculate: true,
-    consolidation_method: 'full',
-    custom_field_definitions: []
+    scenario_code: editScenario?.scenario_code || '',
+    scenario_name: editScenario?.scenario_name || '',
+    scenario_type: editScenario?.scenario_type || 'budget',
+    description: editScenario?.description || '',
+    version_number: editScenario?.version_number || '1.0',
+    status: editScenario?.status || 'draft',
+    is_baseline: editScenario?.is_baseline || false,
+    allow_overrides: editScenario?.allow_overrides || true,
+    auto_calculate: editScenario?.auto_calculate || true,
+    consolidation_method: editScenario?.consolidation_method || 'full',
+    custom_field_definitions: editScenario?.custom_field_definitions || []
   })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
-        method: 'POST',
+      const method = editScenario ? 'PUT' : 'POST'
+      const url = editScenario 
+        ? `/api/fiscal-management/scenarios/${editScenario.id}`
+        : `/api/fiscal-management/fiscal-years/${year.id}/scenarios`
+
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
           'X-Company-Database': selectedCompany
@@ -417,14 +460,19 @@ const CreateScenarioModal = ({ year, onClose, onSuccess }) => {
       if (response.ok) {
         onClose()
         onSuccess()
-        window.showToast?.('Scenario created successfully!', 'success')
+        window.showToast?.(
+          editScenario 
+            ? 'Scenario updated successfully!' 
+            : 'Scenario created successfully!', 
+          'success'
+        )
       } else {
         const error = await response.json()
-        window.showToast?.(error.error || 'Failed to create scenario', 'error')
+        window.showToast?.(error.error || `Failed to ${editScenario ? 'update' : 'create'} scenario`, 'error')
       }
     } catch (error) {
-      console.error('Error creating scenario:', error)
-      window.showToast?.('Failed to create scenario', 'error')
+      console.error(`Error ${editScenario ? 'updating' : 'creating'} scenario:`, error)
+      window.showToast?.(`Failed to ${editScenario ? 'update' : 'create'} scenario`, 'error')
     }
   }
 
@@ -432,7 +480,9 @@ const CreateScenarioModal = ({ year, onClose, onSuccess }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create New Scenario</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            {editScenario ? 'Edit Scenario' : 'Create New Scenario'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <XCircle className="h-6 w-6" />
           </button>
@@ -515,7 +565,7 @@ const CreateScenarioModal = ({ year, onClose, onSuccess }) => {
               type="submit"
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
-              Create Scenario
+              {editScenario ? 'Update Scenario' : 'Create Scenario'}
             </button>
           </div>
         </form>
