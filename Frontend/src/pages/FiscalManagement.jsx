@@ -26,7 +26,8 @@ import {
   ChevronDown,
   Layers,
   Target,
-  Zap
+  Zap,
+  Save
 } from 'lucide-react'
 
 // Simple Error Boundary Component
@@ -650,10 +651,180 @@ const FiscalYearDetails = ({ year, onBack }) => {
 }
 
 // Tab Components
-const SettingsTab = ({ year }) => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Fiscal Year Settings</h3>
-    <div className="space-y-4">
+const SettingsTab = ({ year }) => {
+  const { selectedCompany } = useCompany();
+  const [settings, setSettings] = useState({
+    allow_simulations: year.settings?.allow_simulations ?? false,
+    opening_balances_source: year.settings?.opening_balances_source ?? 'normal',
+    opening_balances_scenario_id: year.settings?.opening_balances_scenario_id ?? null,
+    opening_balances_period_id: year.settings?.opening_balances_period_id ?? null
+  });
+  
+  const [scenarios, setScenarios] = useState([]);
+  const [periods, setPeriods] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  
+  // Fetch scenarios and periods for the dropdowns
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!selectedCompany || !year.id) return;
+      
+      setLoading(true);
+      try {
+        // Fetch scenarios
+        const scenariosResponse = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
+          headers: { 'X-Company-Database': selectedCompany }
+        });
+        
+        if (scenariosResponse.ok) {
+          const scenariosData = await scenariosResponse.json();
+          setScenarios(scenariosData.scenarios || []);
+        }
+        
+        // Fetch periods
+        const periodsResponse = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/periods`, {
+          headers: { 'X-Company-Database': selectedCompany }
+        });
+        
+        if (periodsResponse.ok) {
+          const periodsData = await periodsResponse.json();
+          setPeriods(periodsData.periods || []);
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [selectedCompany, year.id]);
+  
+  const handleSettingChange = (key, value) => {
+    setSettings(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+  
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany
+        },
+        body: JSON.stringify({
+          settings: settings,
+          custom_fields: year.custom_fields || {}
+        })
+      });
+      
+      if (response.ok) {
+        window.showToast?.('Settings saved successfully!', 'success');
+      } else {
+        const error = await response.json();
+        window.showToast?.(error.error || 'Failed to save settings', 'error');
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      window.showToast?.('Failed to save settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Fiscal Year Settings</h3>
+      
+      <div className="space-y-6">
+        {/* Simulations Toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-md font-medium text-gray-900 dark:text-white">Allow Simulations</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Enable or disable simulation capabilities for this fiscal year</p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.allow_simulations}
+              onChange={(e) => handleSettingChange('allow_simulations', e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+          </label>
+        </div>
+        
+        {/* Opening Balances Source */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Opening Balances Source</label>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Select where opening balances should be sourced from</p>
+          
+          <div className="space-y-4">
+            <div>
+              <select
+                value={settings.opening_balances_source}
+                onChange={(e) => handleSettingChange('opening_balances_source', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="normal">Normal (Current Year)</option>
+                <option value="scenario">From Scenario</option>
+                <option value="period">From Specific Period</option>
+                <option value="year">From Another Year</option>
+              </select>
+            </div>
+            
+            {/* Conditional fields based on source selection */}
+            {settings.opening_balances_source === 'scenario' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Scenario</label>
+                <select
+                  value={settings.opening_balances_scenario_id || ''}
+                  onChange={(e) => handleSettingChange('opening_balances_scenario_id', e.target.value || null)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">Select a scenario</option>
+                  {scenarios.map(scenario => (
+                    <option key={scenario.id} value={scenario.id}>
+                      {scenario.scenario_name} ({scenario.scenario_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {settings.opening_balances_source === 'period' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Period</label>
+                <select
+                  value={settings.opening_balances_period_id || ''}
+                  onChange={(e) => handleSettingChange('opening_balances_period_id', e.target.value || null)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">Select a period</option>
+                  {periods.map(period => (
+                    <option key={period.id} value={period.id}>
+                      {period.period_name} ({period.period_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {settings.opening_balances_source === 'year' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Year</label>
+                <p className="text-sm text-gray-500 dark:text-gray-400">(Additional year selection would be implemented here)</p>
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Existing Consolidation Settings */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Consolidation Method</label>
           <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white">
@@ -662,19 +833,42 @@ const SettingsTab = ({ year }) => (
             <option value="equity">Equity Method</option>
           </select>
         </div>
-      <div className="flex items-center space-x-4">
-        <label className="flex items-center space-x-2">
-          <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-          <span className="text-sm text-gray-700 dark:text-gray-300">Enable Inter-company Eliminations</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-          <span className="text-sm text-gray-700 dark:text-gray-300">Auto-calculate Minority Interest</span>
-        </label>
+        
+        <div className="flex items-center space-x-4">
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            <span className="text-sm text-gray-700 dark:text-gray-300">Enable Inter-company Eliminations</span>
+          </label>
+          <label className="flex items-center space-x-2">
+            <input type="checkbox" defaultChecked className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            <span className="text-sm text-gray-700 dark:text-gray-300">Auto-calculate Minority Interest</span>
+          </label>
+        </div>
+        
+        {/* Save Button */}
+        <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
+          <button
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+          >
+            {saving ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                <span>Save Settings</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-)
+  );
+}
 
 const AuditTab = ({ year }) => (
   <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">

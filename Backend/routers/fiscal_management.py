@@ -155,6 +155,11 @@ class FiscalYearCreate(BaseModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
 
+# Add a new model for updating fiscal year settings
+class FiscalYearSettingsUpdate(BaseModel):
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    custom_fields: Dict[str, Any] = Field(default_factory=dict)
+
 # ===== ENDPOINTS =====
 
 @router.get("/health")
@@ -250,8 +255,8 @@ async def create_fiscal_year(
             insert_query = """
                 INSERT INTO fiscal_years (
                     year_code, year_name, start_date, end_date, status, description,
-                    is_consolidation_year, consolidation_method
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    is_consolidation_year, consolidation_method, settings
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """
             
@@ -263,7 +268,8 @@ async def create_fiscal_year(
                 fiscal_year_data.get('status', 'draft'),
                 fiscal_year_data.get('description'),
                 fiscal_year_data.get('is_consolidation_year', True),
-                fiscal_year_data.get('consolidation_method', 'full')
+                fiscal_year_data.get('consolidation_method', 'full'),
+                json.dumps(fiscal_year_data.get('settings', {}))
             ))
             
             fiscal_year = cur.fetchone()
@@ -273,6 +279,48 @@ async def create_fiscal_year(
             return fiscal_year
     except Exception as e:
         print(f"❌ Error creating fiscal year: {str(e)}")
+        return {"error": str(e)}
+
+@router.put("/fiscal-years/{fiscal_year_id}")
+async def update_fiscal_year(
+    fiscal_year_id: int,
+    fiscal_year_data: FiscalYearSettingsUpdate,
+    x_company_database: str = Header(..., alias="X-Company-Database")
+):
+    """Update a fiscal year settings"""
+    try:
+        print(f"🚀 Updating fiscal year {fiscal_year_id} for company: {x_company_database}")
+        print(f"📊 Fiscal year data: {fiscal_year_data}")
+        
+        ensure_fiscal_tables(x_company_database)
+        
+        with get_company_connection(x_company_database) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Update query
+            update_query = """
+                UPDATE fiscal_years 
+                SET settings = %s, custom_fields = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *
+            """
+            
+            cur.execute(update_query, (
+                json.dumps(fiscal_year_data.settings),
+                json.dumps(fiscal_year_data.custom_fields),
+                fiscal_year_id
+            ))
+            
+            fiscal_year = cur.fetchone()
+            conn.commit()
+            
+            if not fiscal_year:
+                return {"error": "Fiscal year not found"}
+            
+            print(f"✅ Fiscal year updated successfully: {fiscal_year}")
+            return fiscal_year
+    except Exception as e:
+        print(f"❌ Error updating fiscal year: {str(e)}")
         return {"error": str(e)}
 
 @router.get("/fiscal-years/{fiscal_year_id}/periods")

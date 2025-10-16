@@ -75,6 +75,13 @@ try:
 except ImportError as e:
     logger.error(f"❌ Failed to load onboarding router: {e}")
 
+try:
+    from routers.fiscal_management import router as fiscal_management_router
+    app.include_router(fiscal_management_router, prefix="/api")
+    logger.info("✅ Fiscal Management router loaded")
+except ImportError as e:
+    logger.error(f"❌ Failed to load fiscal management router: {e}")
+
 # Initialize database on startup
 @app.on_event("startup")
 async def startup_event():
