@@ -82,11 +82,28 @@ const FiscalManagement = () => {
   const { selectedCompany } = useCompany()
   const [fiscalYears, setFiscalYears] = useState([])
   const [selectedYear, setSelectedYear] = useState(null)
+  const [editingYear, setEditingYear] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+
+  // Handle edit fiscal year
+  const handleEditFiscalYear = (year) => {
+    setEditingYear(year);
+    setFormData({
+      year_code: year.year_code || '',
+      year_name: year.year_name || '',
+      start_date: year.start_date || '',
+      end_date: year.end_date || '',
+      description: year.description || '',
+      status: year.status || 'draft',
+      is_consolidation_year: year.is_consolidation_year || true,
+      consolidation_method: year.consolidation_method || 'full'
+    });
+    setShowCreateModal(true);
+  };
 
   // Fetch fiscal years
   const fetchFiscalYears = async () => {
@@ -109,7 +126,51 @@ const FiscalManagement = () => {
       if (response.ok) {
         const data = await response.json()
         console.log('✅ Fetched fiscal years:', data)
-        setFiscalYears(data.fiscal_years || [])
+        
+        // Fetch periods and scenarios counts for each fiscal year
+        const fiscalYearsWithCounts = await Promise.all(
+          (data.fiscal_years || []).map(async (year) => {
+            try {
+              // Fetch periods count
+              const periodsResponse = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/periods`, {
+                headers: { 'X-Company-Database': selectedCompany }
+              });
+              
+              // Fetch scenarios count
+              const scenariosResponse = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
+                headers: { 'X-Company-Database': selectedCompany }
+              });
+              
+              let periodsCount = 0;
+              let scenariosCount = 0;
+              
+              if (periodsResponse.ok) {
+                const periodsData = await periodsResponse.json();
+                periodsCount = periodsData.total || periodsData.periods?.length || 0;
+              }
+              
+              if (scenariosResponse.ok) {
+                const scenariosData = await scenariosResponse.json();
+                scenariosCount = scenariosData.total || scenariosData.scenarios?.length || 0;
+              }
+              
+              return {
+                ...year,
+                periods_count: periodsCount,
+                scenarios_count: scenariosCount
+              };
+            } catch (error) {
+              console.error(`Error fetching counts for year ${year.id}:`, error);
+              return {
+                ...year,
+                periods_count: 0,
+                scenarios_count: 0
+              };
+            }
+          })
+        );
+        
+        setFiscalYears(fiscalYearsWithCounts);
       } else {
         const error = await response.json()
         console.error('❌ Fetch error:', error)
@@ -163,13 +224,13 @@ const FiscalManagement = () => {
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {year.periods?.length || 0}
+              {year.periods_count || 0}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Periods</div>
           </div>
           <div className="text-center p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {year.scenarios?.length || 0}
+              {year.scenarios_count || 0}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">Scenarios</div>
           </div>
@@ -191,7 +252,10 @@ const FiscalManagement = () => {
               <Eye className="h-4 w-4" />
               <span>View Details</span>
             </button>
-            <button className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
+            <button 
+              onClick={() => handleEditFiscalYear(year)}
+              className="flex items-center space-x-1 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+            >
               <Edit className="h-4 w-4" />
               <span>Edit</span>
             </button>
@@ -233,8 +297,14 @@ const FiscalManagement = () => {
     
     try {
       console.log('📡 Making API call to create fiscal year...')
-      const response = await fetch('/api/fiscal-management/fiscal-years', {
-        method: 'POST',
+      
+      const method = editingYear ? 'PUT' : 'POST';
+      const url = editingYear 
+        ? `/api/fiscal-management/fiscal-years/${editingYear.id}`
+        : '/api/fiscal-management/fiscal-years';
+      
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
           'X-Company-Database': selectedCompany
@@ -247,9 +317,10 @@ const FiscalManagement = () => {
       
       if (response.ok) {
         const result = await response.json()
-        console.log('✅ Fiscal year created successfully:', result)
+        console.log('✅ Fiscal year created/updated successfully:', result)
         
         setShowCreateModal(false)
+        setEditingYear(null);
         setFormData({
           year_code: '',
           year_name: '',
@@ -261,11 +332,16 @@ const FiscalManagement = () => {
           consolidation_method: 'full'
         })
         fetchFiscalYears()
-        window.showToast?.('Fiscal year created successfully!', 'success')
+        window.showToast?.(
+          editingYear 
+            ? 'Fiscal year updated successfully!' 
+            : 'Fiscal year created successfully!', 
+          'success'
+        )
       } else {
         const error = await response.json()
         console.error('❌ API Error:', error)
-        window.showToast?.(error.error || `Failed to create fiscal year (${response.status})`, 'error')
+        window.showToast?.(error.error || `Failed to ${editingYear ? 'update' : 'create'} fiscal year (${response.status})`, 'error')
       }
     } catch (error) {
       console.error('❌ Network/Parse Error:', error)
@@ -278,10 +354,13 @@ const FiscalManagement = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Create New Fiscal Year
+            {editingYear ? 'Edit Fiscal Year' : 'Create New Fiscal Year'}
           </h2>
           <button
-            onClick={() => setShowCreateModal(false)}
+            onClick={() => {
+              setShowCreateModal(false);
+              setEditingYear(null);
+            }}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <XCircle className="h-6 w-6" />
@@ -391,7 +470,7 @@ const FiscalManagement = () => {
               type="submit"
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
-              Create Fiscal Year
+              {editingYear ? 'Update Fiscal Year' : 'Create Fiscal Year'}
             </button>
           </div>
         </form>
@@ -534,8 +613,7 @@ const FiscalYearDetails = ({ year, onBack }) => {
   const tabs = [
     { id: 'periods', name: 'Periods', icon: Clock, count: periods.length },
     { id: 'scenarios', name: 'Scenarios', icon: Layers, count: scenarios.length },
-    { id: 'settings', name: 'Settings', icon: Settings, count: null },
-    { id: 'audit', name: 'Audit Trail', icon: History, count: null }
+    { id: 'settings', name: 'Settings', icon: Settings, count: null }
   ]
 
   return (
@@ -607,9 +685,6 @@ const FiscalYearDetails = ({ year, onBack }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'periods' && (
           <div>
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-blue-800">🔄 Loading Periods Tab for year: {year.year_name}</p>
-            </div>
             <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Periods Tab</div>}>
               <PeriodsTab year={year} />
             </ErrorBoundary>
@@ -617,9 +692,6 @@ const FiscalYearDetails = ({ year, onBack }) => {
         )}
         {activeTab === 'scenarios' && (
           <div>
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-800">🔄 Loading Scenarios Tab for year: {year.year_name}</p>
-            </div>
             <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Scenarios Tab</div>}>
               <ScenariosTab year={year} />
             </ErrorBoundary>
@@ -627,21 +699,8 @@ const FiscalYearDetails = ({ year, onBack }) => {
         )}
         {activeTab === 'settings' && (
           <div>
-            <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-              <p className="text-purple-800">🔄 Loading Settings Tab for year: {year.year_name}</p>
-            </div>
             <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Settings Tab</div>}>
               <SettingsTab year={year} />
-            </ErrorBoundary>
-          </div>
-        )}
-        {activeTab === 'audit' && (
-          <div>
-            <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-              <p className="text-orange-800">🔄 Loading Audit Tab for year: {year.year_name}</p>
-            </div>
-            <ErrorBoundary fallback={<div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">Error loading Audit Tab</div>}>
-              <AuditTab year={year} />
             </ErrorBoundary>
           </div>
         )}
@@ -768,57 +827,57 @@ const SettingsTab = ({ year }) => {
         
         {/* Roll Forward Settings */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Roll Forward Options</label>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Configure how data is rolled forward between periods</p>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-md font-medium text-gray-900 dark:text-white">Enable Roll Forward</h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Allow automatic data roll forward between periods</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.roll_forward_enabled || false}
-                  onChange={(e) => handleSettingChange('roll_forward_enabled', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-            
+          <div className="flex items-center justify-between">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Roll Forward Method</label>
-              <select
-                value={settings.roll_forward_method || 'copy'}
-                onChange={(e) => handleSettingChange('roll_forward_method', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="copy">Copy Previous Period Data</option>
-                <option value="adjust">Copy with Adjustments</option>
-                <option value="zero">Start with Zero Balances</option>
-                <option value="formula">Apply Formula-Based Roll Forward</option>
-              </select>
+              <h4 className="text-md font-medium text-gray-900 dark:text-white">Enable Roll Forward</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Allow automatic data roll forward between periods</p>
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default Adjustment Percentage</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="-100"
-                  max="100"
-                  step="0.1"
-                  value={settings.roll_forward_adjustment || 0}
-                  onChange={(e) => handleSettingChange('roll_forward_adjustment', parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                />
-                <span className="absolute right-3 top-2.5 text-gray-500 dark:text-gray-400">%</span>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Default percentage adjustment for rolled forward data</p>
-            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.roll_forward_enabled || false}
+                onChange={(e) => handleSettingChange('roll_forward_enabled', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
           </div>
+          
+          {/* Show additional roll forward options only when enabled */}
+          {settings.roll_forward_enabled && (
+            <div className="mt-4 space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Roll Forward Method</label>
+                <select
+                  value={settings.roll_forward_method || 'copy'}
+                  onChange={(e) => handleSettingChange('roll_forward_method', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="copy">Copy Previous Period Data</option>
+                  <option value="adjust">Copy with Adjustments</option>
+                  <option value="zero">Start with Zero Balances</option>
+                  <option value="formula">Apply Formula-Based Roll Forward</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Default Adjustment Percentage</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="-100"
+                    max="100"
+                    step="0.1"
+                    value={settings.roll_forward_adjustment || 0}
+                    onChange={(e) => handleSettingChange('roll_forward_adjustment', parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                  <span className="absolute right-3 top-2.5 text-gray-500 dark:text-gray-400">%</span>
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Default percentage adjustment for rolled forward data</p>
+              </div>
+            </div>
+          )}
         </div>
         
         {/* Opening Balances Source */}

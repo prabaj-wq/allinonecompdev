@@ -640,7 +640,7 @@ async def get_scenarios(
         with get_company_connection(x_company_database) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            cur.execute("SELECT * FROM scenarios WHERE fiscal_year_id = %s ORDER BY scenario_code", (fiscal_year_id,))
+            cur.execute("SELECT * FROM scenarios WHERE fiscal_year_id = %s ORDER BY created_at DESC, id DESC", (fiscal_year_id,))
             scenarios = cur.fetchall()
             
             return {

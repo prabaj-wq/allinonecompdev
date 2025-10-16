@@ -64,6 +64,40 @@ const ScenariosTab = ({ year }) => {
     }
   }
 
+  const handleDuplicateScenario = async (scenario) => {
+    if (!selectedCompany) return;
+
+    try {
+      // Create a copy with a new name
+      const duplicateData = {
+        ...scenario,
+        scenario_code: `${scenario.scenario_code}_COPY`,
+        scenario_name: `${scenario.scenario_name} (Copy)`,
+        version_number: '1.0'
+      };
+
+      const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany
+        },
+        body: JSON.stringify(duplicateData)
+      });
+
+      if (response.ok) {
+        window.showToast?.('Scenario duplicated successfully!', 'success');
+        fetchScenarios(); // Refresh the list
+      } else {
+        const error = await response.json();
+        window.showToast?.(error.error || 'Failed to duplicate scenario', 'error');
+      }
+    } catch (error) {
+      console.error('Error duplicating scenario:', error);
+      window.showToast?.('Failed to duplicate scenario', 'error');
+    }
+  }
+
   useEffect(() => {
     fetchScenarios()
   }, [selectedCompany, year])
@@ -247,7 +281,10 @@ const ScenariosTab = ({ year }) => {
                         >
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <button 
+                          onClick={() => handleDuplicateScenario(scenario)}
+                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
                           <Copy className="h-4 w-4" />
                         </button>
                         <button 
@@ -436,8 +473,7 @@ const CreateScenarioModal = ({ year, onClose, onSuccess, editScenario = null }) 
     is_baseline: editScenario?.is_baseline || false,
     allow_overrides: editScenario?.allow_overrides || true,
     auto_calculate: editScenario?.auto_calculate || true,
-    consolidation_method: editScenario?.consolidation_method || 'full',
-    custom_field_definitions: editScenario?.custom_field_definitions || []
+    consolidation_method: editScenario?.consolidation_method || 'full'
   })
 
   const handleSubmit = async (e) => {
@@ -454,7 +490,10 @@ const CreateScenarioModal = ({ year, onClose, onSuccess, editScenario = null }) 
           'Content-Type': 'application/json',
           'X-Company-Database': selectedCompany
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          custom_field_definitions: []
+        })
       })
 
       if (response.ok) {

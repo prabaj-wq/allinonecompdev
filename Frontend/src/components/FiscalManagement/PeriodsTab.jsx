@@ -80,6 +80,39 @@ const PeriodsTab = ({ year }) => {
     }
   }
 
+  const handleDuplicatePeriod = async (period) => {
+    if (!selectedCompany) return;
+
+    try {
+      // Create a copy with a new name
+      const duplicateData = {
+        ...period,
+        period_code: `${period.period_code}_COPY`,
+        period_name: `${period.period_name} (Copy)`
+      };
+
+      const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/periods`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany
+        },
+        body: JSON.stringify(duplicateData)
+      });
+
+      if (response.ok) {
+        window.showToast?.('Period duplicated successfully!', 'success');
+        fetchPeriods(); // Refresh the list
+      } else {
+        const error = await response.json();
+        window.showToast?.(error.error || 'Failed to duplicate period', 'error');
+      }
+    } catch (error) {
+      console.error('Error duplicating period:', error);
+      window.showToast?.('Failed to duplicate period', 'error');
+    }
+  }
+
   useEffect(() => {
     fetchPeriods()
   }, [selectedCompany, year])
@@ -609,8 +642,11 @@ const PeriodsTab = ({ year }) => {
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
-                        <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                          <MoreVertical className="h-4 w-4" />
+                        <button 
+                          onClick={() => handleDuplicatePeriod(period)}
+                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <Copy className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
