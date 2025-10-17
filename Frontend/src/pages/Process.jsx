@@ -1063,10 +1063,11 @@ const Process = () => {
               <Maximize2 className="h-4 w-4" />
             </button>
           </div>
+        </div>
           
-          {/* Properties Panel */}
-          {selectedNode && (
-            <div className="w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6">
+        {/* Properties Panel */}
+        {selectedNode && (
+          <div className="w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Node Properties</h3>
                 <button
@@ -1139,24 +1140,9 @@ const Process = () => {
     )
   }
 
-  useEffect(() => {
-    fetchProcesses()
-  }, [fetchProcesses])
-
-  useEffect(() => {
-    if (!processes.length) {
-      setSelectedProcessId(null)
-      return
-    }
-    setSelectedProcessId((current) => {
-      if (current && processes.some((process) => process.id === current)) {
-        return current
-      }
-      return processes[0]?.id ?? null
-    })
-  }, [processes])
-
-  // Main component return
+  // ============================================================================
+  // MAIN COMPONENT RETURN
+  // ============================================================================
   return (
     <>
       {/* Main Content */}
@@ -1166,62 +1152,62 @@ const Process = () => {
       
       {/* Always render modals */}
       <div>
-      {/* Node Library Modal */}
-      {nodeLibraryOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-4xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add Process Node</h2>
-              <button
-                onClick={() => setNodeLibraryOpen(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {NODE_LIBRARY.map((nodeType) => {
-                  const IconComponent = nodeType.icon
-                  return (
-                    <div
-                      key={nodeType.type}
-                      className="group relative flex flex-col p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-300 hover:shadow-md transition cursor-pointer"
-                      draggable
-                      onDragStart={() => setDraggedNode(nodeType.type)}
-                      onClick={() => {
-                        addNodeToCanvas(nodeType.type, { x: 100, y: 100 })
-                        setNodeLibraryOpen(false)
-                      }}
-                    >
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeType.color} text-white`}>
-                          <IconComponent className="h-4 w-4" />
-                        </span>
-                        <div>
-                          <h3 className="font-medium text-gray-900 dark:text-white">{nodeType.title}</h3>
-                          <p className="text-xs text-indigo-600 dark:text-indigo-400">{nodeType.category}</p>
+        {/* Node Library Modal */}
+        {nodeLibraryOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-4xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add Process Node</h2>
+                <button
+                  onClick={() => setNodeLibraryOpen(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto max-h-[60vh]">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {NODE_LIBRARY.map((nodeType) => {
+                    const IconComponent = nodeType.icon
+                    return (
+                      <div
+                        key={nodeType.type}
+                        className="group relative flex flex-col p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-300 hover:shadow-md transition cursor-pointer"
+                        draggable
+                        onDragStart={() => setDraggedNode(nodeType.type)}
+                        onClick={() => {
+                          addNodeToCanvas(nodeType.type, { x: 100, y: 100 })
+                          setNodeLibraryOpen(false)
+                        }}
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeType.color} text-white`}>
+                            <IconComponent className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <h3 className="font-medium text-gray-900 dark:text-white">{nodeType.title}</h3>
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400">{nodeType.category}</p>
+                          </div>
                         </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{nodeType.description}</p>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300">{nodeType.description}</p>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Settings Modal */}
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Process Settings</h2>
-              <button
-                onClick={() => setSettingsOpen(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+        {/* Settings Modal */}
+        {settingsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Process Settings</h2>
+                <button
+                  onClick={() => setSettingsOpen(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1342,16 +1328,16 @@ const Process = () => {
                 Save Settings
               </button>
             </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Process Creation Modal */}
-      {processDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+        {/* Process Creation Modal */}
+        {processDrawerOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
+              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {editingProcess ? 'Edit Process' : 'Create New Process'}
               </h2>
               <button
@@ -1436,13 +1422,13 @@ const Process = () => {
                 </button>
               </div>
             </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Notification */}
-      {notification && (
-        <div
+        {/* Notification */}
+        {notification && (
+          <div
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border px-5 py-3 shadow-lg ${
             notification.type === 'success'
               ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-200'
@@ -1454,12 +1440,12 @@ const Process = () => {
           ) : (
             <AlertCircle className="h-5 w-5" />
           )}
-          <span className="text-sm font-medium">{notification.message}</span>
-          <button onClick={() => setNotification(null)} className="text-xs uppercase tracking-wide">
-            Dismiss
-          </button>
-        </div>
-      )}
+            <span className="text-sm font-medium">{notification.message}</span>
+            <button onClick={() => setNotification(null)} className="text-xs uppercase tracking-wide">
+              Dismiss
+            </button>
+          </div>
+        )}
       </div>
     </>
   )
