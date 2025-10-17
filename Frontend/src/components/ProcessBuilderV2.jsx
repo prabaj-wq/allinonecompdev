@@ -25,16 +25,26 @@ const ProcessBuilderV2 = () => {
   const [panY, setPanY] = useState(0);
   const [draggingNode, setDraggingNode] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [notifications, setNotifications] = useState([]);
   const [mode, setMode] = useState('list'); // list, edit, execute, report
   const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    type: 'consolidation',
+    fiscal_year: new Date().getFullYear()
+  });
   
   const canvasRef = useRef(null);
   const svgRef = useRef(null);
 
   // ==================== NOTIFICATIONS ====================
   const notify = (message, type = 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 5000);
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
   };
 
   // ==================== NODE TEMPLATES ====================
@@ -721,13 +731,6 @@ const ProcessBuilderV2 = () => {
   };
 
   const renderCreateView = () => {
-    const [formData, setFormData] = useState({
-      name: '',
-      description: '',
-      type: 'consolidation',
-      fiscal_year: new Date().getFullYear()
-    });
-
     return (
       <div className="create-view-container">
         <div className="create-header">

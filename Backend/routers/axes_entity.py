@@ -273,12 +273,96 @@ def ensure_tables_exist(company_name: str):
                 )
             """)
             
-            # Create indexes for better performance
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchies_company ON hierarchies(company_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_company ON hierarchy_nodes(company_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_hierarchy ON hierarchy_nodes(hierarchy_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_company ON axes_entities(company_id)")
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_hierarchy ON axes_entities(hierarchy_id)")
+            # Ensure columns exist before creating indexes (migration support)
+            # Check and add company_id column if missing from hierarchies
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = 'hierarchies' AND column_name = 'company_id'
+            """)
+            if not cur.fetchone():
+                try:
+                    cur.execute("ALTER TABLE hierarchies ADD COLUMN company_id VARCHAR(255)")
+                    conn.commit()
+                except psycopg2.errors.DuplicateColumn:
+                    conn.rollback()
+                try:
+                    cur.execute("UPDATE hierarchies SET company_id = %s WHERE company_id IS NULL", (company_name,))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+            
+            # Check and add company_id column if missing from hierarchy_nodes
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = 'hierarchy_nodes' AND column_name = 'company_id'
+            """)
+            if not cur.fetchone():
+                try:
+                    cur.execute("ALTER TABLE hierarchy_nodes ADD COLUMN company_id VARCHAR(255)")
+                    conn.commit()
+                except psycopg2.errors.DuplicateColumn:
+                    conn.rollback()
+                try:
+                    cur.execute("UPDATE hierarchy_nodes SET company_id = %s WHERE company_id IS NULL", (company_name,))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+            
+            # Check and add company_id column if missing from axes_entities
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = 'axes_entities' AND column_name = 'company_id'
+            """)
+            if not cur.fetchone():
+                try:
+                    cur.execute("ALTER TABLE axes_entities ADD COLUMN company_id VARCHAR(255)")
+                    conn.commit()
+                except psycopg2.errors.DuplicateColumn:
+                    conn.rollback()
+                try:
+                    cur.execute("UPDATE axes_entities SET company_id = %s WHERE company_id IS NULL", (company_name,))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+            
+            # Commit all migrations before creating indexes
+            conn.commit()
+            
+            # Create indexes for better performance (with error handling)
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchies_company ON hierarchies(company_id)")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Index creation note for hierarchies: {e}")
+            
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_company ON hierarchy_nodes(company_id)")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Index creation note for hierarchy_nodes: {e}")
+            
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_hierarchy_nodes_hierarchy ON hierarchy_nodes(hierarchy_id)")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Index creation note for hierarchy_nodes (hierarchy): {e}")
+            
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_company ON axes_entities(company_id)")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Index creation note for axes_entities: {e}")
+            
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_axes_entities_hierarchy ON axes_entities(hierarchy_id)")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Index creation note for axes_entities (hierarchy): {e}")
             
             # Add unique constraint on axes_type if it doesn't exist
             cur.execute("""

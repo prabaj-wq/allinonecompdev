@@ -15,15 +15,6 @@ from typing import Optional
 # Create base class for company-specific models
 from company_database_base import CompanyBase
 
-# Association table for many-to-many relationship between roles and permissions
-role_permission = Table(
-    'role_permission',
-    CompanyBase.metadata,
-    Column('role_id', Integer, ForeignKey('roles.id'), primary_key=True),
-    Column('permission_id', Integer, ForeignKey('permissions.id'), primary_key=True),
-    UniqueConstraint('role_id', 'permission_id', name='uq_role_permission')
-)
-
 # ===== CORE EPM MODELS =====
 
 class Account(CompanyBase):
