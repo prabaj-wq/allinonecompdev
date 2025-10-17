@@ -17,7 +17,7 @@ from enum import Enum
 import logging
 
 from database import get_db
-from auth.auth import get_current_active_user
+from auth.dependencies import get_current_active_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/process", tags=["Process Builder"])
@@ -253,6 +253,27 @@ class ProcessExecutionResponse(BaseModel):
     errors: List[str]
     alerts: List[Dict[str, Any]]
 
+class CustomFieldDefinition(BaseModel):
+    """Custom field definition for processes"""
+    field_name: str
+    field_label: str
+    field_type: str = "text"
+    options: Optional[List[str]] = None
+    is_required: bool = False
+    is_unique: bool = False
+    default_value: Optional[Any] = None
+    validation_rules: Optional[Dict[str, Any]] = None
+    display_order: int = 0
+
+class ProcessDefinitionCreateRequest(BaseModel):
+    """Request model for creating a new process definition"""
+    name: str
+    description: Optional[str] = None
+    process_type: Optional[str] = "Consolidation"
+    custom_fields: Optional[List[CustomFieldDefinition]] = None
+    fiscal_year: Optional[int] = None
+    base_currency: str = "USD"
+
 # ============================================================================
 # DATABASE CREATION ENDPOINTS
 # ============================================================================
@@ -404,11 +425,8 @@ def initialize_process_tables(db: Session):
 
 @router.post("/create", response_model=Dict[str, Any])
 async def create_process(
-    name: str,
-    description: Optional[str],
-    process_type: ProcessType,
-    fiscal_year: int,
-    base_currency: str = "USD",
+    definition: ProcessDefinitionCreateRequest,
+    company_name: str = Query(...),
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -416,7 +434,22 @@ async def create_process(
     try:
         initialize_process_tables(db)
         
-        company_id = current_user.get("company_id")
+        company_id = current_user.get("company_id") if isinstance(current_user, dict) else getattr(current_user, "company_id", None)
+        user_id = current_user.get("user_id") if isinstance(current_user, dict) else getattr(current_user, "id", None)
+        
+        # Use provided fiscal_year or default to current year
+        fiscal_year = definition.fiscal_year or datetime.now().year
+        
+        # Validate process_type if provided
+        if definition.process_type:
+            try:
+                process_type_enum = ProcessType(definition.process_type)
+                process_type_value = process_type_enum.value
+            except ValueError:
+                # If not a valid enum, just use the string as-is
+                process_type_value = definition.process_type
+        else:
+            process_type_value = "Consolidation"
         
         result = db.execute(text("""
             INSERT INTO process_definitions 
@@ -425,12 +458,12 @@ async def create_process(
             RETURNING id, created_at
         """), {
             "company_id": company_id,
-            "name": name,
-            "description": description,
-            "process_type": process_type.value,
+            "name": definition.name,
+            "description": definition.description,
+            "process_type": process_type_value,
             "fiscal_year": fiscal_year,
-            "base_currency": base_currency,
-            "created_by": current_user.get("user_id")
+            "base_currency": definition.base_currency,
+            "created_by": user_id
         })
         
         process = result.fetchone()
@@ -439,11 +472,46 @@ async def create_process(
         return {
             "success": True,
             "process_id": process[0],
-            "created_at": process[1].isoformat()
+            "created_at": process[1].isoformat() if process[1] else None
         }
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error creating process: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/catalog")
+async def list_process_catalog(
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """List all processes (catalog view) - Frontend compatibility endpoint"""
+    try:
+        # Query all processes for the company
+        result = db.execute(text("""
+            SELECT id, name, description, process_type, fiscal_year, base_currency, status, created_at
+            FROM process_definitions
+            ORDER BY created_at DESC
+        """))
+        
+        processes = []
+        for row in result:
+            processes.append({
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "process_type": row[3],
+                "fiscal_year": row[4],
+                "base_currency": row[5],
+                "status": row[6],
+                "created_at": row[7].isoformat() if row[7] else None
+            })
+        
+        return {"success": True, "processes": processes}
+    except Exception as e:
+        logger.error(f"Error listing process catalog: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/list")

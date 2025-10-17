@@ -224,6 +224,12 @@ async def check_page_permissions(request: Request, call_next):
     if any(path.startswith(skip_path) for skip_path in skip_paths):
         return await call_next(request)
     
+    # Check for Bearer token (allows endpoints with @Depends(get_current_active_user) to handle auth)
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        # Let the endpoint handle Bearer token authentication
+        return await call_next(request)
+    
     # Get session from cookies
     session_id = request.cookies.get('session_id')
     if not session_id or session_id not in sessions:
@@ -556,11 +562,10 @@ from routers import (
     auth, users, onboarding, roles, entities, accounts, 
     company_management, dashboard, fst, trial_balance, consolidation, 
     ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
-    upload, process, financial_statements, assets, audit, 
+    upload, financial_statements, assets, audit, 
     budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal_management,
-    workflow_builder, process_builder
+    workflow_builder, process_builder_enhanced
 )
-from routers import process_builder_v2
 
 # Include all routers with /api prefix
 # All routers including SQL router should use the same prefix pattern
@@ -576,7 +581,6 @@ app.include_router(hierarchies.router, prefix="/api")
 app.include_router(database_management.router, prefix="/api")
 app.include_router(database_info.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
-app.include_router(process.router, prefix="/api")
 app.include_router(company_management.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(fst.router, prefix="/api")
@@ -593,8 +597,7 @@ app.include_router(axes_account.router, prefix="/api")
 app.include_router(sql.router, prefix="/api")
 app.include_router(fiscal_management.router, prefix="/api")
 app.include_router(workflow_builder.router, prefix="/api")
-app.include_router(process_builder.router, prefix="/api")
-app.include_router(process_builder_v2.router, prefix="/api")
+app.include_router(process_builder_enhanced.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status
