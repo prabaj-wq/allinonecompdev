@@ -1085,11 +1085,15 @@ const Process = () => {
               <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
               
               <button
-                onClick={() => setNodeLibraryOpen(true)}
-                className="btn-secondary inline-flex items-center gap-2"
+                onClick={() => setNodeLibraryOpen(!nodeLibraryOpen)}
+                className={`inline-flex items-center gap-2 ${
+                  nodeLibraryOpen 
+                    ? 'btn-primary' 
+                    : 'btn-secondary'
+                }`}
               >
                 <Plus className="h-4 w-4" />
-                Add Node
+                {nodeLibraryOpen ? 'Hide Nodes' : 'Show Node Library'}
               </button>
               <button
                 onClick={() => setSettingsOpen(true)}
@@ -1113,6 +1117,50 @@ const Process = () => {
             </div>
           </div>
         </section>
+
+        {/* Horizontal Node Library Panel */}
+        {nodeLibraryOpen && (
+          <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
+            <div className="p-4">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                Available Process Nodes - Click to add to canvas
+              </h3>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                {NODE_LIBRARY.map((nodeType) => {
+                  const IconComponent = nodeType.icon
+                  return (
+                    <div
+                      key={nodeType.type}
+                      onClick={() => {
+                        const centerX = 300 + Math.random() * 100
+                        const centerY = 200 + Math.random() * 100
+                        addNodeToCanvas(nodeType.type, { x: centerX, y: centerY })
+                      }}
+                      className="flex-shrink-0 w-48 p-3 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-400 hover:shadow-md transition cursor-pointer bg-white dark:bg-gray-900 group"
+                    >
+                      <div className="flex items-start gap-2 mb-2">
+                        <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${nodeType.color} text-white`}>
+                          <IconComponent className="h-4 w-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                            {nodeType.title}
+                          </h4>
+                          <p className="text-xs text-indigo-600 dark:text-indigo-400">
+                            {nodeType.category}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
+                        {nodeType.description}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Canvas with Properties Panel */}
         <div className="flex gap-6 h-[600px]">
@@ -1303,53 +1351,6 @@ const Process = () => {
       
       {/* Always render modals */}
       <div>
-        {/* Node Library Modal */}
-        {nodeLibraryOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-4xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add Process Node</h2>
-                <button
-                  onClick={() => setNodeLibraryOpen(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="p-6 overflow-y-auto max-h-[60vh]">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {NODE_LIBRARY.map((nodeType) => {
-                    const IconComponent = nodeType.icon
-                    return (
-                      <div
-                        key={nodeType.type}
-                        className="group relative flex flex-col p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-300 hover:shadow-md transition cursor-pointer"
-                        draggable
-                        onDragStart={() => setDraggedNode(nodeType.type)}
-                        onClick={() => {
-                          addNodeToCanvas(nodeType.type, { x: 100, y: 100 })
-                          setNodeLibraryOpen(false)
-                        }}
-                      >
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeType.color} text-white`}>
-                            <IconComponent className="h-4 w-4" />
-                          </span>
-                          <div>
-                            <h3 className="font-medium text-gray-900 dark:text-white">{nodeType.title}</h3>
-                            <p className="text-xs text-indigo-600 dark:text-indigo-400">{nodeType.category}</p>
-                          </div>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">{nodeType.description}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Settings Modal */}
         {settingsOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
