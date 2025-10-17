@@ -514,6 +514,49 @@ async def list_process_catalog(
         logger.error(f"Error listing process catalog: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to load process catalog: {str(e)}")
 
+@router.get("/{process_id}")
+async def get_process_detail(
+    process_id: int,
+    company_name: str = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Get detailed view of a specific process (for editing/viewing)"""
+    try:
+        initialize_process_tables(db)
+        
+        result = db.execute(text("""
+            SELECT id, name, description, process_type, fiscal_year, base_currency, status, created_at, updated_at, created_by
+            FROM process_definitions
+            WHERE id = :id AND company_id = 1
+        """), {
+            "id": process_id
+        })
+        
+        process = result.fetchone()
+        if not process:
+            raise HTTPException(status_code=404, detail=f"Process {process_id} not found")
+        
+        return {
+            "success": True,
+            "process": {
+                "id": process[0],
+                "name": process[1],
+                "description": process[2],
+                "process_type": process[3],
+                "fiscal_year": process[4],
+                "base_currency": process[5],
+                "status": process[6],
+                "created_at": process[7].isoformat() if process[7] else None,
+                "updated_at": process[8].isoformat() if process[8] else None,
+                "created_by": process[9]
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading process detail: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/catalog")
 async def create_process_via_catalog(
     definition: ProcessDefinitionCreateRequest,

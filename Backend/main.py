@@ -54,6 +54,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
     
+    # Initialize process tables
+    try:
+        from routers.process_builder_enhanced import initialize_process_tables
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            initialize_process_tables(db)
+            logger.info("✅ Process tables initialized on startup")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Warning: Could not initialize process tables on startup: {e}")
+    
     yield
     
     # Shutdown
