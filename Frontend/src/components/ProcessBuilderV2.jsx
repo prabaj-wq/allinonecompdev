@@ -266,13 +266,14 @@ const ProcessBuilderV2 = () => {
     try {
       const options = {
         method,
-        headers: {
-          'Content-Type': 'application/json'
-        },
         credentials: 'include' // Important: sends session cookies
       };
       
+      // Only set Content-Type header for requests with data (POST, PUT, PATCH)
       if (data) {
+        options.headers = {
+          'Content-Type': 'application/json'
+        };
         options.body = JSON.stringify(data);
       }
       
@@ -303,7 +304,7 @@ const ProcessBuilderV2 = () => {
     }
     try {
       setLoading(true);
-      const data = await apiCall('GET', `/process/catalog?company_name=${selectedCompany}`);
+      const data = await apiCall('GET', `/process/catalog?company_name=${encodeURIComponent(selectedCompany)}`);
       setProcesses(Array.isArray(data) ? data : data.processes || []);
     } catch (error) {
       console.error('Error loading processes:', error);
@@ -319,7 +320,7 @@ const ProcessBuilderV2 = () => {
     }
     try {
       setLoading(true);
-      const data = await apiCall('GET', `/process/${processId}?company_name=${selectedCompany}`);
+      const data = await apiCall('GET', `/process/${processId}?company_name=${encodeURIComponent(selectedCompany)}`);
       setCurrentProcess(data);
       setNodes(data.nodes || []);
       setConnections(data.connections || []);
@@ -344,7 +345,7 @@ const ProcessBuilderV2 = () => {
       return;
     }
     try {
-      const data = await apiCall('POST', `/process/create?company_name=${selectedCompany}`, {
+      const data = await apiCall('POST', `/process/create?company_name=${encodeURIComponent(selectedCompany)}`, {
         name,
         description,
         process_type: type,
@@ -364,7 +365,7 @@ const ProcessBuilderV2 = () => {
     if (!currentProcess || !selectedCompany) return;
     
     try {
-      const data = await apiCall('POST', `/process/${currentProcess.id}/node/add?company_name=${selectedCompany}`, {
+      const data = await apiCall('POST', `/process/${currentProcess.id}/node/add?company_name=${encodeURIComponent(selectedCompany)}`, {
         node_type: template.type,
         title: template.name,
         position_x: x,
@@ -394,7 +395,7 @@ const ProcessBuilderV2 = () => {
     if (!currentProcess || !selectedCompany) return;
     
     try {
-      await apiCall('PUT', `/process/${currentProcess.id}/node/${nodeId}?company_name=${selectedCompany}`, updates);
+      await apiCall('PUT', `/process/${currentProcess.id}/node/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`, updates);
       
       setNodes(nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n));
       notify('Node updated', 'success');
@@ -407,7 +408,7 @@ const ProcessBuilderV2 = () => {
     if (!currentProcess || !selectedCompany) return;
     
     try {
-      await apiCall('DELETE', `/process/${currentProcess.id}/node/${nodeId}?company_name=${selectedCompany}`);
+      await apiCall('DELETE', `/process/${currentProcess.id}/node/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`);
       
       setNodes(nodes.filter(n => n.id !== nodeId));
       setConnections(connections.filter(c => c.from_node_id !== nodeId && c.to_node_id !== nodeId));
@@ -422,7 +423,7 @@ const ProcessBuilderV2 = () => {
     if (!currentProcess || !selectedCompany) return;
     
     try {
-      const data = await apiCall('POST', `/process/${currentProcess.id}/connect?company_name=${selectedCompany}`, {
+      const data = await apiCall('POST', `/process/${currentProcess.id}/connect?company_name=${encodeURIComponent(selectedCompany)}`, {
         from_node_id: fromNodeId,
         to_node_id: toNodeId,
         connection_type: 'sequential'
