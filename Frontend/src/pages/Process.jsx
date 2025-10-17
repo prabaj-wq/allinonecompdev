@@ -346,6 +346,7 @@ const Process = () => {
   const [notification, setNotification] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
 
   // Utility Functions
