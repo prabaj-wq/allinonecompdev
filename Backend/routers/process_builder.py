@@ -14,7 +14,7 @@ import uuid
 from contextlib import contextmanager
 
 from database import get_db
-from auth.auth import get_current_active_user
+from auth.dependencies import get_current_active_user
 
 router = APIRouter(prefix="/process", tags=["Process Builder"])
 

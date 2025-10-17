@@ -13,7 +13,7 @@ import pandas as pd
 import re
 
 from database import get_db
-from auth.jwt_handler import get_current_user
+from auth.dependencies import get_current_user
 from models.process_builder import (
     ProcessDefinition, ProcessNode, ProcessNodeConnection, ProcessPeriod,
     ProcessData, ProcessStaging, ProcessJournal, ProcessScenario,
