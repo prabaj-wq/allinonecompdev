@@ -195,6 +195,14 @@ const NODE_LIBRARY = [
     icon: FileSpreadsheet,
     category: 'Output',
     color: 'bg-gray-500'
+  },
+  {
+    type: 'fiscal_management',
+    title: 'Fiscal Year & Scenario Management',
+    description: 'Manage fiscal periods, scenarios, and consolidation rules',
+    icon: Calendar,
+    category: 'Management',
+    color: 'bg-blue-600'
   }
 ]
 

@@ -38,8 +38,8 @@ def get_db_config():
     return {
         'host': POSTGRES_HOST,
         'port': os.getenv('POSTGRES_PORT', '5432'),
-        'user': 'postgres',
-        'password': 'root@123'
+        'user': os.getenv('POSTGRES_USER', 'postgres'),
+        'password': os.getenv('POSTGRES_PASSWORD', 'epm_password')
     }
 
 def normalize_company_db_name(company_name: str) -> str:
