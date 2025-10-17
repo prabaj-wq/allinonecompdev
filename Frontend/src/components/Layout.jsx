@@ -80,6 +80,18 @@ const Layout = ({ children }) => {
       description: 'Financial overview and insights'
     },
     { 
+      name: 'Axes', 
+      href: '/axes', 
+      icon: BarChart3,
+      description: 'Universal dimensions template for entities, accounts, and more'
+    },
+    { 
+      name: 'Custom Axes', 
+      href: '/custom-axes', 
+      icon: BarChart3,
+      description: 'Custom dimensions for reporting'
+    },
+    { 
       name: 'Entity Management', 
       href: '/entity', 
       icon: Building2,
@@ -282,18 +294,6 @@ const Layout = ({ children }) => {
       href: '/forex-rates', 
       icon: Globe,
       description: 'Exchange rate management'
-    },
-    { 
-      name: 'Axes', 
-      href: '/axes', 
-      icon: BarChart3,
-      description: 'Universal dimensions template for entities, accounts, and more'
-    },
-    { 
-      name: 'Custom Axes', 
-      href: '/custom-axes', 
-      icon: BarChart3,
-      description: 'Custom dimensions for reporting'
     },
     { 
       name: 'Workflows', 

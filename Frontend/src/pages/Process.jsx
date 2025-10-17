@@ -768,67 +768,65 @@ const Process = () => {
   }
 
   // Main render logic starts here
-  if (currentView === 'processes') {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Financial Process Management</h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Build comprehensive consolidation processes with advanced workflow automation
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => navigate('/fiscal-management')}
-                className="btn-secondary inline-flex items-center gap-2"
-              >
-                <Zap className="h-4 w-4" />
-                Scenarios
-              </button>
-              <button
-                onClick={() => setProcessDrawerOpen(true)}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                New Process
-              </button>
-            </div>
+  const renderProcessesView = () => (
+    <div className="space-y-6">
+      {/* Header */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Financial Process Management</h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Build comprehensive consolidation processes with advanced workflow automation
+            </p>
           </div>
-        </section>
-
-        {/* Process Grid */}
-        {processLoading ? (
-          <div className="flex items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-gray-500 dark:border-gray-700 dark:text-gray-400">
-            <Loader2 className="mr-3 h-6 w-6 animate-spin" />
-            Loading processes...
-          </div>
-        ) : processes.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-gray-300 p-12 text-center text-gray-500 dark:border-gray-700 dark:text-gray-400">
-            <Workflow className="mx-auto h-12 w-12 mb-4 text-gray-400" />
-            <h3 className="text-lg font-medium mb-2">No processes yet</h3>
-            <p className="mb-4">Create your first financial process to get started</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => navigate('/fiscal-management')}
+              className="btn-secondary inline-flex items-center gap-2"
+            >
+              <Zap className="h-4 w-4" />
+              Scenarios
+            </button>
             <button
               onClick={() => setProcessDrawerOpen(true)}
               className="btn-primary inline-flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
-              Create Process
+              New Process
             </button>
           </div>
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {processes.map(renderProcessCard)}
-          </div>
-        )}
-      </div>
-    )
-  }
+        </div>
+      </section>
+
+      {/* Process Grid */}
+      {processLoading ? (
+        <div className="flex items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+          Loading processes...
+        </div>
+      ) : processes.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 p-12 text-center text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          <Workflow className="mx-auto h-12 w-12 mb-4 text-gray-400" />
+          <h3 className="text-lg font-medium mb-2">No processes yet</h3>
+          <p className="mb-4">Create your first financial process to get started</p>
+          <button
+            onClick={() => setProcessDrawerOpen(true)}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Create Process
+          </button>
+        </div>
+      ) : (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {processes.map(renderProcessCard)}
+        </div>
+      )}
+    </div>
+  )
 
   // Canvas View
-  if (currentView === 'canvas' && selectedProcessId) {
+  const renderCanvasView = () => {
     const selectedProcess = processes.find(p => p.id === selectedProcessId)
     
     return (
@@ -1014,9 +1012,16 @@ const Process = () => {
     })
   }, [processes])
 
-  // Default return - fallback view
+  // Main component return
   return (
-    <div className="space-y-6">
+    <>
+      {/* Main Content */}
+      {currentView === 'processes' && renderProcessesView()}
+      
+      {currentView === 'canvas' && selectedProcessId && renderCanvasView()}
+      
+      {/* Always render modals */}
+      <div>
       {/* Node Library Modal */}
       {nodeLibraryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -1344,7 +1349,8 @@ const Process = () => {
           </button>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
 
