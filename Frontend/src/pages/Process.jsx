@@ -662,13 +662,15 @@ const Process = () => {
         'Content-Type': 'application/json'
       }
       
-      await fetch(
+      const response = await fetch(
         `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'DELETE',
           headers: headers
         }
       )
+      
+      if (!response.ok) throw new Error('Failed to delete node')
       
       setCanvasNodes(nodes => nodes.filter(n => n.id !== nodeId))
       setCanvasConnections(connections => 
@@ -730,6 +732,12 @@ const Process = () => {
     }
   }
 
+  const handleNodeClick = (e, node) => {
+    e.stopPropagation()
+    // Single click - select node and show properties
+    setSelectedNode(node)
+  }
+
   const handleNodeMouseDown = (e, node) => {
     e.stopPropagation()
     
@@ -746,18 +754,19 @@ const Process = () => {
         setIsConnecting(false)
         setConnectionStart(null)
       }
-    } else {
-      // Start dragging
-      setIsDragging(true)
-      setDraggedNodeId(node.id)
-      setSelectedNode(node)
-      
-      const rect = canvasRef.current.getBoundingClientRect()
-      setDragOffset({
-        x: e.clientX - rect.left - node.x,
-        y: e.clientY - rect.top - node.y
-      })
+      return // Don't start dragging in connection mode
     }
+    
+    // Start dragging
+    setIsDragging(true)
+    setDraggedNodeId(node.id)
+    setSelectedNode(node)
+    
+    const rect = canvasRef.current.getBoundingClientRect()
+    setDragOffset({
+      x: e.clientX - rect.left - node.x,
+      y: e.clientY - rect.top - node.y
+    })
   }
 
   const handleMouseMove = (e) => {
@@ -969,7 +978,7 @@ const Process = () => {
     return (
       <div
         key={node.id}
-        className={`absolute bg-white dark:bg-gray-800 border-2 rounded-lg shadow-lg cursor-move select-none transition-all ${
+        className={`absolute bg-white dark:bg-gray-800 border-2 rounded-lg shadow-lg cursor-pointer select-none transition-all ${
           selectedNode?.id === node.id 
             ? 'border-indigo-500 shadow-indigo-200 dark:shadow-indigo-800/50 ring-2 ring-indigo-200 dark:ring-indigo-800' 
             : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300'
@@ -981,8 +990,12 @@ const Process = () => {
           height: node.height,
           zIndex: selectedNode?.id === node.id ? 10 : 2
         }}
+        onClick={(e) => handleNodeClick(e, node)}
         onMouseDown={(e) => handleNodeMouseDown(e, node)}
-        onDoubleClick={() => navigateToNodePage(node.type)}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          navigateToNodePage(node.type)
+        }}
       >
         <div className="p-3 h-full flex flex-col relative">
           <div className="flex items-center gap-2 mb-2">
