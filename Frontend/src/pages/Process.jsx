@@ -595,7 +595,7 @@ const Process = () => {
           method: 'POST',
           headers: headers,
           body: JSON.stringify({
-            type: newNode.type,
+            node_type: newNode.type,  // Backend expects 'node_type' not 'type'
             name: newNode.name,
             description: newNode.description,
             sequence: canvasNodes.length + 1,
