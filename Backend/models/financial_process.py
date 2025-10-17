@@ -134,7 +134,7 @@ class FinancialProcess(Base):
 
 class ProcessNode(Base):
     """Process Canvas Nodes"""
-    __tablename__ = "process_nodes"
+    __tablename__ = "financial_process_nodes"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False, index=True)
@@ -168,12 +168,12 @@ class ProcessNode(Base):
 
 class ProcessConnection(Base):
     """Connections between Process Nodes"""
-    __tablename__ = "process_connections"
+    __tablename__ = "fp_process_connections"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False)
-    from_node_id = Column(UUID(as_uuid=True), ForeignKey('process_nodes.id'), nullable=False)
-    to_node_id = Column(UUID(as_uuid=True), ForeignKey('process_nodes.id'), nullable=False)
+    from_node_id = Column(UUID(as_uuid=True), ForeignKey('financial_process_nodes.id'), nullable=False)
+    to_node_id = Column(UUID(as_uuid=True), ForeignKey('financial_process_nodes.id'), nullable=False)
     
     # Connection Configuration
     connection_type = Column(String(50), default='sequential')
@@ -188,7 +188,7 @@ class ProcessConnection(Base):
 
 class ProcessScenario(Base):
     """Process Scenarios for What-If Analysis"""
-    __tablename__ = "process_scenarios"
+    __tablename__ = "fp_process_scenarios"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -217,7 +217,7 @@ class ProcessScenario(Base):
 
 class ProcessPeriod(Base):
     """Process Periods"""
-    __tablename__ = "process_periods"
+    __tablename__ = "fp_process_periods"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False, index=True)
@@ -235,7 +235,7 @@ class ProcessPeriod(Base):
 
 class EntityStructure(Base):
     """Entity Ownership and Structure"""
-    __tablename__ = "entity_structures"
+    __tablename__ = "fp_entity_structures"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -275,7 +275,7 @@ class EntityStructure(Base):
 
 class ConsolidationRule(Base):
     """Consolidation Rules and Eliminations"""
-    __tablename__ = "consolidation_rules"
+    __tablename__ = "fp_consolidation_rules"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -304,13 +304,13 @@ class ConsolidationRule(Base):
 
 class ProcessData(Base):
     """Process Financial Data"""
-    __tablename__ = "process_data"
+    __tablename__ = "fp_process_data"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False)
-    scenario_id = Column(UUID(as_uuid=True), ForeignKey('process_scenarios.id'), nullable=False)
-    period_id = Column(UUID(as_uuid=True), ForeignKey('process_periods.id'))
+    scenario_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_scenarios.id'), nullable=False)
+    period_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_periods.id'))
     
     # Financial Data
     entity_code = Column(String(50), nullable=False)
@@ -344,12 +344,12 @@ class ProcessData(Base):
 
 class ProcessExecution(Base):
     """Process Execution History"""
-    __tablename__ = "process_executions"
+    __tablename__ = "fp_process_executions"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False)
-    scenario_id = Column(UUID(as_uuid=True), ForeignKey('process_scenarios.id'), nullable=False)
+    scenario_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_scenarios.id'), nullable=False)
     
     execution_type = Column(String(50))  # simulate, finalize
     status = Column(String(50), default="in_progress")
@@ -378,20 +378,20 @@ class ProcessExecution(Base):
 
 class ProcessJournal(Base):
     """Generated Journal Entries"""
-    __tablename__ = "process_journals"
+    __tablename__ = "fp_process_journals"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False)
-    scenario_id = Column(UUID(as_uuid=True), ForeignKey('process_scenarios.id'), nullable=False)
-    execution_id = Column(UUID(as_uuid=True), ForeignKey('process_executions.id'))
-    period_id = Column(UUID(as_uuid=True), ForeignKey('process_periods.id'))
+    scenario_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_scenarios.id'), nullable=False)
+    execution_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_executions.id'))
+    period_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_periods.id'))
     
     # Journal Details
     journal_number = Column(String(50))
     journal_date = Column(Date)
     journal_description = Column(String(500))
-    source_node_id = Column(UUID(as_uuid=True), ForeignKey('process_nodes.id'))
+    source_node_id = Column(UUID(as_uuid=True), ForeignKey('financial_process_nodes.id'))
     
     # Line Items
     entity_code = Column(String(50))
@@ -414,7 +414,7 @@ class ProcessJournal(Base):
 
 class FXRate(Base):
     """Foreign Exchange Rates"""
-    __tablename__ = "fx_rates"
+    __tablename__ = "fp_fx_rates"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -438,7 +438,7 @@ class FXRate(Base):
 
 class ValidationRule(Base):
     """Process Validation Rules"""
-    __tablename__ = "validation_rules"
+    __tablename__ = "fp_validation_rules"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -463,12 +463,12 @@ class ValidationRule(Base):
 
 class ProcessAlert(Base):
     """Process Alerts and Exceptions"""
-    __tablename__ = "process_alerts"
+    __tablename__ = "fp_process_alerts"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False)
-    execution_id = Column(UUID(as_uuid=True), ForeignKey('process_executions.id'))
+    execution_id = Column(UUID(as_uuid=True), ForeignKey('fp_process_executions.id'))
     
     alert_type = Column(String(50))  # validation, threshold, exception
     severity = Column(String(50))  # critical, warning, info
@@ -490,7 +490,7 @@ class ProcessAlert(Base):
 
 class ProcessAuditTrail(Base):
     """Process Audit Trail"""
-    __tablename__ = "process_audit_trail"
+    __tablename__ = "fp_process_audit_trail"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), nullable=False, index=True)
