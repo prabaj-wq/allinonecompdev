@@ -12,12 +12,50 @@ from datetime import datetime, date
 from decimal import Decimal
 import json
 import uuid
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from contextlib import contextmanager
+import re
 
 from database import get_db
 from auth.dependencies import get_current_active_user
 from models.financial_process import *
 
-router = APIRouter(prefix="/api/financial-process", tags=["Financial Process"])
+router = APIRouter(prefix="/financial-process", tags=["Financial Process"])
+
+# ============================================================================
+# DATABASE CONNECTION HELPERS
+# ============================================================================
+
+def get_db_config():
+    """Get database connection configuration."""
+    return {
+        'host': 'localhost',
+        'port': 5432,
+        'user': 'postgres',
+        'password': 'epm_password'
+    }
+
+def normalize_company_db_name(company_name: str) -> str:
+    """Normalize company name for database naming."""
+    if not company_name:
+        return "default_company"
+    sanitized = re.sub(r"[^a-z0-9_]", "_", company_name.lower().replace(" ", "_"))
+    sanitized = sanitized.strip("_")
+    return sanitized or "default_company"
+
+@contextmanager
+def company_connection(company_name: str):
+    """Context manager for company-specific database connection."""
+    db_name = normalize_company_db_name(company_name)
+    try:
+        conn = psycopg2.connect(database=db_name, **get_db_config())
+    except psycopg2.OperationalError as exc:
+        raise HTTPException(status_code=404, detail=f"Database for company '{company_name}' not available: {exc}")
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 # ============================================================================
 # PYDANTIC MODELS
@@ -74,26 +112,36 @@ class ConsolidationRuleCreate(BaseModel):
 @router.get("/processes")
 async def get_processes(
     company_name: str = Query(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Get all financial processes for a company"""
     try:
-        # Get company database
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        
-        # Query processes
-        query = text(f"""
-            SELECT id, name, description, process_type, status, fiscal_year, 
-                   reporting_currency, created_at, updated_at
-            FROM {company_db_name}.financial_processes
-            ORDER BY created_at DESC
-        """)
-        
-        result = db.execute(query)
-        processes = [dict(row._mapping) for row in result]
-        
-        return {"processes": processes}
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Query processes
+            cur.execute("""
+                SELECT id, name, description, process_type, status, fiscal_year, 
+                       reporting_currency, created_at, updated_at
+                FROM financial_processes
+                ORDER BY created_at DESC
+            """)
+            
+            processes = []
+            for row in cur.fetchall():
+                processes.append({
+                    "id": str(row['id']),
+                    "name": row['name'],
+                    "description": row['description'],
+                    "process_type": row['process_type'],
+                    "status": row['status'],
+                    "fiscal_year": row['fiscal_year'],
+                    "reporting_currency": row['reporting_currency'],
+                    "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                    "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None
+                })
+            
+            return {"processes": processes}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching processes: {str(e)}")
@@ -102,42 +150,50 @@ async def get_processes(
 async def create_process(
     company_name: str = Query(...),
     process_data: ProcessCreate = Body(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Create a new financial process"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        process_id = str(uuid.uuid4())
-        
-        query = text(f"""
-            INSERT INTO {company_db_name}.financial_processes 
-            (id, company_id, name, description, process_type, fiscal_year, 
-             reporting_currency, settings, created_by, created_at, updated_at)
-            VALUES (:id, :company_id, :name, :description, :process_type, :fiscal_year,
-                    :reporting_currency, :settings, :created_by, NOW(), NOW())
-            RETURNING id, name, description, process_type, status
-        """)
-        
-        result = db.execute(query, {
-            "id": process_id,
-            "company_id": str(uuid.uuid4()),  # Company UUID
-            "name": process_data.name,
-            "description": process_data.description,
-            "process_type": process_data.process_type,
-            "fiscal_year": process_data.fiscal_year,
-            "reporting_currency": process_data.reporting_currency,
-            "settings": json.dumps(process_data.settings),
-            "created_by": str(current_user.id)
-        })
-        
-        db.commit()
-        process = dict(result.fetchone()._mapping)
-        
-        return {"process": process}
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            process_id = str(uuid.uuid4())
+            company_id = str(uuid.uuid4())
+            
+            # Insert new process
+            cur.execute("""
+                INSERT INTO financial_processes 
+                (id, company_id, name, description, process_type, fiscal_year, 
+                 reporting_currency, settings, created_by, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING id, name, description, process_type, status, fiscal_year, reporting_currency
+            """, (
+                process_id,
+                company_id,
+                process_data.name,
+                process_data.description,
+                process_data.process_type,
+                process_data.fiscal_year,
+                process_data.reporting_currency,
+                json.dumps(process_data.settings),
+                str(current_user.id)
+            ))
+            
+            conn.commit()
+            process = cur.fetchone()
+            
+            return {
+                "process": {
+                    "id": str(process['id']),
+                    "name": process['name'],
+                    "description": process['description'],
+                    "process_type": process['process_type'],
+                    "status": process['status'],
+                    "fiscal_year": process['fiscal_year'],
+                    "reporting_currency": process['reporting_currency']
+                }
+            }
         
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating process: {str(e)}")
 
 @router.get("/processes/{process_id}")
@@ -544,48 +600,46 @@ async def execute_process(
 @router.get("/reference-data")
 async def get_reference_data(
     company_name: str = Query(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Get reference data for process building"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        
-        # Get accounts
-        accounts_query = text(f"""
-            SELECT code, name, account_type FROM {company_db_name}.accounts
-            WHERE is_active = true ORDER BY code
-        """)
-        accounts_result = db.execute(accounts_query)
-        accounts = [{"code": row.code, "name": row.name, "type": row.account_type} 
-                   for row in accounts_result]
-        
-        # Get entities
-        entities_query = text(f"""
-            SELECT code, name, currency FROM {company_db_name}.entities
-            WHERE is_active = true ORDER BY code
-        """)
-        entities_result = db.execute(entities_query)
-        entities = [{"code": row.code, "name": row.name, "currency": row.currency} 
-                   for row in entities_result]
-        
-        return {
-            "accounts": accounts,
-            "entities": entities,
-            "currencies": ["USD", "EUR", "GBP", "JPY", "CAD", "AUD"],
-            "node_types": [
-                {"type": "data_input", "name": "Data Input", "category": "Input"},
-                {"type": "journal_entry", "name": "Journal Entry", "category": "Processing"},
-                {"type": "fx_translation", "name": "FX Translation", "category": "Processing"},
-                {"type": "intercompany_elimination", "name": "Intercompany Elimination", "category": "Processing"},
-                {"type": "nci_allocation", "name": "NCI Allocation", "category": "Processing"},
-                {"type": "profit_loss", "name": "Profit & Loss Calculation", "category": "Calculation"},
-                {"type": "retained_earnings", "name": "Retained Earnings Rollforward", "category": "Calculation"},
-                {"type": "consolidation_output", "name": "Consolidation Output", "category": "Output"},
-                {"type": "validation", "name": "Validation", "category": "Control"},
-                {"type": "report_generation", "name": "Report Generation", "category": "Output"}
-            ]
-        }
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get accounts
+            cur.execute("""
+                SELECT account_code as code, account_name as name, ifrs_category as account_type 
+                FROM accounts
+                WHERE is_active = true ORDER BY account_code
+            """)
+            accounts = [dict(row) for row in cur.fetchall()]
+            
+            # Get entities
+            cur.execute("""
+                SELECT entity_code as code, entity_name as name, currency 
+                FROM entities
+                WHERE is_active = true ORDER BY entity_code
+            """)
+            entities = [dict(row) for row in cur.fetchall()]
+            
+            return {
+                "accounts": accounts,
+                "entities": entities,
+                "currencies": ["USD", "EUR", "GBP", "JPY", "CAD", "AUD"],
+                "node_types": [
+                    {"type": "data_input", "name": "Data Input", "category": "Input"},
+                    {"type": "journal_entry", "name": "Journal Entry", "category": "Processing"},
+                    {"type": "fx_translation", "name": "FX Translation", "category": "Processing"},
+                    {"type": "intercompany_elimination", "name": "Intercompany Elimination", "category": "Processing"},
+                    {"type": "nci_allocation", "name": "NCI Allocation", "category": "Processing"},
+                    {"type": "profit_loss", "name": "Profit & Loss Calculation", "category": "Calculation"},
+                    {"type": "retained_earnings", "name": "Retained Earnings Rollforward", "category": "Calculation"},
+                    {"type": "consolidation_output", "name": "Consolidation Output", "category": "Output"},
+                    {"type": "validation", "name": "Validation", "category": "Control"},
+                    {"type": "report_generation", "name": "Report Generation", "category": "Output"}
+                ]
+            }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching reference data: {str(e)}")
