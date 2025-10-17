@@ -584,11 +584,16 @@ const Process = () => {
 
     // Save to backend
     try {
+      const headers = {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json'
+      }
+      
       const response = await fetch(
         `/api/financial-process/processes/${selectedProcessId}/nodes?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'POST',
-          headers: getAuthHeaders(),
+          headers: headers,
           body: JSON.stringify({
             type: newNode.type,
             name: newNode.name,
@@ -609,11 +614,13 @@ const Process = () => {
         setSelectedNode(newNode)
         showNotification('Node added successfully', 'success')
       } else {
-        showNotification('Failed to add node', 'error')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to add node:', response.status, errorData)
+        showNotification(`Failed to add node: ${errorData.detail || response.statusText}`, 'error')
       }
     } catch (error) {
       console.error('Error adding node:', error)
-      showNotification('Error adding node', 'error')
+      showNotification(`Error adding node: ${error.message}`, 'error')
     }
     
     setNodeLibraryOpen(false)
@@ -630,11 +637,16 @@ const Process = () => {
     
     // Save position to backend
     try {
+      const headers = {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json'
+      }
+      
       await fetch(
         `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'PUT',
-          headers: getAuthHeaders(),
+          headers: headers,
           body: JSON.stringify({ x_position: newPosition.x, y_position: newPosition.y })
         }
       )
@@ -645,11 +657,16 @@ const Process = () => {
 
   const deleteNode = async (nodeId) => {
     try {
+      const headers = {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json'
+      }
+      
       await fetch(
         `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'DELETE',
-          headers: getAuthHeaders()
+          headers: headers
         }
       )
       
@@ -678,11 +695,16 @@ const Process = () => {
     }
 
     try {
+      const headers = {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json'
+      }
+      
       const response = await fetch(
         `/api/financial-process/processes/${selectedProcessId}/connections?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'POST',
-          headers: getAuthHeaders(),
+          headers: headers,
           body: JSON.stringify({
             from_node_id: fromNodeId,
             to_node_id: toNodeId,
@@ -698,11 +720,13 @@ const Process = () => {
         setCanvasConnections([...canvasConnections, newConnection])
         showNotification('Connection created', 'success')
       } else {
-        showNotification('Failed to create connection', 'error')
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to create connection:', response.status, errorData)
+        showNotification(`Failed to create connection: ${errorData.detail || response.statusText}`, 'error')
       }
     } catch (error) {
       console.error('Error creating connection:', error)
-      showNotification('Error creating connection', 'error')
+      showNotification(`Error creating connection: ${error.message}`, 'error')
     }
   }
 
