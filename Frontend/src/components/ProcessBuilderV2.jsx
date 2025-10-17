@@ -321,12 +321,22 @@ const ProcessBuilderV2 = () => {
     try {
       setLoading(true);
       const data = await apiCall('GET', `/process/${processId}?company_name=${encodeURIComponent(selectedCompany)}`);
+      
+      // Ensure the process has an id field
+      if (!data.id) {
+        console.warn('🔴 ProcessBuilderV2: API returned process without id field. Adding processId:', processId);
+        data.id = processId;
+      }
+      
+      console.log('✅ ProcessBuilderV2: Loaded process:', { id: data.id, name: data.name });
+      
       setCurrentProcess(data);
       setNodes(data.nodes || []);
       setConnections(data.connections || []);
       setMode('edit');
     } catch (error) {
-      console.error('Error loading process:', error);
+      console.error('❌ Error loading process:', error);
+      notify('Failed to load process', 'error');
     } finally {
       setLoading(false);
     }
@@ -362,7 +372,21 @@ const ProcessBuilderV2 = () => {
   };
 
   const addNode = async (template, x, y) => {
-    if (!currentProcess || !selectedCompany) return;
+    if (!currentProcess) {
+      notify('Please select or create a process first', 'error');
+      return;
+    }
+    
+    if (!currentProcess.id) {
+      console.error('🔴 ProcessBuilderV2: currentProcess object exists but has no id:', currentProcess);
+      notify('Process ID is invalid. Please reload and try again.', 'error');
+      return;
+    }
+    
+    if (!selectedCompany) {
+      notify('Company is not selected', 'error');
+      return;
+    }
     
     try {
       const data = await apiCall('POST', `/process/${currentProcess.id}/node/add?company_name=${encodeURIComponent(selectedCompany)}`, {
@@ -392,7 +416,21 @@ const ProcessBuilderV2 = () => {
   };
 
   const updateNode = async (nodeId, updates) => {
-    if (!currentProcess || !selectedCompany) return;
+    if (!currentProcess) {
+      notify('Please select a process first', 'error');
+      return;
+    }
+    
+    if (!currentProcess.id) {
+      console.error('🔴 ProcessBuilderV2: currentProcess has no id when updating node');
+      notify('Process ID is invalid. Please reload and try again.', 'error');
+      return;
+    }
+    
+    if (!selectedCompany) {
+      notify('Company is not selected', 'error');
+      return;
+    }
     
     try {
       await apiCall('PUT', `/process/${currentProcess.id}/node/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`, updates);
@@ -401,11 +439,26 @@ const ProcessBuilderV2 = () => {
       notify('Node updated', 'success');
     } catch (error) {
       console.error('Error updating node:', error);
+      notify('Failed to update node', 'error');
     }
   };
 
   const deleteNode = async (nodeId) => {
-    if (!currentProcess || !selectedCompany) return;
+    if (!currentProcess) {
+      notify('Please select a process first', 'error');
+      return;
+    }
+    
+    if (!currentProcess.id) {
+      console.error('🔴 ProcessBuilderV2: currentProcess has no id when deleting node');
+      notify('Process ID is invalid. Please reload and try again.', 'error');
+      return;
+    }
+    
+    if (!selectedCompany) {
+      notify('Company is not selected', 'error');
+      return;
+    }
     
     try {
       await apiCall('DELETE', `/process/${currentProcess.id}/node/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`);
@@ -416,11 +469,26 @@ const ProcessBuilderV2 = () => {
       notify('Node deleted', 'success');
     } catch (error) {
       console.error('Error deleting node:', error);
+      notify('Failed to delete node', 'error');
     }
   };
 
   const connectNodes = async (fromNodeId, toNodeId) => {
-    if (!currentProcess || !selectedCompany) return;
+    if (!currentProcess) {
+      notify('Please select a process first', 'error');
+      return;
+    }
+    
+    if (!currentProcess.id) {
+      console.error('🔴 ProcessBuilderV2: currentProcess has no id when connecting nodes');
+      notify('Process ID is invalid. Please reload and try again.', 'error');
+      return;
+    }
+    
+    if (!selectedCompany) {
+      notify('Company is not selected', 'error');
+      return;
+    }
     
     try {
       const data = await apiCall('POST', `/process/${currentProcess.id}/connect?company_name=${encodeURIComponent(selectedCompany)}`, {
@@ -445,7 +513,21 @@ const ProcessBuilderV2 = () => {
   };
 
   const executeProcess = async (scenario, executionType = 'simulate') => {
-    if (!currentProcess || !scenario) return;
+    if (!currentProcess) {
+      notify('Please select a process first', 'error');
+      return;
+    }
+    
+    if (!currentProcess.id) {
+      console.error('🔴 ProcessBuilderV2: currentProcess has no id when executing');
+      notify('Process ID is invalid. Please reload and try again.', 'error');
+      return;
+    }
+    
+    if (!scenario) {
+      notify('Please create or select a scenario first', 'error');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -464,6 +546,7 @@ const ProcessBuilderV2 = () => {
       }
     } catch (error) {
       console.error('Error executing process:', error);
+      notify('Failed to execute process', 'error');
     } finally {
       setLoading(false);
     }

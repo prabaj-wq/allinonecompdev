@@ -133,12 +133,18 @@ const ProcessManagement = () => {
         processId={selectedProcess.id}
         processName={selectedProcess.name}
         onSave={() => {
-          showNotification('Workflow saved!')
+          showNotification('✅ Workflow saved!')
           fetchProcesses()
         }}
         onDelete={() => {
-          handleDeleteProcess(selectedProcess.id)
+          if (window.confirm('Delete this process? This action cannot be undone.')) {
+            handleDeleteProcess(selectedProcess.id)
+            setView('list')
+          }
+        }}
+        onBack={() => {
           setView('list')
+          setSelectedProcess(null)
         }}
       />
     )

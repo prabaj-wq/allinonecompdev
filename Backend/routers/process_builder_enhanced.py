@@ -274,6 +274,29 @@ class ProcessDefinitionCreateRequest(BaseModel):
     fiscal_year: Optional[int] = None
     base_currency: str = "USD"
 
+class WorkflowNode(BaseModel):
+    """React Flow Node"""
+    id: str
+    type: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+    position: Optional[Dict[str, float]] = None
+    selected: Optional[bool] = False
+    dragging: Optional[bool] = False
+
+class WorkflowEdge(BaseModel):
+    """React Flow Edge"""
+    id: str
+    source: str
+    target: str
+    animated: Optional[bool] = False
+    data: Optional[Dict[str, Any]] = None
+
+class WorkflowData(BaseModel):
+    """Complete workflow (nodes and edges)"""
+    nodes: List[WorkflowNode] = []
+    edges: List[WorkflowEdge] = []
+    process_id: Optional[int] = None
+
 # ============================================================================
 # DATABASE CREATION ENDPOINTS
 # ============================================================================
@@ -292,10 +315,17 @@ def initialize_process_tables(db: Session):
             base_currency VARCHAR(3) DEFAULT 'USD',
             status VARCHAR(30) DEFAULT 'draft',
             created_by INTEGER,
+            workflow_data JSONB,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(company_id, name, fiscal_year)
         );
+        """))
+        
+        # Add workflow_data column if it doesn't exist (for existing tables)
+        db.execute(text("""
+        ALTER TABLE IF EXISTS process_definitions
+        ADD COLUMN IF NOT EXISTS workflow_data JSONB;
         """))
         
         db.execute(text("""
@@ -1623,4 +1653,99 @@ async def get_full_process(
         }
     except Exception as e:
         logger.error(f"Error fetching full process: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ============================================================================
+# API ENDPOINTS - Workflow Persistence (React Flow)
+# ============================================================================
+
+@router.get("/{process_id}/workflow")
+async def get_workflow(
+    process_id: int,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Get saved workflow (nodes and edges) for a process"""
+    try:
+        # Get workflow from process_definitions.workflow_data JSON column
+        result = db.execute(text("""
+            SELECT workflow_data
+            FROM process_definitions
+            WHERE id = :process_id
+        """), {"process_id": process_id})
+        
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Process not found")
+        
+        workflow_data = row[0]
+        if not workflow_data:
+            # Return empty workflow if none saved yet
+            return {
+                "nodes": [],
+                "edges": [],
+                "process_id": process_id
+            }
+        
+        # Parse the JSON workflow data
+        if isinstance(workflow_data, str):
+            workflow = json.loads(workflow_data)
+        else:
+            workflow = workflow_data
+        
+        logger.info(f"✅ Loaded workflow for process {process_id}")
+        return workflow
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error loading workflow for process {process_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/{process_id}/workflow")
+async def save_workflow(
+    process_id: int,
+    workflow: WorkflowData,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Save workflow (nodes and edges) for a process"""
+    try:
+        # Verify process exists
+        result = db.execute(text("""
+            SELECT id FROM process_definitions WHERE id = :process_id
+        """), {"process_id": process_id})
+        
+        if not result.fetchone():
+            raise HTTPException(status_code=404, detail="Process not found")
+        
+        # Convert workflow to JSON
+        workflow_json = workflow.model_dump(exclude_none=True)
+        
+        # Update workflow_data in process_definitions
+        db.execute(text("""
+            UPDATE process_definitions
+            SET workflow_data = :workflow_data,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :process_id
+        """), {
+            "process_id": process_id,
+            "workflow_data": json.dumps(workflow_json)
+        })
+        
+        db.commit()
+        logger.info(f"✅ Saved workflow for process {process_id}: {len(workflow.nodes)} nodes, {len(workflow.edges)} edges")
+        
+        return {
+            "success": True,
+            "message": f"Workflow saved successfully with {len(workflow.nodes)} nodes and {len(workflow.edges)} edges",
+            "process_id": process_id,
+            "nodes_count": len(workflow.nodes),
+            "edges_count": len(workflow.edges)
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"❌ Error saving workflow for process {process_id}: {e}")
         raise HTTPException(status_code=400, detail=str(e))
