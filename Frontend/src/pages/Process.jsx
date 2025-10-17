@@ -585,7 +585,7 @@ const Process = () => {
     // Save to backend
     try {
       const response = await fetch(
-        `${API_URL}/api/financial-process/processes/${selectedProcessId}/nodes?company_name=${encodeURIComponent(selectedCompany)}`,
+        `/api/financial-process/processes/${selectedProcessId}/nodes?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'POST',
           headers: getAuthHeaders(),
@@ -631,7 +631,7 @@ const Process = () => {
     // Save position to backend
     try {
       await fetch(
-        `${API_URL}/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
+        `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'PUT',
           headers: getAuthHeaders(),
@@ -646,7 +646,7 @@ const Process = () => {
   const deleteNode = async (nodeId) => {
     try {
       await fetch(
-        `${API_URL}/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
+        `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'DELETE',
           headers: getAuthHeaders()
@@ -679,7 +679,7 @@ const Process = () => {
 
     try {
       const response = await fetch(
-        `${API_URL}/api/financial-process/processes/${selectedProcessId}/connections?company_name=${encodeURIComponent(selectedCompany)}`,
+        `/api/financial-process/processes/${selectedProcessId}/connections?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'POST',
           headers: getAuthHeaders(),
@@ -1173,7 +1173,7 @@ const Process = () => {
         )}
 
         {/* Canvas with Properties Panel */}
-        <div className="flex gap-6 h-[600px]">
+        <div className="flex gap-6" style={{ height: 'calc(100vh - 320px)', minHeight: '500px' }}>
           {/* Main Canvas */}
           <div className="flex-1 relative rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
             <div
