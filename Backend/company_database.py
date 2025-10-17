@@ -444,6 +444,13 @@ from models.fiscal_management import (
     ScenarioComparison, ConsolidationRule
 )
 
+# Import financial process models
+from models.financial_process import (
+    FinancialProcess, ProcessNode, ProcessConnection, ProcessScenario,
+    EntityStructure, ConsolidationRule as FPConsolidationRule, ProcessData,
+    ProcessExecution, ProcessJournal, FXRate, ValidationRule, ProcessAlert, ProcessAuditTrail
+)
+
 def create_company_database_schema(engine):
     """Create all tables for a company database"""
     CompanyBase.metadata.create_all(bind=engine)

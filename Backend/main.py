@@ -31,6 +31,12 @@ from models.process_builder import (
     ProcessExecution, EntityStructure, ProcessAuditTrail, ValidationRule,
     ProcessOverride, CustomLogicTemplate
 )
+from models.financial_process import (
+    FinancialProcess, ProcessNode as FPProcessNode, ProcessConnection, ProcessScenario as FPProcessScenario,
+    EntityStructure as FPEntityStructure, ConsolidationRule, ProcessData as FPProcessData,
+    ProcessExecution as FPProcessExecution, ProcessJournal as FPProcessJournal, FXRate,
+    ValidationRule as FPValidationRule, ProcessAlert, ProcessAuditTrail as FPProcessAuditTrail
+)
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -577,7 +583,7 @@ from routers import (
     ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
     upload, financial_statements, assets, audit, 
     budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal_management,
-    workflow_builder, process_builder_enhanced
+    workflow_builder, process_builder_enhanced, financial_process
 )
 
 # Include all routers with /api prefix
@@ -611,6 +617,7 @@ app.include_router(sql.router, prefix="/api")
 app.include_router(fiscal_management.router, prefix="/api")
 app.include_router(workflow_builder.router, prefix="/api")
 app.include_router(process_builder_enhanced.router, prefix="/api")
+app.include_router(financial_process.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status

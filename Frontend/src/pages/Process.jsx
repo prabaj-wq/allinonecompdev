@@ -1,5 +1,6 @@
-﻿
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
 import { useAuth } from '../hooks/useAuth'
 import {
@@ -263,6 +264,7 @@ const defaultFormState = {
 const Process = () => {
   const { selectedCompany } = useCompany()
   const { isAuthenticated, getAuthHeaders } = useAuth()
+  const navigate = useNavigate()
   const canvasRef = useRef(null)
 
   // Main State
@@ -368,7 +370,7 @@ const Process = () => {
         `/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'GET',
-          headers: authHeaders(),
+          headers: getAuthHeaders(),
           credentials: 'include',
         }
       )
@@ -381,7 +383,7 @@ const Process = () => {
     } finally {
       setProcessLoading(false)
     }
-  }, [selectedCompany, isAuthenticated])
+  }, [selectedCompany, isAuthenticated, getAuthHeaders])
 
   // Create Process
   const createProcess = async () => {
@@ -397,7 +399,7 @@ const Process = () => {
         {
           method: 'POST',
           headers: {
-            ...authHeaders(),
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
           },
           credentials: 'include',
@@ -437,7 +439,7 @@ const Process = () => {
         `/api/financial-process/processes/${processId}?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'GET',
-          headers: authHeaders(),
+          headers: getAuthHeaders(),
           credentials: 'include',
         }
       )
@@ -453,7 +455,7 @@ const Process = () => {
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany])
+  }, [selectedCompany, getAuthHeaders])
 
   // Fetch Scenarios
   const fetchScenarios = useCallback(async (processId) => {
@@ -464,7 +466,7 @@ const Process = () => {
         `/api/financial-process/processes/${processId}/scenarios?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'GET',
-          headers: authHeaders(),
+          headers: getAuthHeaders(),
           credentials: 'include',
         }
       )
@@ -476,7 +478,7 @@ const Process = () => {
       console.error('Failed to load scenarios:', error)
       showNotification('Failed to load scenarios', 'error')
     }
-  }, [selectedCompany])
+  }, [selectedCompany, getAuthHeaders])
 
   // Fetch Reference Data
   const fetchReferenceData = useCallback(async () => {
@@ -487,7 +489,7 @@ const Process = () => {
         `/api/financial-process/reference-data?company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'GET',
-          headers: authHeaders(),
+          headers: getAuthHeaders(),
           credentials: 'include',
         }
       )
@@ -498,7 +500,7 @@ const Process = () => {
     } catch (error) {
       console.error('Failed to load reference data:', error)
     }
-  }, [selectedCompany, isAuthenticated])
+  }, [selectedCompany, isAuthenticated, getAuthHeaders])
 
 
   // Canvas Functions
@@ -555,7 +557,7 @@ const Process = () => {
         `/api/financial-process/processes/${selectedProcessId}/execute?scenario_id=${selectedScenarioId}&company_name=${encodeURIComponent(selectedCompany)}`,
         {
           method: 'POST',
-          headers: authHeaders(),
+          headers: getAuthHeaders(),
           credentials: 'include',
         }
       )
@@ -711,7 +713,7 @@ const Process = () => {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setCurrentView('scenarios')}
+                onClick={() => navigate('/fiscal-management')}
                 className="btn-secondary inline-flex items-center gap-2"
               >
                 <Zap className="h-4 w-4" />
