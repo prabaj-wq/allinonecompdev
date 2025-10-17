@@ -493,8 +493,18 @@ const Process = () => {
       if (!response.ok) throw new Error('Failed to load process details')
       const data = await response.json()
       
+      // Map backend field names to frontend (x_position -> x, y_position -> y)
+      const mappedNodes = (data.nodes || []).map(node => ({
+        ...node,
+        x: node.x_position || node.x || 100,
+        y: node.y_position || node.y || 100,
+        type: node.node_type || node.type,
+        width: 200,
+        height: 100
+      }))
+      
       // Filter nodes by canvas mode
-      const filteredNodes = (data.nodes || []).filter(node => 
+      const filteredNodes = mappedNodes.filter(node => 
         node.canvas_mode === canvasMode || !node.canvas_mode // Handle legacy nodes without canvas_mode
       )
       setCanvasNodes(filteredNodes)
