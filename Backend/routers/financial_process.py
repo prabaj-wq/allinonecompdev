@@ -115,9 +115,9 @@ def company_connection(company_name: str):
 class ProcessCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    process_type: str = "profit_loss"
+    process_type: Optional[str] = "General"
     fiscal_year: Optional[int] = None
-    reporting_currency: str = "USD"
+    reporting_currency: Optional[str] = "USD"
     settings: Optional[Dict[str, Any]] = {}
 
 class ProcessUpdate(BaseModel):
@@ -222,11 +222,11 @@ async def create_process(
                 company_id,
                 process_data.name,
                 process_data.description,
-                process_data.process_type,
+                getattr(process_data, 'process_type', 'General'),
                 process_data.fiscal_year,
-                process_data.reporting_currency,
-                json.dumps(process_data.settings),
-                str(current_user.id)
+                getattr(process_data, 'reporting_currency', 'USD'),
+                json.dumps(process_data.settings or {}),
+                str(uuid.uuid4())  # Generate a new UUID for created_by
             ))
             
             conn.commit()

@@ -285,10 +285,8 @@ const Process = () => {
   const [processLoading, setProcessLoading] = useState(false)
   const [processForm, setProcessForm] = useState({ 
     name: '', 
-    description: '', 
-    process_type: PROCESS_TYPES[0],
-    fiscal_year: new Date().getFullYear(),
-    reporting_currency: 'USD'
+    description: '',
+    fiscal_year: new Date().getFullYear()
   })
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false)
   const [editingProcess, setEditingProcess] = useState(null)
@@ -435,10 +433,8 @@ const Process = () => {
       setEditingProcess(null)
       setProcessForm({ 
         name: '', 
-        description: '', 
-        process_type: PROCESS_TYPES[0],
-        fiscal_year: new Date().getFullYear(),
-        reporting_currency: 'USD'
+        description: '',
+        fiscal_year: new Date().getFullYear()
       })
     } catch (error) {
       console.error('Failed to save process:', error)
@@ -619,9 +615,7 @@ const Process = () => {
     setProcessForm({
       name: process.name,
       description: process.description || '',
-      process_type: process.process_type,
-      fiscal_year: process.fiscal_year,
-      reporting_currency: process.reporting_currency
+      fiscal_year: process.fiscal_year
     })
     setEditingProcess(process)
     setProcessDrawerOpen(true)
@@ -1224,10 +1218,8 @@ const Process = () => {
                   setEditingProcess(null)
                   setProcessForm({ 
                     name: '', 
-                    description: '', 
-                    process_type: PROCESS_TYPES[0],
-                    fiscal_year: new Date().getFullYear(),
-                    reporting_currency: 'USD'
+                    description: '',
+                    fiscal_year: new Date().getFullYear()
                   })
                 }}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
@@ -1256,45 +1248,16 @@ const Process = () => {
                   placeholder="Describe the purpose of this process"
                 />
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="label">Process Type</label>
-                  <select
-                    value={processForm.process_type}
-                    onChange={(e) => setProcessForm({ ...processForm, process_type: e.target.value })}
-                    className="form-select"
-                  >
-                    {PROCESS_TYPES.map((type) => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Fiscal Year</label>
-                  <input
-                    type="number"
-                    value={processForm.fiscal_year}
-                    onChange={(e) => setProcessForm({ ...processForm, fiscal_year: parseInt(e.target.value) })}
-                    className="form-input"
-                    min="2020"
-                    max="2030"
-                  />
-                </div>
-              </div>
               <div>
-                <label className="label">Reporting Currency</label>
-                <select
-                  value={processForm.reporting_currency}
-                  onChange={(e) => setProcessForm({ ...processForm, reporting_currency: e.target.value })}
-                  className="form-select"
-                >
-                  <option value="USD">USD - US Dollar</option>
-                  <option value="EUR">EUR - Euro</option>
-                  <option value="GBP">GBP - British Pound</option>
-                  <option value="JPY">JPY - Japanese Yen</option>
-                  <option value="CAD">CAD - Canadian Dollar</option>
-                  <option value="AUD">AUD - Australian Dollar</option>
-                </select>
+                <label className="label">Fiscal Year</label>
+                <input
+                  type="number"
+                  value={processForm.fiscal_year}
+                  onChange={(e) => setProcessForm({ ...processForm, fiscal_year: parseInt(e.target.value) })}
+                  className="form-input"
+                  min="2020"
+                  max="2030"
+                />
               </div>
               <div className="flex gap-3 pt-4">
                 <button
@@ -1303,10 +1266,8 @@ const Process = () => {
                     setEditingProcess(null)
                     setProcessForm({ 
                       name: '', 
-                      description: '', 
-                      process_type: PROCESS_TYPES[0],
-                      fiscal_year: new Date().getFullYear(),
-                      reporting_currency: 'USD'
+                      description: '',
+                      fiscal_year: new Date().getFullYear()
                     })
                   }}
                   className="btn-secondary flex-1"
