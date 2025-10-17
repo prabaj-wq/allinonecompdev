@@ -70,6 +70,7 @@ import AxesOverview from '../pages/AxesOverview'
 import AxesDynamic from '../pages/AxesDynamic'
 import Reports from '../pages/Reports'
 import AdvancedFeatures from '../pages/AdvancedFeatures'
+import ProcessBuilderV2 from '../components/ProcessBuilderV2'
 
 // Role Management Components
 import RoleManagementHub from '../pages/rolemanagement/RoleManagementHub'
@@ -133,6 +134,11 @@ const TwoFactorWrapper = () => {
           <Route path="/consolidation" element={
             <PageAccessWrapper requiredPage="/consolidation" pageName="Consolidation">
               <Consolidation />
+            </PageAccessWrapper>
+          } />
+          <Route path="/process-builder" element={
+            <PageAccessWrapper requiredPage="/process" pageName="Process Builder">
+              <ProcessBuilderV2 />
             </PageAccessWrapper>
           } />
           <Route path="/support" element={<Support />} />

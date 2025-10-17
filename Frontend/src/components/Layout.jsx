@@ -176,6 +176,12 @@ const Layout = ({ children }) => {
       description: 'Multi-entity consolidation'
     },
     { 
+      name: 'Process Builder', 
+      href: '/process-builder', 
+      icon: Zap,
+      description: 'Advanced consolidation & process automation'
+    },
+    { 
       name: 'IFRS Templates', 
       href: '/ifrs-templates', 
       icon: FileText,

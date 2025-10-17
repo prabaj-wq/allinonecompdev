@@ -24,6 +24,14 @@ from database import engine, Base, get_db
 from config import settings
 import logging
 
+# Import all models to register them with Base metadata (required for create_all)
+from models.process_builder import (
+    ProcessDefinition, ProcessNode, ProcessNodeConnection, ProcessPeriod,
+    ProcessData, ProcessStaging, ProcessJournal, ProcessScenario,
+    ProcessExecution, EntityStructure, ProcessAuditTrail, ValidationRule,
+    ProcessOverride, CustomLogicTemplate
+)
+
 # Configure logger
 logger = logging.getLogger(__name__)
 
@@ -549,8 +557,10 @@ from routers import (
     company_management, dashboard, fst, trial_balance, consolidation, 
     ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
     upload, process, financial_statements, assets, audit, 
-    budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal_management
+    budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal_management,
+    workflow_builder, process_builder
 )
+from routers import process_builder_v2
 
 # Include all routers with /api prefix
 # All routers including SQL router should use the same prefix pattern
@@ -582,6 +592,9 @@ app.include_router(axes_entity.router, prefix="/api")
 app.include_router(axes_account.router, prefix="/api")
 app.include_router(sql.router, prefix="/api")
 app.include_router(fiscal_management.router, prefix="/api")
+app.include_router(workflow_builder.router, prefix="/api")
+app.include_router(process_builder.router, prefix="/api")
+app.include_router(process_builder_v2.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status

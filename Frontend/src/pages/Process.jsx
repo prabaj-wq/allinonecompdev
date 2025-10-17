@@ -20,7 +20,11 @@ import {
   Loader2,
   GitBranch,
   Repeat,
+  Layout,
+  BarChart3,
 } from 'lucide-react'
+import ConsolidationCanvas from '../components/ConsolidationCanvas'
+import ConsolidationSettings from '../components/ConsolidationSettings'
 
 const PROCESS_TYPES = ['Consolidation', 'Close', 'Forecast', 'Budget', 'Reporting', 'Operational']
 
@@ -194,6 +198,21 @@ const Process = () => {
   const [accountHierarchySelection, setAccountHierarchySelection] = useState('')
   const [entityHierarchySelection, setEntityHierarchySelection] = useState('')
 
+  // Consolidation states
+  const [consolidationView, setConsolidationView] = useState(false)
+  const [consolidationScenarios, setConsolidationScenarios] = useState([])
+  const [consolidationEntities, setConsolidationEntities] = useState([])
+  const [consolidationRules, setConsolidationRules] = useState([])
+  const [consolidationNodes, setConsolidationNodes] = useState([])
+  const [consolidationFXRates, setConsolidationFXRates] = useState([])
+  const [selectedScenarioId, setSelectedScenarioId] = useState(null)
+  const [consolidationLoading, setConsolidationLoading] = useState(false)
+  const [consolidationSettingsView, setConsolidationSettingsView] = useState(false)
+  const [newScenarioForm, setNewScenarioForm] = useState({ name: '', description: '', scenario_type: 'actual', fiscal_year: getDefaultYear() })
+  const [showNewScenarioModal, setShowNewScenarioModal] = useState(false)
+  const [consolidationProcesses, setConsolidationProcesses] = useState([])
+  const [selectedConsolidationProcess, setSelectedConsolidationProcess] = useState(null)
+
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type })
     setTimeout(() => setNotification(null), 5000)
@@ -306,6 +325,177 @@ const Process = () => {
   useEffect(() => {
     fetchEntries()
   }, [fetchEntries])
+
+  // Consolidation API Functions
+  const fetchConsolidationScenarios = useCallback(async () => {
+    if (!selectedCompany || !isAuthenticated) return
+    setConsolidationLoading(true)
+    try {
+      const response = await fetch(
+        `/api/consolidation/scenarios/list?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'GET',
+          headers: authHeaders(),
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) throw new Error('Failed to load scenarios')
+      const data = await response.json()
+      setConsolidationScenarios(Array.isArray(data.scenarios) ? data.scenarios : [])
+    } catch (error) {
+      console.error('Failed to fetch consolidation scenarios:', error)
+      showNotification('Failed to load consolidation scenarios', 'error')
+    } finally {
+      setConsolidationLoading(false)
+    }
+  }, [selectedCompany, isAuthenticated])
+
+  const fetchConsolidationEntities = useCallback(async () => {
+    if (!selectedCompany || !isAuthenticated) return
+    try {
+      const response = await fetch(
+        `/api/consolidation/entities/list?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'GET',
+          headers: authHeaders(),
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) throw new Error('Failed to load entities')
+      const data = await response.json()
+      setConsolidationEntities(Array.isArray(data.entities) ? data.entities : [])
+    } catch (error) {
+      console.error('Failed to fetch consolidation entities:', error)
+    }
+  }, [selectedCompany, isAuthenticated])
+
+  const createConsolidationScenario = async () => {
+    if (!newScenarioForm.name.trim()) {
+      showNotification('Scenario name is required', 'error')
+      return
+    }
+    setConsolidationLoading(true)
+    try {
+      const response = await fetch(
+        `/api/consolidation/scenarios/create?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: authHeaders(),
+          credentials: 'include',
+          body: JSON.stringify(newScenarioForm),
+        }
+      )
+      if (!response.ok) throw new Error('Failed to create scenario')
+      const data = await response.json()
+      setConsolidationScenarios([...consolidationScenarios, data])
+      setNewScenarioForm({ name: '', description: '', scenario_type: 'actual', fiscal_year: getDefaultYear() })
+      setShowNewScenarioModal(false)
+      showNotification('Consolidation scenario created successfully', 'success')
+    } catch (error) {
+      console.error('Failed to create scenario:', error)
+      showNotification('Failed to create consolidation scenario', 'error')
+    } finally {
+      setConsolidationLoading(false)
+    }
+  }
+
+  const fetchProcessDetails = useCallback(async (processId) => {
+    if (!selectedCompany || !isAuthenticated || !processId) return
+    setConsolidationLoading(true)
+    try {
+      const response = await fetch(
+        `/api/consolidation/processes/${processId}/details?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'GET',
+          headers: authHeaders(),
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) throw new Error('Failed to load process details')
+      const data = await response.json()
+      setConsolidationNodes(Array.isArray(data.nodes) ? data.nodes : [])
+      setConsolidationRules(Array.isArray(data.rules) ? data.rules : [])
+      setSelectedConsolidationProcess(data.process)
+    } catch (error) {
+      console.error('Failed to fetch process details:', error)
+    } finally {
+      setConsolidationLoading(false)
+    }
+  }, [selectedCompany, isAuthenticated])
+
+  const addConsolidationNode = async (nodeData) => {
+    if (!selectedConsolidationProcess) {
+      showNotification('Please select a process first', 'error')
+      return
+    }
+    setConsolidationLoading(true)
+    try {
+      const response = await fetch(
+        `/api/consolidation/processes/${selectedConsolidationProcess.id}/nodes/add?company_name=${encodeURIComponent(
+          selectedCompany
+        )}`,
+        {
+          method: 'POST',
+          headers: authHeaders(),
+          credentials: 'include',
+          body: JSON.stringify(nodeData),
+        }
+      )
+      if (!response.ok) throw new Error('Failed to add node')
+      const newNode = await response.json()
+      setConsolidationNodes([...consolidationNodes, newNode])
+      showNotification('Node added successfully', 'success')
+    } catch (error) {
+      console.error('Failed to add node:', error)
+      showNotification('Failed to add consolidation node', 'error')
+    } finally {
+      setConsolidationLoading(false)
+    }
+  }
+
+  const deleteConsolidationNode = async (nodeId) => {
+    setConsolidationNodes(consolidationNodes.filter((n) => n.id !== nodeId))
+    showNotification('Node deleted', 'success')
+  }
+
+  const updateConsolidationNode = async (updatedNode) => {
+    setConsolidationNodes(consolidationNodes.map((n) => (n.id === updatedNode.id ? updatedNode : n)))
+    showNotification('Node updated', 'success')
+  }
+
+  const saveConsolidationRule = async (rule) => {
+    if (!selectedConsolidationProcess) return
+    setConsolidationLoading(true)
+    try {
+      const response = await fetch(
+        `/api/consolidation/processes/${selectedConsolidationProcess.id}/rules/add?company_name=${encodeURIComponent(
+          selectedCompany
+        )}`,
+        {
+          method: 'POST',
+          headers: authHeaders(),
+          credentials: 'include',
+          body: JSON.stringify(rule),
+        }
+      )
+      if (!response.ok) throw new Error('Failed to save rule')
+      const newRule = await response.json()
+      setConsolidationRules([...consolidationRules, newRule])
+      showNotification('Rule saved successfully', 'success')
+    } catch (error) {
+      console.error('Failed to save rule:', error)
+      showNotification('Failed to save rule', 'error')
+    } finally {
+      setConsolidationLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (consolidationView) {
+      fetchConsolidationScenarios()
+      fetchConsolidationEntities()
+    }
+  }, [consolidationView, fetchConsolidationScenarios, fetchConsolidationEntities])
 
   const activeProcess = useMemo(() => processes.find((process) => process.id === selectedProcessId) || null, [
     processes,
@@ -1293,6 +1483,263 @@ const Process = () => {
       </div>
     )
   }
+  // Handle consolidation process creation
+  const handleCreateConsolidationProcess = async () => {
+    if (!selectedScenarioId) {
+      showNotification('Please select a scenario first', 'error')
+      return
+    }
+    if (!processForm.name.trim()) {
+      showNotification('Process name is required', 'error')
+      return
+    }
+    setProcessSubmitting(true)
+    try {
+      const response = await fetch(
+        `/api/consolidation/processes/create?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: authHeaders(),
+          credentials: 'include',
+          body: JSON.stringify({
+            name: processForm.name,
+            description: processForm.description,
+            scenario_id: selectedScenarioId,
+            process_type: 'consolidation',
+          }),
+        }
+      )
+      if (!response.ok) throw new Error('Failed to create consolidation process')
+      const newProcess = await response.json()
+      setConsolidationProcesses([...consolidationProcesses, newProcess])
+      setSelectedConsolidationProcess(newProcess)
+      fetchProcessDetails(newProcess.id)
+      setProcessForm({ name: '', description: '', process_type: 'Consolidation' })
+      setProcessDrawerOpen(false)
+      showNotification('Consolidation process created successfully', 'success')
+    } catch (error) {
+      console.error('Failed to create consolidation process:', error)
+      showNotification('Failed to create consolidation process', 'error')
+    } finally {
+      setProcessSubmitting(false)
+    }
+  }
+
+  if (consolidationView) {
+    return (
+      <div className="space-y-6">
+        {/* Consolidation Header */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white">
+                <BarChart3 className="h-6 w-6" />
+                IFRS Consolidation Module
+              </h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Build comprehensive consolidation processes with workflow automation
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setConsolidationView(false)}
+                className="btn-secondary"
+              >
+                Back to Processes
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Scenarios and Process Selection */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Scenarios Panel */}
+          <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
+            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-gray-900 dark:text-white">Scenarios</h2>
+                <button
+                  onClick={() => setShowNewScenarioModal(true)}
+                  className="btn-primary inline-flex items-center gap-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  New
+                </button>
+              </div>
+            </div>
+            <div className="divide-y divide-gray-200 dark:divide-gray-800">
+              {consolidationScenarios.length > 0 ? (
+                consolidationScenarios.map((scenario) => (
+                  <div
+                    key={scenario.id}
+                    onClick={() => setSelectedScenarioId(scenario.id)}
+                    className={`cursor-pointer px-6 py-3 transition ${
+                      selectedScenarioId === scenario.id
+                        ? 'border-l-4 border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-900'
+                    }`}
+                  >
+                    <p className="font-medium text-gray-900 dark:text-white">{scenario.name}</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">{scenario.fiscal_year}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="px-6 py-8 text-center text-gray-600 dark:text-gray-400">
+                  No scenarios yet
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Process Creation */}
+          <section className="lg:col-span-2 rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
+            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+              <h2 className="font-semibold text-gray-900 dark:text-white">Create Consolidation Process</h2>
+            </div>
+            <div className="space-y-4 p-6">
+              <div>
+                <label className="label">Process Name *</label>
+                <input
+                  type="text"
+                  value={processForm.name}
+                  onChange={(e) => setProcessForm({ ...processForm, name: e.target.value })}
+                  className="form-input"
+                  placeholder="e.g., 2025 Q4 Consolidation"
+                />
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <textarea
+                  value={processForm.description}
+                  onChange={(e) => setProcessForm({ ...processForm, description: e.target.value })}
+                  className="form-input resize-none"
+                  rows={3}
+                />
+              </div>
+              <button
+                onClick={handleCreateConsolidationProcess}
+                disabled={processSubmitting || !selectedScenarioId}
+                className="btn-primary w-full inline-flex items-center justify-center gap-2"
+              >
+                {processSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    Create Process
+                  </>
+                )}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {/* Process Workflow Editor */}
+        {selectedConsolidationProcess && (
+          <>
+            <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+                <div>
+                  <h2 className="font-semibold text-gray-900 dark:text-white">{selectedConsolidationProcess.name}</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{selectedConsolidationProcess.description}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConsolidationSettingsView(!consolidationSettingsView)}
+                    className="btn-secondary inline-flex items-center gap-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    {consolidationSettingsView ? 'Canvas' : 'Settings'}
+                  </button>
+                </div>
+              </div>
+
+              {consolidationSettingsView ? (
+                <ConsolidationSettings
+                  processId={selectedConsolidationProcess.id}
+                  scenario={consolidationScenarios.find((s) => s.id === selectedConsolidationProcess.scenario_id)}
+                  entities={consolidationEntities}
+                  rules={consolidationRules}
+                  fxRates={consolidationFXRates}
+                  onSaveRule={saveConsolidationRule}
+                  onDeleteRule={(id) => setConsolidationRules(consolidationRules.filter((r) => r.id !== id))}
+                  onSaveFXRate={(rate) => setConsolidationFXRates([...consolidationFXRates, rate])}
+                  onDeleteFXRate={(id) => setConsolidationFXRates(consolidationFXRates.filter((r) => r.id !== id))}
+                  onAddEntity={(entity) => setConsolidationEntities([...consolidationEntities, entity])}
+                  isSaving={consolidationLoading}
+                />
+              ) : (
+                <div className="h-96">
+                  <ConsolidationCanvas
+                    processId={selectedConsolidationProcess.id}
+                    nodes={consolidationNodes}
+                    onAddNode={addConsolidationNode}
+                    onDeleteNode={deleteConsolidationNode}
+                    onUpdateNode={updateConsolidationNode}
+                    onRunProcess={() => showNotification('Process execution not yet available', 'info')}
+                    isLoading={consolidationLoading}
+                  />
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* New Scenario Modal */}
+        {showNewScenarioModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-md rounded-lg bg-white p-6 dark:bg-gray-900">
+              <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Create Scenario</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Scenario Name *</label>
+                  <input
+                    type="text"
+                    value={newScenarioForm.name}
+                    onChange={(e) => setNewScenarioForm({ ...newScenarioForm, name: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Fiscal Year *</label>
+                  <input
+                    type="text"
+                    value={newScenarioForm.fiscal_year}
+                    onChange={(e) => setNewScenarioForm({ ...newScenarioForm, fiscal_year: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Type</label>
+                  <select
+                    value={newScenarioForm.scenario_type}
+                    onChange={(e) => setNewScenarioForm({ ...newScenarioForm, scenario_type: e.target.value })}
+                    className="form-input"
+                  >
+                    <option value="actual">Actual</option>
+                    <option value="forecast">Forecast</option>
+                    <option value="budget">Budget</option>
+                  </select>
+                </div>
+                <div className="flex gap-2 pt-4">
+                  <button onClick={() => setShowNewScenarioModal(false)} className="btn-secondary flex-1">
+                    Cancel
+                  </button>
+                  <button onClick={createConsolidationScenario} className="btn-primary flex-1">
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
 
@@ -1304,9 +1751,18 @@ const Process = () => {
               Create dedicated workspaces for each close, forecast, or operational process you manage.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={openCreateProcessDrawer}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setConsolidationView(true)}
+              className="btn-secondary inline-flex items-center gap-2"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Consolidation
+            </button>
+            <button
+              type="button"
+              onClick={openCreateProcessDrawer}
             className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-950"
           >
             <Plus className="h-4 w-4" />
