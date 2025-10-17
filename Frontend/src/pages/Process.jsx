@@ -292,17 +292,19 @@ const Process = () => {
   const [editingProcess, setEditingProcess] = useState(null)
   
   // Canvas State
+  const [canvasMode, setCanvasMode] = useState('entity') // 'entity' or 'consolidation'
   const [canvasNodes, setCanvasNodes] = useState([])
   const [canvasConnections, setCanvasConnections] = useState([])
   const [selectedNode, setSelectedNode] = useState(null)
-  const [draggedNode, setDraggedNode] = useState(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
+  const [showGrid, setShowGrid] = useState(true)
   const [nodeLibraryOpen, setNodeLibraryOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [draggedNode, setDraggedNode] = useState(null)
   const [isConnecting, setIsConnecting] = useState(false)
   const [connectionStart, setConnectionStart] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [draggedNodeId, setDraggedNodeId] = useState(null)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   
   // Scenario Management
@@ -490,7 +492,11 @@ const Process = () => {
       if (!response.ok) throw new Error('Failed to load process details')
       const data = await response.json()
       
-      setCanvasNodes(data.nodes || [])
+      // Filter nodes by canvas mode
+      const filteredNodes = (data.nodes || []).filter(node => 
+        node.canvas_mode === canvasMode || !node.canvas_mode // Handle legacy nodes without canvas_mode
+      )
+      setCanvasNodes(filteredNodes)
       setCanvasConnections(data.connections || [])
     } catch (error) {
       console.error('Failed to load process details:', error)
@@ -498,7 +504,7 @@ const Process = () => {
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany, getAuthHeaders])
+  }, [selectedCompany, getAuthHeaders, canvasMode])
 
   // Fetch Scenarios
   const fetchScenarios = useCallback(async (processId) => {
@@ -547,7 +553,7 @@ const Process = () => {
 
 
   // Canvas Functions
-  const addNodeToCanvas = (nodeType, position) => {
+  const addNodeToCanvas = async (nodeType, position) => {
     const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
     if (!nodeTemplate) return
 
@@ -561,15 +567,48 @@ const Process = () => {
       width: 200,
       height: 100,
       configuration: {},
+      canvas_mode: canvasMode,
       is_active: true
     }
 
-    setCanvasNodes([...canvasNodes, newNode])
-    setSelectedNode(newNode)
+    // Save to backend
+    try {
+      const response = await fetch(
+        `${API_URL}/api/financial-process/processes/${selectedProcessId}/nodes?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            type: newNode.type,
+            name: newNode.name,
+            description: newNode.description,
+            sequence: canvasNodes.length + 1,
+            x_position: newNode.x,
+            y_position: newNode.y,
+            canvas_mode: canvasMode,
+            configuration: newNode.configuration
+          })
+        }
+      )
+
+      if (response.ok) {
+        const savedNode = await response.json()
+        newNode.id = savedNode.id // Use backend ID
+        setCanvasNodes([...canvasNodes, newNode])
+        setSelectedNode(newNode)
+        showNotification('Node added successfully', 'success')
+      } else {
+        showNotification('Failed to add node', 'error')
+      }
+    } catch (error) {
+      console.error('Error adding node:', error)
+      showNotification('Error adding node', 'error')
+    }
+    
     setNodeLibraryOpen(false)
   }
 
-  const updateNodePosition = (nodeId, newPosition) => {
+  const updateNodePosition = async (nodeId, newPosition) => {
     setCanvasNodes(nodes => 
       nodes.map(node => 
         node.id === nodeId 
@@ -577,16 +616,140 @@ const Process = () => {
           : node
       )
     )
+    
+    // Save position to backend
+    try {
+      await fetch(
+        `${API_URL}/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ x_position: newPosition.x, y_position: newPosition.y })
+        }
+      )
+    } catch (error) {
+      console.error('Error updating node position:', error)
+    }
   }
 
-  const deleteNode = (nodeId) => {
-    setCanvasNodes(nodes => nodes.filter(n => n.id !== nodeId))
-    setCanvasConnections(connections => 
-      connections.filter(c => c.from_node_id !== nodeId && c.to_node_id !== nodeId)
-    )
-    if (selectedNode?.id === nodeId) {
-      setSelectedNode(null)
+  const deleteNode = async (nodeId) => {
+    try {
+      await fetch(
+        `${API_URL}/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'DELETE',
+          headers: getAuthHeaders()
+        }
+      )
+      
+      setCanvasNodes(nodes => nodes.filter(n => n.id !== nodeId))
+      setCanvasConnections(connections => 
+        connections.filter(c => c.from_node_id !== nodeId && c.to_node_id !== nodeId)
+      )
+      if (selectedNode?.id === nodeId) {
+        setSelectedNode(null)
+      }
+      showNotification('Node deleted successfully', 'success')
+    } catch (error) {
+      console.error('Error deleting node:', error)
+      showNotification('Error deleting node', 'error')
     }
+  }
+
+  const createConnection = async (fromNodeId, toNodeId) => {
+    // Check if connection already exists
+    const exists = canvasConnections.some(
+      c => c.from_node_id === fromNodeId && c.to_node_id === toNodeId
+    )
+    if (exists) {
+      showNotification('Connection already exists', 'error')
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/financial-process/processes/${selectedProcessId}/connections?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            from_node_id: fromNodeId,
+            to_node_id: toNodeId,
+            connection_type: 'data_flow',
+            conditions: {},
+            transformation_rules: {}
+          })
+        }
+      )
+
+      if (response.ok) {
+        const newConnection = await response.json()
+        setCanvasConnections([...canvasConnections, newConnection])
+        showNotification('Connection created', 'success')
+      } else {
+        showNotification('Failed to create connection', 'error')
+      }
+    } catch (error) {
+      console.error('Error creating connection:', error)
+      showNotification('Error creating connection', 'error')
+    }
+  }
+
+  const handleNodeMouseDown = (e, node) => {
+    e.stopPropagation()
+    
+    // If Shift key is pressed, start connection mode
+    if (e.shiftKey) {
+      if (!isConnecting) {
+        setIsConnecting(true)
+        setConnectionStart(node.id)
+      } else {
+        // Complete the connection
+        if (connectionStart && connectionStart !== node.id) {
+          createConnection(connectionStart, node.id)
+        }
+        setIsConnecting(false)
+        setConnectionStart(null)
+      }
+    } else {
+      // Start dragging
+      setIsDragging(true)
+      setDraggedNodeId(node.id)
+      setSelectedNode(node)
+      
+      const rect = canvasRef.current.getBoundingClientRect()
+      setDragOffset({
+        x: e.clientX - rect.left - node.x,
+        y: e.clientY - rect.top - node.y
+      })
+    }
+  }
+
+  const handleMouseMove = (e) => {
+    if (isDragging && draggedNodeId) {
+      const rect = canvasRef.current.getBoundingClientRect()
+      const newX = e.clientX - rect.left - dragOffset.x
+      const newY = e.clientY - rect.top - dragOffset.y
+      
+      setCanvasNodes(nodes =>
+        nodes.map(node =>
+          node.id === draggedNodeId
+            ? { ...node, x: Math.max(0, newX), y: Math.max(0, newY) }
+            : node
+        )
+      )
+    }
+  }
+
+  const handleMouseUp = () => {
+    if (isDragging && draggedNodeId) {
+      const draggedNode = canvasNodes.find(n => n.id === draggedNodeId)
+      if (draggedNode) {
+        updateNodePosition(draggedNodeId, { x: draggedNode.x, y: draggedNode.y })
+      }
+    }
+    setIsDragging(false)
+    setDraggedNodeId(null)
   }
 
   const startConnection = (nodeId) => {
@@ -606,45 +769,6 @@ const Process = () => {
     }
     setIsConnecting(false)
     setConnectionStart(null)
-  }
-
-  const handleNodeMouseDown = (e, node) => {
-    e.stopPropagation()
-    if (e.shiftKey) {
-      // Shift+click for connections
-      if (isConnecting) {
-        completeConnection(node.id)
-      } else {
-        startConnection(node.id)
-      }
-    } else {
-      // Regular click for selection and dragging
-      setSelectedNode(node)
-      setIsDragging(true)
-      const rect = canvasRef.current?.getBoundingClientRect()
-      if (rect) {
-        setDragOffset({
-          x: e.clientX - rect.left - node.x,
-          y: e.clientY - rect.top - node.y
-        })
-      }
-    }
-  }
-
-  const handleMouseMove = (e) => {
-    if (isDragging && selectedNode) {
-      const rect = canvasRef.current?.getBoundingClientRect()
-      if (rect) {
-        const newX = e.clientX - rect.left - dragOffset.x
-        const newY = e.clientY - rect.top - dragOffset.y
-        updateNodePosition(selectedNode.id, { x: newX, y: newY })
-      }
-    }
-  }
-
-  const handleMouseUp = () => {
-    setIsDragging(false)
-    setDragOffset({ x: 0, y: 0 })
   }
 
   const executeProcess = async () => {
@@ -933,6 +1057,32 @@ const Process = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {/* Canvas Mode Toggle */}
+              <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                <button
+                  onClick={() => setCanvasMode('entity')}
+                  className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
+                    canvasMode === 'entity'
+                      ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                >
+                  Entity-wise
+                </button>
+                <button
+                  onClick={() => setCanvasMode('consolidation')}
+                  className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
+                    canvasMode === 'consolidation'
+                      ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                >
+                  Consolidation
+                </button>
+              </div>
+              
+              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
+              
               <button
                 onClick={() => setNodeLibraryOpen(true)}
                 className="btn-secondary inline-flex items-center gap-2"
