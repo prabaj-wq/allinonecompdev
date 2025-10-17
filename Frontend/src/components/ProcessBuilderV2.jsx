@@ -4,9 +4,11 @@ import {
   ZoomIn, ZoomOut, Grid3x3, Edit2, Copy, Eye, Calendar, Users, DollarSign,
   TrendingUp, Layers, GitBranch, BarChart3, Lock, Unlock, XCircle
 } from 'lucide-react';
+import { useCompany } from '../contexts/CompanyContext';
 import '../styles/ProcessBuilderV2.css';
 
 const ProcessBuilderV2 = () => {
+  const { selectedCompany } = useCompany();
   // ==================== STATE ====================
   const [processes, setProcesses] = useState([]);
   const [currentProcess, setCurrentProcess] = useState(null);
@@ -22,12 +24,18 @@ const ProcessBuilderV2 = () => {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [draggingNode, setDraggingNode] = useState(null);
-  const [notifications, setNotifications] = useState([]);
+  const [notification, setNotification] = useState(null);
   const [mode, setMode] = useState('list'); // list, edit, execute, report
   const [loading, setLoading] = useState(false);
   
   const canvasRef = useRef(null);
   const svgRef = useRef(null);
+
+  // ==================== NOTIFICATIONS ====================
+  const notify = (message, type = 'info') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 5000);
+  };
 
   // ==================== NODE TEMPLATES ====================
   const NODE_TEMPLATES = [
@@ -246,13 +254,12 @@ const ProcessBuilderV2 = () => {
   // ==================== API CALLS ====================
   const apiCall = async (method, endpoint, data = null) => {
     try {
-      const token = localStorage.getItem('access_token');
       const options = {
         method,
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include' // Important: sends session cookies
       };
       
       if (data) {
@@ -262,47 +269,72 @@ const ProcessBuilderV2 = () => {
       const response = await fetch(`/api${endpoint}`, options);
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'API Error');
+        let errorDetail = 'API Error';
+        try {
+          const error = await response.json();
+          errorDetail = error.detail || error.message || `Error ${response.status}`;
+        } catch (e) {
+          errorDetail = `Error ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorDetail);
       }
       
       return await response.json();
     } catch (error) {
-      notify(error.message, 'error');
+      console.error(`API Error calling ${endpoint}:`, error.message);
       throw error;
     }
   };
 
   const loadProcesses = async () => {
+    if (!selectedCompany) {
+      notify('Please select a company first', 'error');
+      return;
+    }
     try {
       setLoading(true);
-      const data = await apiCall('GET', '/process/list');
-      setProcesses(data);
+      const data = await apiCall('GET', `/process/catalog?company_name=${selectedCompany}`);
+      setProcesses(Array.isArray(data) ? data : data.processes || []);
     } catch (error) {
-      logger.error('Error loading processes:', error);
+      console.error('Error loading processes:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const loadProcess = async (processId) => {
+    if (!selectedCompany) {
+      notify('Please select a company first', 'error');
+      return;
+    }
     try {
       setLoading(true);
-      const data = await apiCall('GET', `/process/${processId}`);
+      const data = await apiCall('GET', `/process/${processId}?company_name=${selectedCompany}`);
       setCurrentProcess(data);
       setNodes(data.nodes || []);
       setConnections(data.connections || []);
       setMode('edit');
     } catch (error) {
-      logger.error('Error loading process:', error);
+      console.error('Error loading process:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  // Load processes on component mount or when company changes
+  useEffect(() => {
+    if (selectedCompany) {
+      loadProcesses();
+    }
+  }, [selectedCompany]);
+
   const createProcess = async (name, description, type, fiscal_year) => {
+    if (!selectedCompany) {
+      notify('Please select a company first', 'error');
+      return;
+    }
     try {
-      const data = await apiCall('POST', '/process/create', {
+      const data = await apiCall('POST', `/process/create?company_name=${selectedCompany}`, {
         name,
         description,
         process_type: type,
@@ -314,19 +346,19 @@ const ProcessBuilderV2 = () => {
       loadProcesses();
       setMode('list');
     } catch (error) {
-      logger.error('Error creating process:', error);
+      console.error('Error creating process:', error);
     }
   };
 
   const addNode = async (template, x, y) => {
-    if (!currentProcess) return;
+    if (!currentProcess || !selectedCompany) return;
     
     try {
-      const data = await apiCall('POST', `/process/${currentProcess.id}/node/add`, {
+      const data = await apiCall('POST', `/process/${currentProcess.id}/node/add?company_name=${selectedCompany}`, {
         node_type: template.type,
-        name: template.name,
-        x,
-        y,
+        title: template.name,
+        position_x: x,
+        position_y: y,
         configuration: template.config
       });
       
@@ -334,7 +366,6 @@ const ProcessBuilderV2 = () => {
         id: data.id,
         type: template.type,
         name: template.name,
-        sequence: data.sequence,
         x,
         y,
         configuration: template.config,
@@ -345,43 +376,43 @@ const ProcessBuilderV2 = () => {
       setNodes([...nodes, newNode]);
       notify(`Node "${template.name}" added`, 'success');
     } catch (error) {
-      logger.error('Error adding node:', error);
+      console.error('Error adding node:', error);
     }
   };
 
   const updateNode = async (nodeId, updates) => {
-    if (!currentProcess) return;
+    if (!currentProcess || !selectedCompany) return;
     
     try {
-      await apiCall('PUT', `/process/${currentProcess.id}/node/${nodeId}`, updates);
+      await apiCall('PUT', `/process/${currentProcess.id}/node/${nodeId}?company_name=${selectedCompany}`, updates);
       
       setNodes(nodes.map(n => n.id === nodeId ? { ...n, ...updates } : n));
       notify('Node updated', 'success');
     } catch (error) {
-      logger.error('Error updating node:', error);
+      console.error('Error updating node:', error);
     }
   };
 
   const deleteNode = async (nodeId) => {
-    if (!currentProcess) return;
+    if (!currentProcess || !selectedCompany) return;
     
     try {
-      await apiCall('DELETE', `/process/${currentProcess.id}/node/${nodeId}`);
+      await apiCall('DELETE', `/process/${currentProcess.id}/node/${nodeId}?company_name=${selectedCompany}`);
       
       setNodes(nodes.filter(n => n.id !== nodeId));
       setConnections(connections.filter(c => c.from_node_id !== nodeId && c.to_node_id !== nodeId));
       setSelectedNode(null);
       notify('Node deleted', 'success');
     } catch (error) {
-      logger.error('Error deleting node:', error);
+      console.error('Error deleting node:', error);
     }
   };
 
   const connectNodes = async (fromNodeId, toNodeId) => {
-    if (!currentProcess) return;
+    if (!currentProcess || !selectedCompany) return;
     
     try {
-      const data = await apiCall('POST', `/process/${currentProcess.id}/connect`, {
+      const data = await apiCall('POST', `/process/${currentProcess.id}/connect?company_name=${selectedCompany}`, {
         from_node_id: fromNodeId,
         to_node_id: toNodeId,
         connection_type: 'sequential'
@@ -398,7 +429,7 @@ const ProcessBuilderV2 = () => {
       setConnections([...connections, newConnection]);
       notify('Connection created', 'success');
     } catch (error) {
-      logger.error('Error creating connection:', error);
+      console.error('Error creating connection:', error);
     }
   };
 
@@ -421,21 +452,13 @@ const ProcessBuilderV2 = () => {
         });
       }
     } catch (error) {
-      logger.error('Error executing process:', error);
+      console.error('Error executing process:', error);
     } finally {
       setLoading(false);
     }
   };
 
   // ==================== UI FUNCTIONS ====================
-  const notify = (message, type = 'info') => {
-    const id = Date.now();
-    setNotifications(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 3000);
-  };
-
   const handleCanvasClick = (e) => {
     if (e.target === canvasRef.current) {
       setSelectedNode(null);
