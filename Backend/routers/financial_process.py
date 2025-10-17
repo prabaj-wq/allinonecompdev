@@ -29,11 +29,17 @@ router = APIRouter(prefix="/financial-process", tags=["Financial Process"])
 
 def get_db_config():
     """Get database connection configuration."""
+    import os
+    if os.getenv('DOCKER_ENV') == 'true':
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')
+    else:
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
+        
     return {
-        'host': 'localhost',
-        'port': 5432,
+        'host': POSTGRES_HOST,
+        'port': os.getenv('POSTGRES_PORT', '5432'),
         'user': 'postgres',
-        'password': 'epm_password'
+        'password': 'root@123'
     }
 
 def normalize_company_db_name(company_name: str) -> str:
@@ -44,12 +50,57 @@ def normalize_company_db_name(company_name: str) -> str:
     sanitized = sanitized.strip("_")
     return sanitized or "default_company"
 
+def ensure_financial_tables(conn):
+    """Ensure financial process tables exist in the company database."""
+    cur = conn.cursor()
+    
+    # Create financial_processes table if it doesn't exist
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS financial_processes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            company_id UUID NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            process_type VARCHAR(50) DEFAULT 'profit_loss',
+            status VARCHAR(50) DEFAULT 'draft',
+            fiscal_year INTEGER,
+            reporting_currency VARCHAR(3) DEFAULT 'USD',
+            settings JSONB DEFAULT '{}',
+            created_by UUID,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    
+    # Create other essential tables
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS financial_process_nodes (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            node_type VARCHAR(50) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            x FLOAT DEFAULT 0,
+            y FLOAT DEFAULT 0,
+            width FLOAT DEFAULT 200,
+            height FLOAT DEFAULT 100,
+            configuration JSONB DEFAULT '{}',
+            is_active BOOLEAN DEFAULT true,
+            sequence INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    
+    conn.commit()
+
 @contextmanager
 def company_connection(company_name: str):
     """Context manager for company-specific database connection."""
     db_name = normalize_company_db_name(company_name)
     try:
         conn = psycopg2.connect(database=db_name, **get_db_config())
+        ensure_financial_tables(conn)  # Ensure tables exist
     except psycopg2.OperationalError as exc:
         raise HTTPException(status_code=404, detail=f"Database for company '{company_name}' not available: {exc}")
     try:

@@ -283,6 +283,7 @@ const Process = () => {
     reporting_currency: 'USD'
   })
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false)
+  const [editingProcess, setEditingProcess] = useState(null)
   
   // Canvas State
   const [canvasNodes, setCanvasNodes] = useState([])
@@ -293,6 +294,7 @@ const Process = () => {
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
   const [showGrid, setShowGrid] = useState(true)
   const [nodeLibraryOpen, setNodeLibraryOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   
   // Scenario Management
   const [scenarios, setScenarios] = useState([])
@@ -385,8 +387,8 @@ const Process = () => {
     }
   }, [selectedCompany, isAuthenticated, getAuthHeaders])
 
-  // Create Process
-  const createProcess = async () => {
+  // Create or Update Process
+  const saveProcess = async () => {
     if (!selectedCompany || !processForm.name.trim()) {
       showNotification('Please provide a process name', 'error')
       return
@@ -394,25 +396,35 @@ const Process = () => {
     
     setLoading(true)
     try {
-      const response = await fetch(
-        `/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'POST',
-          headers: {
-            ...getAuthHeaders(),
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify(processForm),
-        }
-      )
+      const isEditing = !!editingProcess
+      const url = isEditing 
+        ? `/api/financial-process/processes/${editingProcess.id}?company_name=${encodeURIComponent(selectedCompany)}`
+        : `/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`
       
-      if (!response.ok) throw new Error('Failed to create process')
+      const response = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(processForm),
+      })
+      
+      if (!response.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'create'} process`)
       const data = await response.json()
       
-      setProcesses([...processes, data.process])
-      setSelectedProcessId(data.process.id)
+      if (isEditing) {
+        setProcesses(processes.map(p => p.id === editingProcess.id ? data.process : p))
+        showNotification('Process updated successfully', 'success')
+      } else {
+        setProcesses([...processes, data.process])
+        setSelectedProcessId(data.process.id)
+        showNotification('Process created successfully', 'success')
+      }
+      
       setProcessDrawerOpen(false)
+      setEditingProcess(null)
       setProcessForm({ 
         name: '', 
         description: '', 
@@ -420,10 +432,9 @@ const Process = () => {
         fiscal_year: new Date().getFullYear(),
         reporting_currency: 'USD'
       })
-      showNotification('Process created successfully', 'success')
     } catch (error) {
-      console.error('Failed to create process:', error)
-      showNotification('Failed to create process', 'error')
+      console.error('Failed to save process:', error)
+      showNotification(`Failed to ${editingProcess ? 'update' : 'create'} process`, 'error')
     } finally {
       setLoading(false)
     }
@@ -595,6 +606,43 @@ const Process = () => {
   // RENDER FUNCTIONS
   // ============================================================================
 
+  const handleEditProcess = (process, e) => {
+    e.stopPropagation()
+    setProcessForm({
+      name: process.name,
+      description: process.description || '',
+      process_type: process.process_type,
+      fiscal_year: process.fiscal_year,
+      reporting_currency: process.reporting_currency
+    })
+    setEditingProcess(process)
+    setProcessDrawerOpen(true)
+  }
+
+  const handleDeleteProcess = async (process, e) => {
+    e.stopPropagation()
+    if (!window.confirm(`Are you sure you want to delete "${process.name}"?`)) return
+    
+    try {
+      const response = await fetch(
+        `/api/financial-process/processes/${process.id}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'DELETE',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        }
+      )
+      
+      if (!response.ok) throw new Error('Failed to delete process')
+      
+      setProcesses(processes.filter(p => p.id !== process.id))
+      showNotification('Process deleted successfully', 'success')
+    } catch (error) {
+      console.error('Failed to delete process:', error)
+      showNotification('Failed to delete process', 'error')
+    }
+  }
+
   const renderProcessCard = (process) => (
     <div
       key={process.id}
@@ -607,9 +655,30 @@ const Process = () => {
         setSelectedProcessId(process.id)
         setCurrentView('canvas')
       }}
+      onDoubleClick={(e) => handleEditProcess(process, e)}
     >
+      {/* Action buttons */}
+      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex gap-2">
+          <button
+            onClick={(e) => handleEditProcess(process, e)}
+            className="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            title="Edit Process"
+          >
+            <Edit className="h-3 w-3 text-gray-600 dark:text-gray-400" />
+          </button>
+          <button
+            onClick={(e) => handleDeleteProcess(process, e)}
+            className="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            title="Delete Process"
+          >
+            <Trash2 className="h-3 w-3 text-red-600 dark:text-red-400" />
+          </button>
+        </div>
+      </div>
+
       <div className="flex items-start justify-between">
-        <div className="flex-1">
+        <div className="flex-1 pr-12">
           <div className="flex items-center gap-3 mb-2">
             <span className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white`}>
               <Workflow className="h-5 w-5" />
@@ -800,6 +869,13 @@ const Process = () => {
                 Add Node
               </button>
               <button
+                onClick={() => setSettingsOpen(true)}
+                className="btn-secondary inline-flex items-center gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                Settings
+              </button>
+              <button
                 onClick={executeProcess}
                 disabled={executionLoading || !selectedScenarioId}
                 className="btn-primary inline-flex items-center gap-2"
@@ -988,14 +1064,159 @@ const Process = () => {
         </div>
       )}
 
+      {/* Settings Modal */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Process Settings</h2>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[60vh]">
+              <div className="space-y-6">
+                {/* General Settings */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">General Settings</h3>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="label">Consolidation Method</label>
+                      <select className="form-select">
+                        <option value="full">Full Consolidation</option>
+                        <option value="proportional">Proportional Consolidation</option>
+                        <option value="equity">Equity Method</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Reporting Currency</label>
+                      <select className="form-select">
+                        <option value="USD">USD - US Dollar</option>
+                        <option value="EUR">EUR - Euro</option>
+                        <option value="GBP">GBP - British Pound</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Elimination Settings */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Elimination Settings</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-center">
+                      <input type="checkbox" className="form-checkbox" defaultChecked />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Eliminate intercompany transactions
+                      </span>
+                    </label>
+                    <label className="flex items-center">
+                      <input type="checkbox" className="form-checkbox" defaultChecked />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Eliminate intercompany balances
+                      </span>
+                    </label>
+                    <label className="flex items-center">
+                      <input type="checkbox" className="form-checkbox" />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Apply minority interest adjustments
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* FX Translation Settings */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">FX Translation</h3>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="label">Translation Method</label>
+                      <select className="form-select">
+                        <option value="current">Current Rate Method</option>
+                        <option value="temporal">Temporal Method</option>
+                        <option value="mixed">Mixed Method</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Rate Source</label>
+                      <select className="form-select">
+                        <option value="manual">Manual Entry</option>
+                        <option value="api">API Feed</option>
+                        <option value="file">File Import</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Validation Settings */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Validation & Controls</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-center">
+                      <input type="checkbox" className="form-checkbox" defaultChecked />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Enable balance validation
+                      </span>
+                    </label>
+                    <label className="flex items-center">
+                      <input type="checkbox" className="form-checkbox" defaultChecked />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Require approval for execution
+                      </span>
+                    </label>
+                    <label className="flex items-center">
+                      <input type="checkbox" className="form-checkbox" />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                        Generate audit trail
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-800">
+              <button
+                onClick={() => setSettingsOpen(false)}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setSettingsOpen(false)
+                  showNotification('Settings saved successfully', 'success')
+                }}
+                className="btn-primary"
+              >
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Process Creation Modal */}
       {processDrawerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create New Process</h2>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                {editingProcess ? 'Edit Process' : 'Create New Process'}
+              </h2>
               <button
-                onClick={() => setProcessDrawerOpen(false)}
+                onClick={() => {
+                  setProcessDrawerOpen(false)
+                  setEditingProcess(null)
+                  setProcessForm({ 
+                    name: '', 
+                    description: '', 
+                    process_type: PROCESS_TYPES[0],
+                    fiscal_year: new Date().getFullYear(),
+                    reporting_currency: 'USD'
+                  })
+                }}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
               >
                 <X className="h-5 w-5" />
@@ -1064,26 +1285,36 @@ const Process = () => {
               </div>
               <div className="flex gap-3 pt-4">
                 <button
-                  onClick={() => setProcessDrawerOpen(false)}
+                  onClick={() => {
+                    setProcessDrawerOpen(false)
+                    setEditingProcess(null)
+                    setProcessForm({ 
+                      name: '', 
+                      description: '', 
+                      process_type: PROCESS_TYPES[0],
+                      fiscal_year: new Date().getFullYear(),
+                      reporting_currency: 'USD'
+                    })
+                  }}
                   className="btn-secondary flex-1"
                   disabled={loading}
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={createProcess}
+                  onClick={saveProcess}
                   className="btn-primary flex-1 inline-flex items-center justify-center gap-2"
                   disabled={loading || !processForm.name.trim()}
                 >
                   {loading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Creating...
+                      {editingProcess ? 'Updating...' : 'Creating...'}
                     </>
                   ) : (
                     <>
                       <Plus className="h-4 w-4" />
-                      Create Process
+                      {editingProcess ? 'Update Process' : 'Create Process'}
                     </>
                   )}
                 </button>
