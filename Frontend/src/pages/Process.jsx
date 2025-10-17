@@ -298,9 +298,12 @@ const Process = () => {
   const [draggedNode, setDraggedNode] = useState(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
-  const [showGrid, setShowGrid] = useState(true)
   const [nodeLibraryOpen, setNodeLibraryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
+  const [connectionStart, setConnectionStart] = useState(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   
   // Scenario Management
   const [scenarios, setScenarios] = useState([])
@@ -362,6 +365,31 @@ const Process = () => {
       x: (event.clientX - rect.left - canvasOffset.x) / canvasZoom,
       y: (event.clientY - rect.top - canvasOffset.y) / canvasZoom
     }
+  }
+
+  // Node Navigation
+  const navigateToNodePage = (nodeType) => {
+    const nodeRoutes = {
+      'fiscal_management': '/fiscal-management',
+      'profit_loss': '/financial-statements',
+      'nci_allocation': '/consolidation',
+      'retained_earnings': '/financial-statements',
+      'fx_translation': '/forex-rates',
+      'intercompany_elimination': '/consolidation',
+      'goodwill_impairment': '/asset-register',
+      'deferred_tax': '/financial-statements',
+      'opening_balance': '/trial-balance',
+      'associate_equity_method': '/consolidation',
+      'eps_calculation': '/financial-statements',
+      'what_if_analysis': '/what-if-analysis',
+      'validation': '/audit-trail',
+      'consolidation_output': '/consolidation',
+      'report_generation': '/reports',
+      'data_input': '/trial-balance'
+    }
+    
+    const route = nodeRoutes[nodeType] || '/dashboard'
+    navigate(route)
   }
 
 
@@ -528,8 +556,8 @@ const Process = () => {
       type: nodeType,
       name: nodeTemplate.title,
       description: nodeTemplate.description,
-      x: position.x,
-      y: position.y,
+      x: position?.x || Math.random() * 300 + 50,
+      y: position?.y || Math.random() * 200 + 50,
       width: 200,
       height: 100,
       configuration: {},
@@ -538,6 +566,7 @@ const Process = () => {
 
     setCanvasNodes([...canvasNodes, newNode])
     setSelectedNode(newNode)
+    setNodeLibraryOpen(false)
   }
 
   const updateNodePosition = (nodeId, newPosition) => {
@@ -558,6 +587,64 @@ const Process = () => {
     if (selectedNode?.id === nodeId) {
       setSelectedNode(null)
     }
+  }
+
+  const startConnection = (nodeId) => {
+    setIsConnecting(true)
+    setConnectionStart(nodeId)
+  }
+
+  const completeConnection = (toNodeId) => {
+    if (isConnecting && connectionStart && connectionStart !== toNodeId) {
+      const newConnection = {
+        id: `conn_${Date.now()}`,
+        from_node_id: connectionStart,
+        to_node_id: toNodeId,
+        connection_type: 'data_flow'
+      }
+      setCanvasConnections([...canvasConnections, newConnection])
+    }
+    setIsConnecting(false)
+    setConnectionStart(null)
+  }
+
+  const handleNodeMouseDown = (e, node) => {
+    e.stopPropagation()
+    if (e.shiftKey) {
+      // Shift+click for connections
+      if (isConnecting) {
+        completeConnection(node.id)
+      } else {
+        startConnection(node.id)
+      }
+    } else {
+      // Regular click for selection and dragging
+      setSelectedNode(node)
+      setIsDragging(true)
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (rect) {
+        setDragOffset({
+          x: e.clientX - rect.left - node.x,
+          y: e.clientY - rect.top - node.y
+        })
+      }
+    }
+  }
+
+  const handleMouseMove = (e) => {
+    if (isDragging && selectedNode) {
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (rect) {
+        const newX = e.clientX - rect.left - dragOffset.x
+        const newY = e.clientY - rect.top - dragOffset.y
+        updateNodePosition(selectedNode.id, { x: newX, y: newY })
+      }
+    }
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+    setDragOffset({ x: 0, y: 0 })
   }
 
   const executeProcess = async () => {
@@ -723,25 +810,22 @@ const Process = () => {
     return (
       <div
         key={node.id}
-        className={`absolute bg-white dark:bg-gray-800 border-2 rounded-lg shadow-lg cursor-move select-none ${
+        className={`absolute bg-white dark:bg-gray-800 border-2 rounded-lg shadow-lg cursor-move select-none transition-all ${
           selectedNode?.id === node.id 
-            ? 'border-indigo-500 shadow-indigo-200 dark:shadow-indigo-800/50' 
+            ? 'border-indigo-500 shadow-indigo-200 dark:shadow-indigo-800/50 ring-2 ring-indigo-200 dark:ring-indigo-800' 
             : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300'
-        }`}
+        } ${isConnecting && connectionStart === node.id ? 'ring-2 ring-blue-400' : ''}`}
         style={{
-          left: node.x * canvasZoom + canvasOffset.x,
-          top: node.y * canvasZoom + canvasOffset.y,
-          width: node.width * canvasZoom,
-          height: node.height * canvasZoom,
-          transform: `scale(${canvasZoom})`,
-          transformOrigin: 'top left'
+          left: node.x,
+          top: node.y,
+          width: node.width,
+          height: node.height,
+          zIndex: selectedNode?.id === node.id ? 10 : 2
         }}
-        onClick={(e) => {
-          e.stopPropagation()
-          setSelectedNode(node)
-        }}
+        onMouseDown={(e) => handleNodeMouseDown(e, node)}
+        onDoubleClick={() => navigateToNodePage(node.type)}
       >
-        <div className="p-3 h-full flex flex-col">
+        <div className="p-3 h-full flex flex-col relative">
           <div className="flex items-center gap-2 mb-2">
             <span className={`flex h-6 w-6 items-center justify-center rounded ${nodeTemplate?.color || 'bg-gray-500'} text-white text-xs`}>
               <IconComponent className="h-3 w-3" />
@@ -753,17 +837,12 @@ const Process = () => {
           <p className="text-xs text-gray-600 dark:text-gray-300 flex-1 overflow-hidden">
             {node.description}
           </p>
-          {selectedNode?.id === node.id && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                deleteNode(node.id)
-              }}
-              className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
+          
+          {/* Connection Points */}
+          <div className="absolute -right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-blue-500 rounded-full opacity-0 hover:opacity-100 transition-opacity cursor-pointer" 
+               title="Connection point" />
+          <div className="absolute -left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-green-500 rounded-full opacity-0 hover:opacity-100 transition-opacity cursor-pointer" 
+               title="Connection point" />
         </div>
       </div>
     )
@@ -855,13 +934,6 @@ const Process = () => {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowGrid(!showGrid)}
-                className={`btn-secondary inline-flex items-center gap-2 ${showGrid ? 'bg-indigo-50 text-indigo-600' : ''}`}
-              >
-                <Grid className="h-4 w-4" />
-                Grid
-              </button>
-              <button
                 onClick={() => setNodeLibraryOpen(true)}
                 className="btn-secondary inline-flex items-center gap-2"
               >
@@ -877,7 +949,7 @@ const Process = () => {
               </button>
               <button
                 onClick={executeProcess}
-                disabled={executionLoading || !selectedScenarioId}
+                disabled={executionLoading || canvasNodes.length === 0}
                 className="btn-primary inline-flex items-center gap-2"
               >
                 {executionLoading ? (
@@ -885,36 +957,83 @@ const Process = () => {
                 ) : (
                   <Play className="h-4 w-4" />
                 )}
-                Execute
+                Start Simulation
               </button>
             </div>
           </div>
         </section>
 
-        {/* Canvas */}
-        <div className="relative h-[600px] rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
-          <div
-            ref={canvasRef}
-            className="absolute inset-0 cursor-crosshair"
-            style={{
-              backgroundImage: showGrid 
-                ? `radial-gradient(circle, #e5e7eb 1px, transparent 1px)`
-                : 'none',
-              backgroundSize: showGrid ? '20px 20px' : 'auto',
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              if (draggedNode) {
-                const position = getNodePosition(e)
-                addNodeToCanvas(draggedNode, position)
-                setDraggedNode(null)
-              }
-            }}
-            onDragOver={(e) => e.preventDefault()}
-            onClick={() => setSelectedNode(null)}
-          >
-            {canvasNodes.map(renderCanvasNode)}
-          </div>
+        {/* Canvas with Properties Panel */}
+        <div className="flex gap-6 h-[600px]">
+          {/* Main Canvas */}
+          <div className="flex-1 relative rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
+            <div
+              ref={canvasRef}
+              className="absolute inset-0 cursor-crosshair"
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setSelectedNode(null)
+                  if (isConnecting) {
+                    setIsConnecting(false)
+                    setConnectionStart(null)
+                  }
+                }
+              }}
+            >
+              {/* Render Connections */}
+              <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
+                {canvasConnections.map(connection => {
+                  const fromNode = canvasNodes.find(n => n.id === connection.from_node_id)
+                  const toNode = canvasNodes.find(n => n.id === connection.to_node_id)
+                  if (!fromNode || !toNode) return null
+                  
+                  const fromX = fromNode.x + fromNode.width
+                  const fromY = fromNode.y + fromNode.height / 2
+                  const toX = toNode.x
+                  const toY = toNode.y + toNode.height / 2
+                  
+                  return (
+                    <line
+                      key={connection.id}
+                      x1={fromX}
+                      y1={fromY}
+                      x2={toX}
+                      y2={toY}
+                      stroke="#4f46e5"
+                      strokeWidth="2"
+                      markerEnd="url(#arrowhead)"
+                    />
+                  )
+                })}
+                <defs>
+                  <marker
+                    id="arrowhead"
+                    markerWidth="10"
+                    markerHeight="7"
+                    refX="9"
+                    refY="3.5"
+                    orient="auto"
+                  >
+                    <polygon
+                      points="0 0, 10 3.5, 0 7"
+                      fill="#4f46e5"
+                    />
+                  </marker>
+                </defs>
+              </svg>
+              
+              {/* Render Nodes */}
+              {canvasNodes.map(renderCanvasNode)}
+              
+              {/* Connection Helper */}
+              {isConnecting && (
+                <div className="absolute top-4 left-4 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-2 rounded-lg text-sm">
+                  Hold Shift and click another node to connect
+                </div>
+              )}
+            </div>
 
           {/* Canvas Controls */}
           <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2">
@@ -944,55 +1063,78 @@ const Process = () => {
               <Maximize2 className="h-4 w-4" />
             </button>
           </div>
-        </div>
-
-        {/* Selected Node Properties */}
-        {selectedNode && (
-          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Node Properties: {selectedNode.name}
-            </h3>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="label">Name</label>
-                <input
-                  type="text"
-                  value={selectedNode.name}
-                  onChange={(e) => {
-                    setSelectedNode({ ...selectedNode, name: e.target.value })
-                    setCanvasNodes(nodes => 
-                      nodes.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n)
-                    )
-                  }}
-                  className="form-input"
-                />
+          
+          {/* Properties Panel */}
+          {selectedNode && (
+            <div className="w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Node Properties</h3>
+                <button
+                  onClick={() => setSelectedNode(null)}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <div>
-                <label className="label">Type</label>
-                <input
-                  type="text"
-                  value={selectedNode.type}
-                  disabled
-                  className="form-input bg-gray-50 dark:bg-gray-800"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="label">Description</label>
-                <textarea
-                  value={selectedNode.description}
-                  onChange={(e) => {
-                    setSelectedNode({ ...selectedNode, description: e.target.value })
-                    setCanvasNodes(nodes => 
-                      nodes.map(n => n.id === selectedNode.id ? { ...n, description: e.target.value } : n)
-                    )
-                  }}
-                  className="form-input resize-none"
-                  rows={3}
-                />
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Node Name</label>
+                  <input
+                    type="text"
+                    value={selectedNode.name}
+                    onChange={(e) => {
+                      const updatedNode = { ...selectedNode, name: e.target.value }
+                      setSelectedNode(updatedNode)
+                      setCanvasNodes(nodes => 
+                        nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
+                      )
+                    }}
+                    className="form-input"
+                  />
+                </div>
+                
+                <div>
+                  <label className="label">Description</label>
+                  <textarea
+                    value={selectedNode.description}
+                    onChange={(e) => {
+                      const updatedNode = { ...selectedNode, description: e.target.value }
+                      setSelectedNode(updatedNode)
+                      setCanvasNodes(nodes => 
+                        nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
+                      )
+                    }}
+                    className="form-input resize-none"
+                    rows={3}
+                  />
+                </div>
+                
+                <div>
+                  <label className="label">Node Type</label>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                    {selectedNode.type}
+                  </div>
+                </div>
+                
+                <div className="flex gap-2 pt-4">
+                  <button
+                    onClick={() => navigateToNodePage(selectedNode.type)}
+                    className="btn-primary flex-1 text-sm"
+                  >
+                    Open Module
+                  </button>
+                  <button
+                    onClick={() => deleteNode(selectedNode.id)}
+                    className="btn-secondary text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
-          </section>
-        )}
+          )}
+        </div>
       </div>
     )
   }
