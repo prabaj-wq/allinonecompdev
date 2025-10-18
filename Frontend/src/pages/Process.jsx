@@ -355,6 +355,7 @@ const Process = () => {
     if (!selectedCompany || !isAuthenticated) return
     
     try {
+      console.log('Fetching entities for company:', selectedCompany)
       const response = await fetch(
         `/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`,
         {
@@ -363,12 +364,31 @@ const Process = () => {
           credentials: 'include',
         }
       )
-      if (!response.ok) throw new Error('Failed to load entities')
+      if (!response.ok) {
+        console.error('Entity fetch failed with status:', response.status)
+        throw new Error(`Failed to load entities (${response.status})`)
+      }
       const data = await response.json()
-      setAvailableEntities(data.elements || [])
+      console.log('Fetched entities:', data)
+      
+      // Ensure we have the right data structure
+      const entities = data.elements || data.data || data || []
+      setAvailableEntities(entities)
+      
+      if (entities.length === 0) {
+        showNotification('No entities found. Please check your axes entity configuration.', 'warning')
+      } else {
+        console.log(`Loaded ${entities.length} entities`)
+      }
     } catch (error) {
       console.error('Failed to load entities:', error)
-      showNotification('Unable to load entities', 'error')
+      showNotification(`Unable to load entities: ${error.message}`, 'error')
+      // Set some fallback entities for testing
+      setAvailableEntities([
+        { element_code: 'ENTITY001', element_name: 'Parent Company' },
+        { element_code: 'ENTITY002', element_name: 'Subsidiary A' },
+        { element_code: 'ENTITY003', element_name: 'Subsidiary B' }
+      ])
     }
   }, [selectedCompany, isAuthenticated, getAuthHeaders])
 
@@ -441,6 +461,11 @@ const Process = () => {
   const [loading, setLoading] = useState(false)
   const [selectedSettingsNode, setSelectedSettingsNode] = useState(null)
   const [nodeConfigurations, setNodeConfigurations] = useState({})
+  const [globalEntitySettings, setGlobalEntitySettings] = useState({
+    allowedEntities: [],
+    restrictedEntities: [],
+    entityAccessMode: 'all' // 'all', 'allowed_only', 'exclude_restricted'
+  })
 
 
   // Utility Functions
@@ -450,6 +475,24 @@ const Process = () => {
   }
 
   const authHeaders = () => getAuthHeaders()
+
+  // Get filtered entities based on global settings
+  const getFilteredEntities = useCallback(() => {
+    if (!availableEntities.length) return []
+    
+    switch (globalEntitySettings.entityAccessMode) {
+      case 'allowed_only':
+        return availableEntities.filter(entity => 
+          globalEntitySettings.allowedEntities.includes(entity.element_code)
+        )
+      case 'exclude_restricted':
+        return availableEntities.filter(entity => 
+          !globalEntitySettings.restrictedEntities.includes(entity.element_code)
+        )
+      default: // 'all'
+        return availableEntities
+    }
+  }, [availableEntities, globalEntitySettings])
 
   // Execute process simulation
   const executeProcessSimulation = async () => {
@@ -1084,70 +1127,84 @@ const Process = () => {
   }
 
   // Render entity selector
-  const renderEntitySelector = () => (
-    <div className="relative">
-      <button
-        onClick={() => setEntitySelectorOpen(!entitySelectorOpen)}
-        className="btn-secondary inline-flex items-center gap-2 min-w-48"
-      >
-        <Building2 className="h-4 w-4" />
-        {selectedEntities.length === 0
-          ? 'Select Entities'
-          : selectedEntities.length === 1
-          ? `1 Entity Selected`
-          : `${selectedEntities.length} Entities Selected`
-        }
-        <ChevronDown className={`h-4 w-4 transition-transform ${
-          entitySelectorOpen ? 'rotate-180' : ''
-        }`} />
-      </button>
-      
-      {entitySelectorOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-gray-900 dark:text-white">Select Entities</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={selectAllEntities}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
-                >
-                  Select All
-                </button>
-                <button
-                  onClick={clearEntitySelection}
-                  className="text-xs text-gray-600 hover:text-gray-700 dark:text-gray-400"
-                >
-                  Clear
-                </button>
+  const renderEntitySelector = () => {
+    const filteredEntities = getFilteredEntities()
+    
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setEntitySelectorOpen(!entitySelectorOpen)}
+          className="btn-secondary inline-flex items-center gap-2 min-w-48"
+        >
+          <Building2 className="h-4 w-4" />
+          {selectedEntities.length === 0
+            ? 'Select Entities'
+            : selectedEntities.length === 1
+            ? `1 Entity Selected`
+            : `${selectedEntities.length} Entities Selected`
+          }
+          <ChevronDown className={`h-4 w-4 transition-transform ${
+            entitySelectorOpen ? 'rotate-180' : ''
+          }`} />
+        </button>
+        
+        {entitySelectorOpen && (
+          <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-900 dark:text-white">
+                  Select Entities ({filteredEntities.length} available)
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedEntities(filteredEntities.map(e => e.element_code))}
+                    className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    onClick={clearEntitySelection}
+                    className="text-xs text-gray-600 hover:text-gray-700 dark:text-gray-400"
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
-            </div>
-            
-            <div className="max-h-64 overflow-y-auto space-y-2">
-              {availableEntities.map((entity) => (
-                <label key={entity.element_code} className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedEntities.includes(entity.element_code)}
-                    onChange={() => toggleEntitySelection(entity.element_code)}
-                    className="form-checkbox mr-3"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900 dark:text-white">
-                      {entity.element_name}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {entity.element_code}
-                    </div>
-                  </div>
-                </label>
-              ))}
+              
+              {filteredEntities.length === 0 ? (
+                <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                  <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p className="text-sm">No entities available</p>
+                  <p className="text-xs">Check your entity settings or axes configuration</p>
+                </div>
+              ) : (
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {filteredEntities.map((entity) => (
+                    <label key={entity.element_code} className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedEntities.includes(entity.element_code)}
+                        onChange={() => toggleEntitySelection(entity.element_code)}
+                        className="form-checkbox mr-3"
+                      />
+                      <div className="flex-1">
+                        <div className="font-medium text-sm text-gray-900 dark:text-white">
+                          {entity.element_name}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {entity.element_code}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  )
+        )}
+      </div>
+    )
+  }
 
   // ============================================================================
   // USE EFFECTS
@@ -1640,7 +1697,8 @@ const Process = () => {
   // Settings View
   const renderSettingsView = () => {
     const selectedProcess = processes.find(p => p.id === selectedProcessId)
-    const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
+    // Show ALL nodes from NODE_LIBRARY instead of just flow nodes
+    const allNodes = NODE_LIBRARY
     
     return (
       <div className="space-y-6">
@@ -1660,7 +1718,7 @@ const Process = () => {
                   Process Settings - {selectedProcess?.name}
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Configure individual nodes and their dependencies
+                  Configure all available process nodes and their settings
                 </p>
               </div>
             </div>
@@ -1669,20 +1727,48 @@ const Process = () => {
 
         {/* Settings Content */}
         <div className="grid grid-cols-12 gap-6">
-          {/* Left Sidebar - Node List */}
+          {/* Left Sidebar - All Node List */}
           <div className="col-span-4">
             <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-              <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Process Nodes</h3>
-              <div className="space-y-2">
-                {flowNodes.map((nodeType, index) => {
-                  const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
-                  const IconComponent = nodeTemplate?.icon || Layers
-                  const isSelected = selectedSettingsNode === nodeType
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Process Configuration</h3>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {/* Entity Management - Special Settings Node */}
+                <button
+                  onClick={() => setSelectedSettingsNode('entity_management')}
+                  className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                    selectedSettingsNode === 'entity_management'
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white">
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                        Entity Management
+                      </div>
+                      <div className="text-xs text-emerald-600 dark:text-emerald-400">
+                        Global Settings
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Separator */}
+                <div className="border-t border-gray-200 dark:border-gray-700 my-3"></div>
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Process Nodes</h4>
+
+                {/* All Process Nodes */}
+                {allNodes.map((nodeTemplate, index) => {
+                  const IconComponent = nodeTemplate.icon || Layers
+                  const isSelected = selectedSettingsNode === nodeTemplate.type
                   
                   return (
                     <button
-                      key={nodeType}
-                      onClick={() => setSelectedSettingsNode(nodeType)}
+                      key={nodeTemplate.type}
+                      onClick={() => setSelectedSettingsNode(nodeTemplate.type)}
                       className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                         isSelected
                           ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
@@ -1690,15 +1776,15 @@ const Process = () => {
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeTemplate?.color || 'bg-gray-500'} text-white`}>
+                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeTemplate.color} text-white`}>
                           <IconComponent className="h-4 w-4" />
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                            {nodeTemplate?.title || nodeType}
+                            {nodeTemplate.title}
                           </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            Step {index + 1}
+                          <div className="text-xs text-indigo-600 dark:text-indigo-400">
+                            {nodeTemplate.category}
                           </div>
                         </div>
                       </div>
@@ -1735,17 +1821,161 @@ const Process = () => {
                           </div>
                         </div>
 
+                        {/* Entity Management Settings */}
+                        {selectedSettingsNode === 'entity_management' && (
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Access Control</h4>
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="label">Entity Access Mode</label>
+                                  <select
+                                    value={globalEntitySettings.entityAccessMode}
+                                    onChange={(e) => setGlobalEntitySettings(prev => ({
+                                      ...prev,
+                                      entityAccessMode: e.target.value
+                                    }))}
+                                    className="form-select"
+                                  >
+                                    <option value="all">Show All Entities</option>
+                                    <option value="allowed_only">Show Only Allowed Entities</option>
+                                    <option value="exclude_restricted">Exclude Restricted Entities</option>
+                                  </select>
+                                </div>
+
+                                {globalEntitySettings.entityAccessMode === 'allowed_only' && (
+                                  <div>
+                                    <label className="label">Allowed Entities</label>
+                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                      {availableEntities.map(entity => (
+                                        <label key={entity.element_code} className="flex items-center p-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={globalEntitySettings.allowedEntities.includes(entity.element_code)}
+                                            onChange={(e) => {
+                                              const allowed = globalEntitySettings.allowedEntities
+                                              if (e.target.checked) {
+                                                setGlobalEntitySettings(prev => ({
+                                                  ...prev,
+                                                  allowedEntities: [...allowed, entity.element_code]
+                                                }))
+                                              } else {
+                                                setGlobalEntitySettings(prev => ({
+                                                  ...prev,
+                                                  allowedEntities: allowed.filter(code => code !== entity.element_code)
+                                                }))
+                                              }
+                                            }}
+                                            className="form-checkbox mr-2"
+                                          />
+                                          <span className="text-sm">{entity.element_name} ({entity.element_code})</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {globalEntitySettings.entityAccessMode === 'exclude_restricted' && (
+                                  <div>
+                                    <label className="label">Restricted Entities</label>
+                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                      {availableEntities.map(entity => (
+                                        <label key={entity.element_code} className="flex items-center p-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={globalEntitySettings.restrictedEntities.includes(entity.element_code)}
+                                            onChange={(e) => {
+                                              const restricted = globalEntitySettings.restrictedEntities
+                                              if (e.target.checked) {
+                                                setGlobalEntitySettings(prev => ({
+                                                  ...prev,
+                                                  restrictedEntities: [...restricted, entity.element_code]
+                                                }))
+                                              } else {
+                                                setGlobalEntitySettings(prev => ({
+                                                  ...prev,
+                                                  restrictedEntities: restricted.filter(code => code !== entity.element_code)
+                                                }))
+                                              }
+                                            }}
+                                            className="form-checkbox mr-2"
+                                          />
+                                          <span className="text-sm">{entity.element_name} ({entity.element_code})</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Status</h4>
+                              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Total Entities:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{availableEntities.length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Available:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{getFilteredEntities().length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Selected:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{selectedEntities.length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Mode:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white capitalize">
+                                      {globalEntitySettings.entityAccessMode.replace('_', ' ')}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Quick Actions</h4>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    fetchAvailableEntities()
+                                    showNotification('Entities refreshed from axes system', 'success')
+                                  }}
+                                  className="btn-secondary text-sm"
+                                >
+                                  Refresh Entities
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setGlobalEntitySettings({
+                                      allowedEntities: [],
+                                      restrictedEntities: [],
+                                      entityAccessMode: 'all'
+                                    })
+                                    showNotification('Entity settings reset', 'success')
+                                  }}
+                                  className="btn-secondary text-sm"
+                                >
+                                  Reset Settings
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Dynamic Node Configuration */}
                         <div className="space-y-6">
                           {/* Entity Configuration - Common for most nodes */}
-                          {selectedSettingsNode !== 'fiscal_management' && (
+                          {selectedSettingsNode !== 'fiscal_management' && selectedSettingsNode !== 'entity_management' && (
                             <div>
                               <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Configuration</h4>
                               <div className="grid grid-cols-2 gap-6">
                                 <div>
                                   <label className="label">Included Entities</label>
                                   <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                    {availableEntities.map(entity => (
+                                    {getFilteredEntities().map(entity => (
                                       <label key={entity.element_code} className="flex items-center p-1">
                                         <input
                                           type="checkbox"
@@ -1772,7 +2002,7 @@ const Process = () => {
                                 <div>
                                   <label className="label">Excluded Entities</label>
                                   <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                    {availableEntities.map(entity => (
+                                    {getFilteredEntities().map(entity => (
                                       <label key={entity.element_code} className="flex items-center p-1">
                                         <input
                                           type="checkbox"
