@@ -93,6 +93,7 @@ const Process = () => {
   const [processes, setProcesses] = useState([])
   const [loading, setLoading] = useState(false)
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false)
+  const [selectedProcess, setSelectedProcess] = useState(null)
   const [processForm, setProcessForm] = useState({
     name: '',
     description: '',
@@ -110,55 +111,39 @@ const Process = () => {
     setTimeout(() => setNotification(null), 5000)
   }
 
-  // Initialize with demo processes
-  useEffect(() => {
-    console.log('🚀 Process module initializing for company:', selectedCompany)
+  // Fetch processes from database
+  const fetchProcesses = async () => {
+    if (!selectedCompany) return
     
     try {
-      const demoProcesses = [
-        {
-          id: 'demo-1',
-          name: 'Actuals Process',
-          description: 'Actual financial consolidation process for monthly reporting',
-          type: 'actuals',
-          status: 'active',
-          fiscal_year: new Date().getFullYear(),
-          reporting_currency: 'USD',
-          company: selectedCompany,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'demo-2', 
-          name: 'Budget Process',
-          description: 'Budget planning and consolidation process',
-          type: 'budget',
-          status: 'draft',
-          fiscal_year: new Date().getFullYear(),
-          reporting_currency: 'USD',
-          company: selectedCompany,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'demo-3',
-          name: 'Forecast Process',
-          description: 'Financial forecasting and projection process',
-          type: 'forecast',
-          status: 'active',
-          fiscal_year: new Date().getFullYear(),
-          reporting_currency: 'USD',
-          company: selectedCompany,
-          created_at: new Date().toISOString()
-        }
-      ]
+      setLoading(true)
+      console.log('🚀 Fetching processes for company:', selectedCompany)
       
-      console.log('📋 Setting demo processes:', demoProcesses)
-      setProcesses(demoProcesses)
+      const response = await fetch(`/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      console.log('📋 Fetched processes:', data)
+      setProcesses(data || [])
     } catch (error) {
-      console.error('❌ Error initializing processes:', error)
-      showNotification('Failed to initialize processes', 'error')
+      console.error('❌ Error fetching processes:', error)
+      showNotification('Failed to load processes', 'error')
+      setProcesses([]) // Set empty array on error
     } finally {
       setLoading(false)
     }
+  }
+
+  useEffect(() => {
+    fetchProcesses()
   }, [selectedCompany])
 
   // Save Process
@@ -171,28 +156,47 @@ const Process = () => {
     try {
       setLoading(true)
       
-      const newProcess = {
-        id: editingProcess?.id || `process-${Date.now()}`,
+      const processData = {
         name: processForm.name,
         description: processForm.description,
-        type: processForm.type,
+        process_type: processForm.type,
         fiscal_year: processForm.fiscal_year,
         reporting_currency: processForm.reporting_currency,
-        settings: processForm.settings,
-        company: selectedCompany,
-        status: 'active',
-        created_at: editingProcess?.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        settings: processForm.settings
       }
       
-      // Update local state
+      let response
       if (editingProcess) {
-        setProcesses(prev => prev.map(p => p.id === editingProcess.id ? newProcess : p))
-        showNotification('Process updated successfully', 'success')
+        // Update existing process
+        response = await fetch(`/api/financial-process/processes/${editingProcess.id}?company_name=${encodeURIComponent(selectedCompany)}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(processData)
+        })
       } else {
-        setProcesses(prev => [...prev, newProcess])
-        showNotification('Process created successfully', 'success')
+        // Create new process
+        response = await fetch(`/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(processData)
+        })
       }
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const savedProcess = await response.json()
+      console.log('💾 Process saved:', savedProcess)
+      
+      // Refresh the processes list
+      await fetchProcesses()
+      
+      showNotification(editingProcess ? 'Process updated successfully' : 'Process created successfully', 'success')
       
       setProcessDrawerOpen(false)
       setEditingProcess(null)
@@ -278,8 +282,10 @@ const Process = () => {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={() => {
+                    console.log('🔧 Opening workflow for process:', process)
+                    setSelectedProcess(process)
+                    setCurrentView('workflow')
                     showNotification(`Opening ${process.name} workflow`, 'success')
-                    // Navigate to process workflow view
                   }}
                   className="btn-primary text-sm flex-1"
                 >
@@ -302,6 +308,92 @@ const Process = () => {
     </div>
   )
 
+  // Render workflow view
+  const renderWorkflowView = () => (
+    <div className="space-y-6">
+      {/* Workflow Header */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => {
+                setCurrentView('overview')
+                setSelectedProcess(null)
+              }}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+            >
+              <ChevronRight className="h-5 w-5 rotate-180" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {selectedProcess?.name} - Workflow
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400">
+                Design and manage your financial process workflow
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-secondary inline-flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Settings
+            </button>
+            <button className="btn-primary inline-flex items-center gap-2">
+              <Play className="h-4 w-4" />
+              Run Process
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Workflow Canvas */}
+      <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Process Workflow</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Drag and drop nodes to build your financial process workflow
+          </p>
+        </div>
+        
+        <div className="p-6">
+          {/* Node Library */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Node Library</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {NODE_LIBRARY.map((node) => {
+                const IconComponent = node.icon
+                return (
+                  <div
+                    key={node.type}
+                    className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-600 cursor-pointer transition-colors"
+                    title={node.description}
+                  >
+                    <div className={`w-8 h-8 rounded-lg ${node.color} flex items-center justify-center mb-2`}>
+                      <IconComponent className="h-4 w-4 text-white" />
+                    </div>
+                    <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
+                      {node.title}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Canvas Area */}
+          <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 min-h-96 bg-gray-50 dark:bg-gray-900/50">
+            <div className="text-center text-gray-500 dark:text-gray-400">
+              <Workflow className="h-12 w-12 mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">Workflow Canvas</h3>
+              <p className="text-sm">Drag nodes from the library above to start building your workflow</p>
+              <p className="text-xs mt-2">Full canvas functionality coming soon...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+
   // Show loading if company is not selected yet
   if (!selectedCompany) {
     return (
@@ -312,6 +404,11 @@ const Process = () => {
         </div>
       </div>
     )
+  }
+
+  // Render based on current view
+  if (currentView === 'workflow' && selectedProcess) {
+    return renderWorkflowView()
   }
 
   return (
