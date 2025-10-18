@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
+import { useAuth } from '../contexts/AuthContext'
 import {
   Plus, Settings, Play, Pause, RotateCcw, ChevronRight, X,
   Building2, TrendingUp, Users, Repeat, Globe, Link, Target,
@@ -86,6 +87,7 @@ const NODE_LIBRARY = [
 
 const Process = () => {
   const { selectedCompany } = useCompany()
+  const { getAuthHeaders } = useAuth()
   const navigate = useNavigate()
 
   // Main State
@@ -123,11 +125,18 @@ const Process = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders()
         }
       })
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please log in again.')
+        } else if (response.status === 404) {
+          throw new Error('Company database not found.')
+        } else {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
       }
       
       const data = await response.json()
@@ -135,7 +144,7 @@ const Process = () => {
       setProcesses(data || [])
     } catch (error) {
       console.error('❌ Error fetching processes:', error)
-      showNotification('Failed to load processes', 'error')
+      showNotification(error.message || 'Failed to load processes', 'error')
       setProcesses([]) // Set empty array on error
     } finally {
       setLoading(false)
@@ -143,8 +152,10 @@ const Process = () => {
   }
 
   useEffect(() => {
-    fetchProcesses()
-  }, [selectedCompany])
+    if (selectedCompany && getAuthHeaders) {
+      fetchProcesses()
+    }
+  }, [selectedCompany, getAuthHeaders])
 
   // Save Process
   const saveProcess = async () => {
@@ -172,6 +183,7 @@ const Process = () => {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
+            ...getAuthHeaders()
           },
           body: JSON.stringify(processData)
         })
@@ -181,13 +193,21 @@ const Process = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...getAuthHeaders()
           },
           body: JSON.stringify(processData)
         })
       }
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please log in again.')
+        } else if (response.status === 404) {
+          throw new Error('Company database not found.')
+        } else {
+          const errorText = await response.text()
+          throw new Error(`Failed to save process: ${errorText || response.status}`)
+        }
       }
       
       const savedProcess = await response.json()
@@ -210,7 +230,7 @@ const Process = () => {
       })
     } catch (error) {
       console.error('Failed to save process:', error)
-      showNotification('Failed to save process', 'error')
+      showNotification(error.message || 'Failed to save process', 'error')
     } finally {
       setLoading(false)
     }
@@ -394,13 +414,15 @@ const Process = () => {
     </div>
   )
 
-  // Show loading if company is not selected yet
-  if (!selectedCompany) {
+  // Show loading if company is not selected yet or auth is not ready
+  if (!selectedCompany || !getAuthHeaders) {
     return (
       <div className="flex items-center justify-center min-h-96">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-500 dark:text-gray-400">Loading company context...</p>
+          <p className="text-gray-500 dark:text-gray-400">
+            {!selectedCompany ? 'Loading company context...' : 'Loading authentication...'}
+          </p>
         </div>
       </div>
     )
