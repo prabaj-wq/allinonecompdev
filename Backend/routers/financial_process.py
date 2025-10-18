@@ -72,7 +72,7 @@ def ensure_financial_tables(conn):
         )
     """)
     
-    # Create other essential tables
+    # Create financial_process_nodes table to match the model
     cur.execute("""
         CREATE TABLE IF NOT EXISTS financial_process_nodes (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,6 +84,7 @@ def ensure_financial_tables(conn):
             y FLOAT DEFAULT 0,
             width FLOAT DEFAULT 200,
             height FLOAT DEFAULT 100,
+            canvas_mode VARCHAR(50) DEFAULT 'entity',
             configuration JSONB DEFAULT '{}',
             is_active BOOLEAN DEFAULT true,
             sequence INTEGER DEFAULT 0,
@@ -92,7 +93,49 @@ def ensure_financial_tables(conn):
         )
     """)
     
+    # Create process_connections table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS process_connections (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            from_node_id UUID REFERENCES financial_process_nodes(id) ON DELETE CASCADE,
+            to_node_id UUID REFERENCES financial_process_nodes(id) ON DELETE CASCADE,
+            connection_type VARCHAR(50) DEFAULT 'data_flow',
+            conditions JSONB DEFAULT '{}',
+            transformation_rules JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    
+    # Create process_scenarios table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS process_scenarios (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            scenario_type VARCHAR(50) DEFAULT 'actual',
+            status VARCHAR(50) DEFAULT 'draft',
+            version_number INTEGER DEFAULT 1,
+            fx_rate_overrides JSONB DEFAULT '{}',
+            custom_parameters JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    
     conn.commit()
+
+def ensure_tables_via_sqlalchemy(company_name: str):
+    """Ensure tables exist using direct connection."""
+    db_name = normalize_company_db_name(company_name)
+    try:
+        conn = psycopg2.connect(database=db_name, **get_db_config())
+        ensure_financial_tables(conn)
+        conn.close()
+    except Exception as e:
+        print(f"Warning: Could not ensure tables for {company_name}: {e}")
 
 @contextmanager
 def company_connection(company_name: str):
@@ -251,47 +294,87 @@ async def create_process(
 async def get_process(
     process_id: str,
     company_name: str = Query(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Get process details with nodes and connections"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        
-        # Get process
-        process_query = text(f"""
-            SELECT * FROM {company_db_name}.financial_processes 
-            WHERE id = :process_id
-        """)
-        
-        process_result = db.execute(process_query, {"process_id": process_id})
-        process = dict(process_result.fetchone()._mapping)
-        
-        # Get nodes
-        nodes_query = text(f"""
-            SELECT * FROM {company_db_name}.process_nodes 
-            WHERE process_id = :process_id
-            ORDER BY sequence
-        """)
-        
-        nodes_result = db.execute(nodes_query, {"process_id": process_id})
-        nodes = [dict(row._mapping) for row in nodes_result]
-        
-        # Get connections
-        connections_query = text(f"""
-            SELECT * FROM {company_db_name}.process_connections 
-            WHERE process_id = :process_id
-        """)
-        
-        connections_result = db.execute(connections_query, {"process_id": process_id})
-        connections = [dict(row._mapping) for row in connections_result]
-        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cur.execute(
+                """
+                SELECT id, name, description, process_type, status, fiscal_year, reporting_currency,
+                       settings, created_at, updated_at
+                FROM financial_processes
+                WHERE id = %s
+                """,
+                (process_id,)
+            )
+            process_row = cur.fetchone()
+            if not process_row:
+                raise HTTPException(status_code=404, detail="Process not found")
+
+            cur.execute(
+                """
+                SELECT id, process_id, node_type, name, description, x, y, width, height,
+                       canvas_mode, configuration, is_active, sequence, created_at, updated_at
+                FROM financial_process_nodes
+                WHERE process_id = %s
+                ORDER BY sequence
+                """,
+                (process_id,)
+            )
+            node_rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT id, process_id, from_node_id, to_node_id, connection_type,
+                       conditions, transformation_rules, created_at, updated_at
+                FROM process_connections
+                WHERE process_id = %s
+                """,
+                (process_id,)
+            )
+            connection_rows = cur.fetchall()
+
+        def _convert_timestamps(row):
+            converted = dict(row)
+            for key in ["created_at", "updated_at"]:
+                if key in converted and converted[key] is not None:
+                    converted[key] = converted[key].isoformat()
+            return converted
+
+        process = _convert_timestamps(process_row)
+        process["id"] = str(process["id"])
+
+        nodes = []
+        for row in node_rows:
+            node = _convert_timestamps(row)
+            node["id"] = str(node["id"])
+            node["process_id"] = str(node["process_id"])
+            if node.get("from_node_id") is not None:
+                node["from_node_id"] = str(node["from_node_id"])
+            if node.get("to_node_id") is not None:
+                node["to_node_id"] = str(node["to_node_id"])
+            nodes.append(node)
+
+        connections = []
+        for row in connection_rows:
+            connection = _convert_timestamps(row)
+            connection["id"] = str(connection["id"])
+            connection["process_id"] = str(connection["process_id"])
+            connection["from_node_id"] = str(connection["from_node_id"])
+            connection["to_node_id"] = str(connection["to_node_id"])
+            connections.append(connection)
+
         return {
             "process": process,
             "nodes": nodes,
             "connections": connections
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching process: {str(e)}")
 
@@ -303,127 +386,188 @@ async def get_process(
 async def create_node(
     process_id: str,
     company_name: str = Query(...),
-    node_data: NodeCreate = Body(...),
-    db: Session = Depends(get_db),
+    node_data: Dict[str, Any] = Body(...),
     current_user = Depends(get_current_active_user)
 ):
     """Create a new process node"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        node_id = str(uuid.uuid4())
-        
-        query = text(f"""
-            INSERT INTO {company_db_name}.process_nodes 
-            (id, process_id, node_type, name, description, x, y, configuration, created_at, updated_at)
-            VALUES (:id, :process_id, :node_type, :name, :description, :x, :y, :configuration, NOW(), NOW())
-            RETURNING id, node_type, name, x, y
-        """)
-        
-        result = db.execute(query, {
-            "id": node_id,
-            "process_id": process_id,
-            "node_type": node_data.node_type,
-            "name": node_data.name,
-            "description": node_data.description,
-            "x": node_data.x,
-            "y": node_data.y,
-            "configuration": json.dumps(node_data.configuration)
-        })
-        
-        db.commit()
-        node = dict(result.fetchone()._mapping)
-        
-        return {"node": node}
-        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            node_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO financial_process_nodes 
+                (id, process_id, node_type, name, description, x, y, sequence, canvas_mode, configuration, is_active, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+                RETURNING id, node_type, name, description, x, y, canvas_mode
+                """,
+                (
+                    node_id,
+                    process_id,
+                    node_data.get("node_type") or node_data.get("type"),
+                    node_data.get("name"),
+                    node_data.get("description", ""),
+                    node_data.get("x_position") or node_data.get("x", 100),
+                    node_data.get("y_position") or node_data.get("y", 100),
+                    node_data.get("sequence", 1),
+                    node_data.get("canvas_mode", "entity"),
+                    json.dumps(node_data.get("configuration", {}))
+                )
+            )
+            saved_node = cur.fetchone()
+            conn.commit()
+
+        if not saved_node:
+            raise HTTPException(status_code=500, detail="Failed to create node")
+
+        saved_node = dict(saved_node)
+        saved_node["id"] = node_id
+        return saved_node
+
+    except HTTPException:
+        raise
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating node: {str(e)}")
 
-@router.put("/processes/{process_id}/nodes/{node_id}")
+@router.put("/nodes/{node_id}")
 async def update_node(
-    process_id: str,
     node_id: str,
     company_name: str = Query(...),
     node_data: Dict[str, Any] = Body(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Update a process node"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        
-        # Build update query dynamically
-        update_fields = []
-        params = {"node_id": node_id, "process_id": process_id}
-        
+        update_clauses = []
+        values = []
+
         for key, value in node_data.items():
-            if key in ['name', 'description', 'x', 'y', 'configuration', 'is_active']:
-                update_fields.append(f"{key} = :{key}")
-                if key == 'configuration':
-                    params[key] = json.dumps(value)
+            if key == "x_position":
+                update_clauses.append("x = %s")
+                values.append(value)
+            elif key == "y_position":
+                update_clauses.append("y = %s")
+                values.append(value)
+            elif key in ["name", "description", "x", "y", "configuration", "is_active", "canvas_mode", "sequence"]:
+                update_clauses.append(f"{key} = %s")
+                if key == "configuration":
+                    values.append(json.dumps(value))
                 else:
-                    params[key] = value
-        
-        if not update_fields:
+                    values.append(value)
+
+        if not update_clauses:
             raise HTTPException(status_code=400, detail="No valid fields to update")
-        
-        query = text(f"""
-            UPDATE {company_db_name}.process_nodes 
-            SET {', '.join(update_fields)}, updated_at = NOW()
-            WHERE id = :node_id AND process_id = :process_id
-            RETURNING id, name, x, y
-        """)
-        
-        result = db.execute(query, params)
-        db.commit()
-        
-        updated_node = result.fetchone()
+
+        values.append(node_id)
+
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            query = f"""
+                UPDATE financial_process_nodes
+                SET {', '.join(update_clauses)}, updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, name, x, y, description, canvas_mode
+            """
+            cur.execute(query, tuple(values))
+            updated_node = cur.fetchone()
+            conn.commit()
+
         if not updated_node:
             raise HTTPException(status_code=404, detail="Node not found")
-        
-        return {"node": dict(updated_node._mapping)}
-        
+
+        node = dict(updated_node)
+        node["id"] = str(node["id"])
+        return {"node": node}
+
+    except HTTPException:
+        raise
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"Error updating node: {str(e)}")
 
-@router.delete("/processes/{process_id}/nodes/{node_id}")
+@router.delete("/nodes/{node_id}")
 async def delete_node(
-    process_id: str,
     node_id: str,
     company_name: str = Query(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Delete a process node"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        
-        # Delete connections first
-        delete_connections_query = text(f"""
-            DELETE FROM {company_db_name}.process_connections 
-            WHERE from_node_id = :node_id OR to_node_id = :node_id
-        """)
-        
-        db.execute(delete_connections_query, {"node_id": node_id})
-        
-        # Delete node
-        delete_node_query = text(f"""
-            DELETE FROM {company_db_name}.process_nodes 
-            WHERE id = :node_id AND process_id = :process_id
-        """)
-        
-        result = db.execute(delete_node_query, {"node_id": node_id, "process_id": process_id})
-        db.commit()
-        
-        if result.rowcount == 0:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                DELETE FROM process_connections
+                WHERE from_node_id = %s OR to_node_id = %s
+                """,
+                (node_id, node_id)
+            )
+            cur.execute(
+                """
+                DELETE FROM financial_process_nodes
+                WHERE id = %s
+                """,
+                (node_id,)
+            )
+            deleted = cur.rowcount
+            conn.commit()
+
+        if deleted == 0:
             raise HTTPException(status_code=404, detail="Node not found")
-        
+
         return {"message": "Node deleted successfully"}
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting node: {str(e)}")
+
+# ============================================================================
+# CONNECTION MANAGEMENT
+# ============================================================================
+
+@router.post("/processes/{process_id}/connections")
+async def create_connection(
+    process_id: str,
+    company_name: str = Query(...),
+    connection_data: Dict[str, Any] = Body(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Create a connection between two nodes"""
+    try:
+        connection_id = str(uuid.uuid4())
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                """
+                INSERT INTO process_connections 
+                (id, process_id, from_node_id, to_node_id, connection_type, conditions, transformation_rules, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING id, from_node_id, to_node_id, connection_type
+                """,
+                (
+                    connection_id,
+                    process_id,
+                    connection_data.get("from_node_id"),
+                    connection_data.get("to_node_id"),
+                    connection_data.get("connection_type", "data_flow"),
+                    json.dumps(connection_data.get("conditions", {})),
+                    json.dumps(connection_data.get("transformation_rules", {}))
+                )
+            )
+            saved_connection = cur.fetchone()
+            conn.commit()
+
+        if not saved_connection:
+            raise HTTPException(status_code=500, detail="Failed to create connection")
+
+        connection = dict(saved_connection)
+        connection["id"] = connection_id
+        return connection
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating connection: {str(e)}")
 
 # ============================================================================
 # SCENARIO MANAGEMENT
@@ -433,26 +577,36 @@ async def delete_node(
 async def get_scenarios(
     process_id: str,
     company_name: str = Query(...),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ):
     """Get all scenarios for a process"""
     try:
-        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
-        
-        query = text(f"""
-            SELECT id, name, description, scenario_type, status, version_number,
-                   fx_rate_overrides, custom_parameters, created_at
-            FROM {company_db_name}.process_scenarios
-            WHERE process_id = :process_id
-            ORDER BY created_at DESC
-        """)
-        
-        result = db.execute(query, {"process_id": process_id})
-        scenarios = [dict(row._mapping) for row in result]
-        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(
+                """
+                SELECT id, name, description, scenario_type, status, version_number,
+                       fx_rate_overrides, custom_parameters, created_at, updated_at
+                FROM process_scenarios
+                WHERE process_id = %s
+                ORDER BY created_at DESC
+                """,
+                (process_id,)
+            )
+            rows = cur.fetchall()
+
+        scenarios = []
+        for row in rows:
+            scenario = dict(row)
+            scenario["id"] = str(scenario["id"])
+            if scenario.get("created_at") is not None:
+                scenario["created_at"] = scenario["created_at"].isoformat()
+            if scenario.get("updated_at") is not None:
+                scenario["updated_at"] = scenario["updated_at"].isoformat()
+            scenarios.append(scenario)
+
         return {"scenarios": scenarios}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching scenarios: {str(e)}")
 
