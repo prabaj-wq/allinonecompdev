@@ -53,7 +53,7 @@ def normalize_company_db_name(company_name: str) -> str:
 def ensure_financial_tables(conn):
     """Ensure financial process tables exist in the company database."""
     cur = conn.cursor()
-    
+
     # Create financial_processes table if it doesn't exist
     cur.execute("""
         CREATE TABLE IF NOT EXISTS financial_processes (
@@ -71,7 +71,17 @@ def ensure_financial_tables(conn):
             updated_at TIMESTAMP DEFAULT NOW()
         )
     """)
-    
+
+    # Backfill newer columns that might be missing on existing databases
+    cur.execute("""
+        ALTER TABLE financial_processes
+        ADD COLUMN IF NOT EXISTS canvas_config JSONB DEFAULT '{}'
+    """)
+    cur.execute("""
+        ALTER TABLE financial_processes
+        ADD COLUMN IF NOT EXISTS base_scenario_id UUID
+    """)
+
     # Create financial_process_nodes table to match the model
     cur.execute("""
         CREATE TABLE IF NOT EXISTS financial_process_nodes (
@@ -92,7 +102,20 @@ def ensure_financial_tables(conn):
             updated_at TIMESTAMP DEFAULT NOW()
         )
     """)
-    
+
+    cur.execute("""
+        ALTER TABLE financial_process_nodes
+        ADD COLUMN IF NOT EXISTS width FLOAT DEFAULT 200
+    """)
+    cur.execute("""
+        ALTER TABLE financial_process_nodes
+        ADD COLUMN IF NOT EXISTS height FLOAT DEFAULT 100
+    """)
+    cur.execute("""
+        ALTER TABLE financial_process_nodes
+        ADD COLUMN IF NOT EXISTS canvas_mode VARCHAR(50) DEFAULT 'entity'
+    """)
+
     # Create process_connections table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS process_connections (
@@ -107,7 +130,20 @@ def ensure_financial_tables(conn):
             updated_at TIMESTAMP DEFAULT NOW()
         )
     """)
-    
+
+    cur.execute("""
+        ALTER TABLE process_connections
+        ADD COLUMN IF NOT EXISTS conditions JSONB DEFAULT '{}'
+    """)
+    cur.execute("""
+        ALTER TABLE process_connections
+        ADD COLUMN IF NOT EXISTS transformation_rules JSONB DEFAULT '{}'
+    """)
+    cur.execute("""
+        ALTER TABLE process_connections
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()
+    """)
+
     # Create process_scenarios table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS process_scenarios (
@@ -124,7 +160,20 @@ def ensure_financial_tables(conn):
             updated_at TIMESTAMP DEFAULT NOW()
         )
     """)
-    
+
+    cur.execute("""
+        ALTER TABLE process_scenarios
+        ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft'
+    """)
+    cur.execute("""
+        ALTER TABLE process_scenarios
+        ADD COLUMN IF NOT EXISTS version_number INTEGER DEFAULT 1
+    """)
+    cur.execute("""
+        ALTER TABLE process_scenarios
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()
+    """)
+
     conn.commit()
 
 def ensure_tables_via_sqlalchemy(company_name: str):
