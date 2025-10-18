@@ -1,121 +1,20 @@
-
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import {
-  Upload,
-  Save,
-  Trash2,
-  Edit,
-  CheckCircle,
-  AlertCircle,
-  FileSpreadsheet,
-  Building2,
-  Layers,
-  Plus,
-  Settings,
-  X,
-  ChevronRight,
-  CirclePlus,
-  Loader2,
-  GitBranch,
-  Repeat,
-  Layout,
-  BarChart3,
-  Play,
-  Pause,
-  Square,
-  Eye,
-  EyeOff,
-  Copy,
-  Download,
-  Filter,
-  Search,
-  Calendar,
-  DollarSign,
-  TrendingUp,
-  Target,
-  Zap,
-  Globe,
-  Users,
-  PieChart,
-  Activity,
-  Database,
-  Link,
-  Workflow,
-  MousePointer,
-  Move,
-  RotateCcw,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  Grid,
-  Layers3,
-  BookOpen,
-  ArrowRight,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  PlayCircle,
-  StopCircle
+  Plus, Settings, Play, Pause, RotateCcw, ChevronRight, X,
+  Building2, TrendingUp, Users, Repeat, Globe, Link, Target,
+  DollarSign, Calendar, PieChart, Zap, AlertCircle, BarChart3,
+  FileSpreadsheet, BookOpen, Upload, Layers, Workflow, Loader2
 } from 'lucide-react'
 
-// Define process flow categories
-const ENTITY_FLOW = [
-  'data_input',
-  'journal_entry',
-  'fx_translation',
-  'deferred_tax',
-  'profit_loss',
-  'retained_earnings',
-  'validation',
-  'report_generation'
-]
-
-const CONSOLIDATION_FLOW = [
-  'data_input',
-  'intercompany_elimination',
-  'nci_allocation',
-  'goodwill_impairment',
-  'consolidation_output',
-  'report_generation'
-]
-
-// Node execution status
-const NODE_STATUS = {
-  PENDING: 'pending',
-  RUNNING: 'running',
-  COMPLETED: 'completed',
-  ERROR: 'error'
-}
-
-const createBezierPath = (fromX, fromY, toX, toY) => {
-  const dx = Math.abs(toX - fromX)
-  const control = Math.max(dx * 0.5, 80)
-  const controlPoint1X = fromX + control
-  const controlPoint2X = toX - control
-  return `M ${fromX},${fromY} C ${controlPoint1X},${fromY} ${controlPoint2X},${toY} ${toX},${toY}`
-}
-
-const getNodeAnchorPosition = (node, side = 'out') => {
-  if (!node) {
-    return { x: 0, y: 0 }
-  }
-
-  const width = node.width ?? 200
-  const height = node.height ?? 100
-  const x = side === 'out' ? node.x + width : node.x
-  const y = node.y + height / 2
-
-  return { x, y }
-}
-
+// Node Library
 const NODE_LIBRARY = [
   {
     type: 'data_input',
     title: 'Data Input',
-    description: 'Import financial data from various sources',
+    description: 'Import and validate financial data from various sources',
     icon: Upload,
     category: 'Input',
     color: 'bg-blue-500'
@@ -123,7 +22,7 @@ const NODE_LIBRARY = [
   {
     type: 'profit_loss',
     title: 'Profit & Loss Calculation',
-    description: 'Calculate profit for entity, group, segments with margins',
+    description: 'Calculate comprehensive P&L statements with detailed breakdowns',
     icon: TrendingUp,
     category: 'Calculation',
     color: 'bg-green-500'
@@ -131,7 +30,7 @@ const NODE_LIBRARY = [
   {
     type: 'nci_allocation',
     title: 'NCI Handling',
-    description: 'Non-controlling interest measurement and allocation',
+    description: 'Manage Non-Controlling Interest allocations and calculations',
     icon: Users,
     category: 'Processing',
     color: 'bg-purple-500'
@@ -139,7 +38,7 @@ const NODE_LIBRARY = [
   {
     type: 'retained_earnings',
     title: 'Retained Earnings Rollforward',
-    description: 'Roll-forward retained earnings with adjustments',
+    description: 'Calculate retained earnings movements and rollforward',
     icon: Repeat,
     category: 'Processing',
     color: 'bg-orange-500'
@@ -147,7 +46,7 @@ const NODE_LIBRARY = [
   {
     type: 'fx_translation',
     title: 'FX Translation',
-    description: 'Foreign currency translation and adjustments',
+    description: 'Foreign exchange translation and currency conversion',
     icon: Globe,
     category: 'Processing',
     color: 'bg-cyan-500'
@@ -163,7 +62,7 @@ const NODE_LIBRARY = [
   {
     type: 'goodwill_impairment',
     title: 'Goodwill & Fair Value',
-    description: 'Goodwill calculation and fair value adjustments',
+    description: 'Goodwill impairment testing and fair value adjustments',
     icon: Target,
     category: 'Processing',
     color: 'bg-indigo-500'
@@ -171,352 +70,41 @@ const NODE_LIBRARY = [
   {
     type: 'deferred_tax',
     title: 'Deferred Taxes',
-    description: 'Calculate deferred tax impacts and effects',
+    description: 'Calculate deferred tax assets and liabilities',
     icon: DollarSign,
     category: 'Processing',
     color: 'bg-yellow-500'
   },
   {
-    type: 'opening_balance',
-    title: 'Opening Balance Adjustments',
-    description: 'Adjust opening balances for consolidation',
-    icon: Calendar,
-    category: 'Processing',
-    color: 'bg-pink-500'
-  },
-  {
-    type: 'associate_equity_method',
-    title: 'Associate/JV Accounting',
-    description: 'Equity method accounting for associates and JVs',
-    icon: Building2,
-    category: 'Processing',
-    color: 'bg-teal-500'
-  },
-  {
-    type: 'eps_calculation',
-    title: 'EPS Calculation',
-    description: 'Weighted average shares and EPS calculation',
-    icon: PieChart,
-    category: 'Calculation',
-    color: 'bg-emerald-500'
-  },
-  {
-    type: 'what_if_analysis',
-    title: 'What-If Simulation',
-    description: 'Run scenarios with different assumptions',
-    icon: Zap,
-    category: 'Analysis',
-    color: 'bg-violet-500'
-  },
-  {
-    type: 'validation',
-    title: 'Validation & Alerts',
-    description: 'Validate balances and generate alerts',
-    icon: AlertCircle,
-    category: 'Control',
-    color: 'bg-amber-500'
-  },
-  {
-    type: 'consolidation_output',
-    title: 'Consolidation Output',
-    description: 'Generate consolidated financial statements',
-    icon: BarChart3,
-    category: 'Output',
-    color: 'bg-slate-500'
-  },
-  {
     type: 'report_generation',
     title: 'Report Generation',
-    description: 'Generate detailed consolidation reports',
+    description: 'Generate financial reports and statements',
     icon: FileSpreadsheet,
     category: 'Output',
     color: 'bg-gray-500'
-  },
-  {
-    type: 'journal_entry',
-    title: 'Journal Entries',
-    description: 'Create and manage journal entries linked to workflows',
-    icon: BookOpen,
-    category: 'Journal',
-    color: 'bg-rose-500'
-  },
-  {
-    type: 'fiscal_management',
-    title: 'Fiscal Year & Scenario Management',
-    description: 'Manage fiscal periods, scenarios, and consolidation rules',
-    icon: Calendar,
-    category: 'Management',
-    color: 'bg-blue-600'
   }
 ]
-
-const getDefaultPeriod = () => {
-  const now = new Date()
-  return `Q${Math.floor(now.getMonth() / 3) + 1}`
-}
-
-const getDefaultYear = () => new Date().getFullYear().toString()
-
-const normaliseCustomFieldList = (fields = []) =>
-  (fields || [])
-    .map((field, index) => {
-      const fieldName = (field.field_name || field.name || '').trim() || `custom_${index + 1}`
-      return {
-        field_name: fieldName,
-        field_label: (field.field_label || field.label || fieldName).trim(),
-        field_type: (field.field_type || field.type || 'text').toLowerCase(),
-        options: (field.options || field.dropdown_values || [])
-          .filter((option) => option !== undefined && option !== null)
-          .map((option) => (typeof option === 'string' ? option : String(option))),
-        default_value: field.default_value ?? '',
-        is_required: !!field.is_required,
-        is_unique: !!field.is_unique,
-        validation_rules: field.validation_rules || {},
-        display_order: field.display_order ?? index,
-        sql_query: field.sql_query || '',
-      }
-    })
-    .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
-
-const buildCustomFieldDefaults = (fields = []) => {
-  const defaults = {}
-  fields.forEach((field) => {
-    if (field.default_value !== undefined && field.default_value !== null && field.default_value !== '') {
-      defaults[field.field_name] = field.default_value
-    }
-  })
-  return defaults
-}
-
-const createEmptyCustomField = (order = 0) => ({
-  field_name: '',
-  field_label: '',
-  field_type: 'text',
-  options: [],
-  default_value: '',
-  is_required: false,
-  is_unique: false,
-  validation_rules: {},
-  display_order: order,
-  sql_query: '',
-})
-
-const defaultFormState = {
-  entity_code: '',
-  account_code: '',
-  amount: '',
-  entry_type: 'debit',
-  currency: '',
-  entry_category: 'Manual Entry',
-  counterparty: '',
-  description: '',
-  custom_fields: {},
-}
 
 const Process = () => {
   const { selectedCompany } = useCompany()
   const { isAuthenticated, getAuthHeaders } = useAuth()
   const navigate = useNavigate()
-  // Refs for flow management
-  const flowContainerRef = useRef(null)
 
   // Main State
-  const [currentView, setCurrentView] = useState('processes') // processes, flow, settings
-  const [selectedProcessId, setSelectedProcessId] = useState(null)
-  const [selectedScenarioId, setSelectedScenarioId] = useState(null)
-  const [selectedEntities, setSelectedEntities] = useState([])
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-  const [selectedPeriod, setSelectedPeriod] = useState('Q4')
-  const [flowMode, setFlowMode] = useState('entity') // 'entity' or 'consolidation'
-  
-  // Process Management
+  const [currentView, setCurrentView] = useState('overview')
   const [processes, setProcesses] = useState([])
-  const [processLoading, setProcessLoading] = useState(false)
-  const [processForm, setProcessForm] = useState({ 
-    name: '', 
-    description: '',
-    fiscal_year: new Date().getFullYear()
-  })
+  const [loading, setLoading] = useState(false)
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false)
-  const [editingProcess, setEditingProcess] = useState(null)
-  
-  // Flow State
-  const [processNodes, setProcessNodes] = useState([])
-  const [nodeStatuses, setNodeStatuses] = useState({})
-  const [selectedNode, setSelectedNode] = useState(null)
-  const [nodeLibraryOpen, setNodeLibraryOpen] = useState(false)
-  const [isExecuting, setIsExecuting] = useState(false)
-  const [executionStep, setExecutionStep] = useState(0)
-  const [availableEntities, setAvailableEntities] = useState([])
-  const [availableAccounts, setAvailableAccounts] = useState([])
-  const [entitySelectorOpen, setEntitySelectorOpen] = useState(false)
-
-  // Fetch available entities from axes_entity
-  const fetchAvailableEntities = useCallback(async () => {
-    if (!selectedCompany || !isAuthenticated) return
-    
-    try {
-      console.log('Fetching entities for company:', selectedCompany)
-      const response = await fetch(
-        `/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      if (!response.ok) {
-        console.error('Entity fetch failed with status:', response.status)
-        throw new Error(`Failed to load entities (${response.status})`)
-      }
-      const data = await response.json()
-      console.log('Fetched entities:', data)
-      
-      // Ensure we have the right data structure
-      const entities = data.elements || data.data || data || []
-      setAvailableEntities(entities)
-      
-      if (entities.length === 0) {
-        showNotification('No entities found. Please check your axes entity configuration.', 'warning')
-      } else {
-        console.log(`Loaded ${entities.length} entities`)
-      }
-    } catch (error) {
-      console.error('Failed to load entities:', error)
-      showNotification(`Unable to load entities: ${error.message}`, 'error')
-      // Set some fallback entities for testing
-      setAvailableEntities([
-        { element_code: 'ENTITY001', element_name: 'Parent Company' },
-        { element_code: 'ENTITY002', element_name: 'Subsidiary A' },
-        { element_code: 'ENTITY003', element_name: 'Subsidiary B' }
-      ])
-    }
-  }, [selectedCompany, isAuthenticated, getAuthHeaders])
-
-  // Fetch available accounts from axes_account
-  const fetchAvailableAccounts = useCallback(async () => {
-    if (!selectedCompany || !isAuthenticated) return
-    
-    try {
-      console.log('Fetching accounts for company:', selectedCompany)
-      const response = await fetch(
-        `/api/axes-account/elements?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      if (!response.ok) {
-        console.error('Account fetch failed with status:', response.status)
-        throw new Error(`Failed to load accounts (${response.status})`)
-      }
-      const data = await response.json()
-      console.log('Fetched accounts:', data)
-      
-      // Ensure we have the right data structure
-      const accounts = data.elements || data.data || data || []
-      setAvailableAccounts(accounts)
-      
-      if (accounts.length === 0) {
-        showNotification('No accounts found. Please check your axes account configuration.', 'warning')
-      } else {
-        console.log(`Loaded ${accounts.length} accounts`)
-      }
-    } catch (error) {
-      console.error('Failed to load accounts:', error)
-      showNotification(`Unable to load accounts: ${error.message}`, 'error')
-      // Set some fallback accounts for testing
-      setAvailableAccounts([
-        { element_code: 'ACC001', element_name: 'Cash and Cash Equivalents' },
-        { element_code: 'ACC002', element_name: 'Accounts Receivable' },
-        { element_code: 'ACC003', element_name: 'Inventory' },
-        { element_code: 'ACC004', element_name: 'Property, Plant & Equipment' },
-        { element_code: 'ACC005', element_name: 'Accounts Payable' }
-      ])
-    }
-  }, [selectedCompany, isAuthenticated, getAuthHeaders])
-
-  // Initialize process nodes based on flow mode
-  const initializeProcessNodes = useCallback(() => {
-    const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
-    const nodes = flowNodes.map((nodeType, index) => {
-      const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
-      return {
-        id: `${nodeType}_${index}`,
-        type: nodeType,
-        name: nodeTemplate?.title || nodeType,
-        description: nodeTemplate?.description || '',
-        icon: nodeTemplate?.icon || Layers,
-        color: nodeTemplate?.color || 'bg-gray-500',
-        category: nodeTemplate?.category || 'Processing',
-        status: NODE_STATUS.PENDING,
-        order: index,
-        dependencies: index > 0 ? [flowNodes[index - 1]] : []
-      }
-    })
-    setProcessNodes(nodes)
-    
-    // Initialize node statuses
-    const statuses = {}
-    nodes.forEach(node => {
-      statuses[node.id] = NODE_STATUS.PENDING
-    })
-    setNodeStatuses(statuses)
-  }, [flowMode])
-
-  // Scenario Management
-  const [scenarios, setScenarios] = useState([])
-  const [scenarioForm, setScenarioForm] = useState({
+  const [processForm, setProcessForm] = useState({
     name: '',
     description: '',
-    scenario_type: 'actual',
-    fx_rate_overrides: {},
-    custom_parameters: {}
+    type: 'actuals',
+    fiscal_year: new Date().getFullYear(),
+    reporting_currency: 'USD',
+    settings: {}
   })
-  const [scenarioDrawerOpen, setScenarioDrawerOpen] = useState(false)
-  
-  // Entity Structure
-  const [entityStructure, setEntityStructure] = useState([])
-  const [entityForm, setEntityForm] = useState({
-    entity_code: '',
-    entity_name: '',
-    parent_entity_code: '',
-    ownership_percentage: 100,
-    consolidation_method: 'full_consolidation',
-    functional_currency: 'USD'
-  })
-  
-  // Execution & Results
-  const [executions, setExecutions] = useState([])
-  const [executionResults, setExecutionResults] = useState(null)
-  const [executionLoading, setExecutionLoading] = useState(false)
-  
-  // Reference Data
-  const [referenceData, setReferenceData] = useState({
-    accounts: [],
-    entities: [],
-    currencies: [],
-    node_types: []
-  })
-  
-  // UI State
+  const [editingProcess, setEditingProcess] = useState(null)
   const [notification, setNotification] = useState(null)
-  const [alerts, setAlerts] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [selectedSettingsNode, setSelectedSettingsNode] = useState(null)
-  const [nodeConfigurations, setNodeConfigurations] = useState({})
-  const [globalEntitySettings, setGlobalEntitySettings] = useState({
-    allowedEntities: [],
-    restrictedEntities: [],
-    entityAccessMode: 'all' // 'all', 'allowed_only', 'exclude_restricted'
-  })
-  const [globalAccountSettings, setGlobalAccountSettings] = useState({
-    allowedAccounts: [],
-    restrictedAccounts: [],
-    accountAccessMode: 'all' // 'all', 'allowed_only', 'exclude_restricted'
-  })
-
 
   // Utility Functions
   const showNotification = (message, type = 'success') => {
@@ -524,272 +112,35 @@ const Process = () => {
     setTimeout(() => setNotification(null), 5000)
   }
 
-  const authHeaders = () => getAuthHeaders()
-
-  // Get filtered entities based on global settings
-  const getFilteredEntities = useCallback(() => {
-    if (!availableEntities.length) return []
+  // Initialize with demo processes
+  useEffect(() => {
+    console.log('🚀 Process module initializing...')
     
-    switch (globalEntitySettings.entityAccessMode) {
-      case 'allowed_only':
-        return availableEntities.filter(entity => 
-          globalEntitySettings.allowedEntities.includes(entity.element_code)
-        )
-      case 'exclude_restricted':
-        return availableEntities.filter(entity => 
-          !globalEntitySettings.restrictedEntities.includes(entity.element_code)
-        )
-      default: // 'all'
-        return availableEntities
-    }
-  }, [availableEntities, globalEntitySettings])
-
-  // Get filtered accounts based on global settings
-  const getFilteredAccounts = useCallback(() => {
-    if (!availableAccounts.length) return []
-    
-    switch (globalAccountSettings.accountAccessMode) {
-      case 'allowed_only':
-        return availableAccounts.filter(account => 
-          globalAccountSettings.allowedAccounts.includes(account.element_code)
-        )
-      case 'exclude_restricted':
-        return availableAccounts.filter(account => 
-          !globalAccountSettings.restrictedAccounts.includes(account.element_code)
-        )
-      default: // 'all'
-        return availableAccounts
-    }
-  }, [availableAccounts, globalAccountSettings])
-
-  // Execute process simulation
-  const executeProcessSimulation = async () => {
-    if (!selectedProcessId || selectedEntities.length === 0) {
-      showNotification('Please select entities and ensure a process is selected', 'error')
-      return
-    }
-
-    setIsExecuting(true)
-    setExecutionStep(0)
-    
-    try {
-      const response = await fetch(
-        `/api/financial-process/processes/${selectedProcessId}/execute-flow?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'POST',
-          headers: {
-            ...getAuthHeaders(),
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            flow_mode: flowMode,
-            entities: selectedEntities,
-            year: selectedYear,
-            period: selectedPeriod
-          })
-        }
-      )
-      
-      if (!response.ok) throw new Error('Failed to execute process flow')
-      const data = await response.json()
-      
-      // Update node statuses based on execution results
-      const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
-      const newStatuses = {}
-      
-      flowNodes.forEach((nodeType, index) => {
-        const nodeId = `${nodeType}_${index}`
-        newStatuses[nodeId] = NODE_STATUS.COMPLETED
-      })
-      
-      setNodeStatuses(newStatuses)
-      showNotification(`Process simulation completed successfully in ${data.results.total_processing_time_ms}ms`, 'success')
-      
-    } catch (error) {
-      console.error('Process execution failed:', error)
-      showNotification('Process execution failed', 'error')
-      
-      // Mark all nodes as error
-      const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
-      const errorStatuses = {}
-      flowNodes.forEach((nodeType, index) => {
-        const nodeId = `${nodeType}_${index}`
-        errorStatuses[nodeId] = NODE_STATUS.ERROR
-      })
-      setNodeStatuses(errorStatuses)
-    } finally {
-      setIsExecuting(false)
-      setExecutionStep(0)
-    }
-  }
-
-  // Execute individual node
-  const executeNode = async (nodeId, nodeType) => {
-    if (isExecuting || selectedEntities.length === 0) {
-      showNotification('Please select entities before executing individual nodes', 'error')
-      return
-    }
-    
-    setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.RUNNING }))
-    
-    try {
-      const response = await fetch(
-        `/api/financial-process/processes/${selectedProcessId}/execute-node?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'POST',
-          headers: {
-            ...getAuthHeaders(),
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            node_id: nodeId,
-            node_type: nodeType,
-            entities: selectedEntities,
-            year: selectedYear,
-            period: selectedPeriod
-          })
-        }
-      )
-      
-      if (!response.ok) throw new Error('Failed to execute node')
-      const data = await response.json()
-      
-      if (data.status === 'success') {
-        setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.COMPLETED }))
-        showNotification(`${nodeType} executed successfully`, 'success')
-      } else {
-        setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.ERROR }))
-        showNotification(`Failed to execute ${nodeType}: ${data.results?.message || 'Unknown error'}`, 'error')
+    const demoProcesses = [
+      {
+        id: 'demo-1',
+        name: 'Actuals',
+        description: 'Actual financial consolidation process',
+        type: 'actuals',
+        status: 'active',
+        created_at: new Date().toISOString()
+      },
+      {
+        id: 'demo-2', 
+        name: 'Budget',
+        description: 'Budget planning and consolidation',
+        type: 'budget',
+        status: 'draft',
+        created_at: new Date().toISOString()
       }
-    } catch (error) {
-      console.error('Node execution failed:', error)
-      setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.ERROR }))
-      showNotification(`Failed to execute ${nodeType}`, 'error')
-    }
-  }
-
-  // Node Navigation with context
-  const navigateToNodePage = (nodeType) => {
-    const nodeRoutes = {
-      'fiscal_management': '/fiscal-management',
-      'profit_loss': '/financial-statements',
-      'nci_allocation': '/consolidation',
-      'retained_earnings': '/financial-statements',
-      'fx_translation': '/forex-rates',
-      'intercompany_elimination': '/consolidation',
-      'goodwill_impairment': '/asset-register',
-      'deferred_tax': '/financial-statements',
-      'opening_balance': '/trial-balance',
-      'associate_equity_method': '/consolidation',
-      'eps_calculation': '/financial-statements',
-      'what_if_analysis': '/what-if-analysis',
-      'validation': '/audit-trail',
-      'consolidation_output': '/consolidation',
-      'report_generation': '/reports',
-      'data_input': '/trial-balance',
-      'journal_entry': '/journal-entries'
-    }
+    ]
     
-    const route = nodeRoutes[nodeType] || '/dashboard'
-    
-    // Pass context parameters
-    const params = new URLSearchParams({
-      year: selectedYear.toString(),
-      period: selectedPeriod,
-      entities: selectedEntities.join(','),
-      process: selectedProcessId || ''
-    })
-    
-    navigate(`${route}?${params.toString()}`)
-  }
+    console.log('📋 Setting demo processes:', demoProcesses)
+    setProcesses(demoProcesses)
+    setLoading(false)
+  }, [])
 
-
-  // ============================================================================
-  // API FUNCTIONS
-  // ============================================================================
-
-  // Fetch processes from backend
-  const fetchProcesses = useCallback(async () => {
-    if (!selectedCompany || !isAuthenticated) {
-      // Set default processes when not authenticated or no company selected
-      setProcesses([
-        {
-          id: 'demo-1',
-          name: 'Actuals',
-          description: 'Actual financial consolidation process',
-          type: 'actuals',
-          status: 'active',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'demo-2', 
-          name: 'Budget',
-          description: 'Budget planning and consolidation',
-          type: 'budget',
-          status: 'draft',
-          created_at: new Date().toISOString()
-        }
-      ])
-      return
-    }
-    
-    try {
-      // Try the process builder API first
-      let response = await fetch(
-        `/api/process/processes?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      
-      // If process builder API fails, try financial process API
-      if (!response.ok) {
-        response = await fetch(
-          `/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`,
-          {
-            method: 'GET',
-            headers: getAuthHeaders(),
-            credentials: 'include',
-          }
-        )
-      }
-      
-      if (response.ok) {
-        const data = await response.json()
-        setProcesses(data.processes || data || [])
-      } else {
-        throw new Error(`Failed to load processes (${response.status})`)
-      }
-    } catch (error) {
-      console.error('Failed to load processes:', error)
-      showNotification('Using demo processes - API not available', 'warning')
-      // Set default processes for demo
-      setProcesses([
-        {
-          id: 'demo-1',
-          name: 'Actuals',
-          description: 'Actual financial consolidation process',
-          type: 'actuals',
-          status: 'active',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'demo-2', 
-          name: 'Budget',
-          description: 'Budget planning and consolidation',
-          type: 'budget',
-          status: 'draft',
-          created_at: new Date().toISOString()
-        }
-      ])
-    }
-  }, [selectedCompany, isAuthenticated, getAuthHeaders])
-
-  // Create or Update Process
+  // Save Process
   const saveProcess = async () => {
     if (!processForm.name.trim()) {
       showNotification('Please provide a process name', 'error')
@@ -799,7 +150,6 @@ const Process = () => {
     try {
       setLoading(true)
       
-      // Create a new process object
       const newProcess = {
         id: editingProcess?.id || `process-${Date.now()}`,
         name: processForm.name,
@@ -811,50 +161,6 @@ const Process = () => {
         status: 'active',
         created_at: editingProcess?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
-      }
-      
-      // Try to save to backend if available
-      if (selectedCompany && isAuthenticated) {
-        try {
-          const method = editingProcess ? 'PUT' : 'POST'
-          let url = editingProcess 
-            ? `/api/process/processes/${editingProcess.id}?company_name=${encodeURIComponent(selectedCompany)}`
-            : `/api/process/processes?company_name=${encodeURIComponent(selectedCompany)}`
-          
-          let response = await fetch(url, {
-            method,
-            headers: {
-              'Content-Type': 'application/json',
-              ...getAuthHeaders(),
-            },
-            credentials: 'include',
-            body: JSON.stringify(newProcess)
-          })
-          
-          // If process API fails, try financial process API
-          if (!response.ok) {
-            url = editingProcess 
-              ? `/api/financial-process/processes/${editingProcess.id}?company_name=${encodeURIComponent(selectedCompany)}`
-              : `/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`
-            
-            response = await fetch(url, {
-              method,
-              headers: {
-                'Content-Type': 'application/json',
-                ...getAuthHeaders(),
-              },
-              credentials: 'include',
-              body: JSON.stringify(newProcess)
-            })
-          }
-          
-          if (response.ok) {
-            const savedProcess = await response.json()
-            newProcess.id = savedProcess.id || newProcess.id
-          }
-        } catch (apiError) {
-          console.warn('API save failed, using local storage:', apiError)
-        }
       }
       
       // Update local state
@@ -884,1967 +190,119 @@ const Process = () => {
     }
   }
 
-  // Fetch Process Details and initialize nodes
-  const fetchProcessDetails = useCallback(async (processId) => {
-    if (!selectedCompany || !processId) return
-    
-    setLoading(true)
-    try {
-      const response = await fetch(
-        `/api/financial-process/processes/${processId}?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      
-      if (!response.ok) throw new Error('Failed to load process details')
-      const data = await response.json()
-      
-      // Initialize process nodes based on flow mode
-      initializeProcessNodes()
-      
-    } catch (error) {
-      console.error('Failed to load process details:', error)
-      showNotification('Failed to load process details', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedCompany, getAuthHeaders, initializeProcessNodes])
-
-  // Fetch Scenarios
-  const fetchScenarios = useCallback(async (processId) => {
-    if (!selectedCompany || !processId) return
-    
-    try {
-      const response = await fetch(
-        `/api/financial-process/processes/${processId}/scenarios?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      
-      if (!response.ok) throw new Error('Failed to load scenarios')
-      const data = await response.json()
-      setScenarios(data.scenarios || [])
-    } catch (error) {
-      console.error('Failed to load scenarios:', error)
-      showNotification('Failed to load scenarios', 'error')
-    }
-  }, [selectedCompany, getAuthHeaders])
-
-  // Fetch reference data (accounts, entities, etc.)
-  const fetchReferenceData = useCallback(async () => {
-    if (!selectedCompany || !isAuthenticated) return
-    
-    try {
-      // Try multiple API endpoints for reference data
-      let response = await fetch(
-        `/api/process/reference-data?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'GET',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      
-      if (!response.ok) {
-        response = await fetch(
-          `/api/financial-process/reference-data?company_name=${encodeURIComponent(selectedCompany)}`,
-          {
-            method: 'GET',
-            headers: getAuthHeaders(),
-            credentials: 'include',
-          }
-        )
-      }
-      
-      if (response.ok) {
-        const data = await response.json()
-        setReferenceData(data)
-      } else {
-        throw new Error('Failed to load reference data')
-      }
-    } catch (error) {
-      console.error('Failed to load reference data:', error)
-      // Set default reference data
-      setReferenceData({
-        accounts: [],
-        entities: [],
-        currencies: ['USD', 'EUR', 'GBP'],
-        node_types: []
-      })
-    }
-  }, [selectedCompany, isAuthenticated, getAuthHeaders])
-
-
-  // Add node to flow
-  const addNodeToFlow = (nodeType) => {
-    const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
-    if (!nodeTemplate) return
-
-    const newNode = {
-      id: `${nodeType}_${processNodes.length}`,
-      type: nodeType,
-      name: nodeTemplate.title,
-      description: nodeTemplate.description,
-      icon: nodeTemplate.icon,
-      color: nodeTemplate.color,
-      category: nodeTemplate.category,
-      status: NODE_STATUS.PENDING,
-      order: processNodes.length,
-      dependencies: processNodes.length > 0 ? [processNodes[processNodes.length - 1].type] : []
-    }
-
-    setProcessNodes([...processNodes, newNode])
-    setNodeStatuses(prev => ({ ...prev, [newNode.id]: NODE_STATUS.PENDING }))
-    showNotification('Node added to flow', 'success')
-    setNodeLibraryOpen(false)
-  }
-
-  // Remove node from flow
-  const removeNodeFromFlow = (nodeId) => {
-    setProcessNodes(nodes => nodes.filter(n => n.id !== nodeId))
-    setNodeStatuses(prev => {
-      const newStatuses = { ...prev }
-      delete newStatuses[nodeId]
-      return newStatuses
-    })
-    if (selectedNode?.id === nodeId) {
-      setSelectedNode(null)
-    }
-    showNotification('Node removed from flow', 'success')
-  }
-
-  // Move node in flow
-  const moveNodeInFlow = (nodeId, direction) => {
-    const nodeIndex = processNodes.findIndex(n => n.id === nodeId)
-    if (nodeIndex === -1) return
-    
-    const newIndex = direction === 'up' ? nodeIndex - 1 : nodeIndex + 1
-    if (newIndex < 0 || newIndex >= processNodes.length) return
-    
-    const newNodes = [...processNodes]
-    const [movedNode] = newNodes.splice(nodeIndex, 1)
-    newNodes.splice(newIndex, 0, { ...movedNode, order: newIndex })
-    
-    // Update orders
-    newNodes.forEach((node, index) => {
-      node.order = index
-    })
-    
-    setProcessNodes(newNodes)
-  }
-
-  // Get node status icon and color
-  const getNodeStatusIcon = (status) => {
-    switch (status) {
-      case NODE_STATUS.COMPLETED:
-        return { icon: CheckCircle, color: 'text-green-500' }
-      case NODE_STATUS.RUNNING:
-        return { icon: Loader2, color: 'text-blue-500 animate-spin' }
-      case NODE_STATUS.ERROR:
-        return { icon: AlertCircle, color: 'text-red-500' }
-      default:
-        return { icon: Clock, color: 'text-gray-400' }
-    }
-  }
-
-  // Reset all node statuses
-  const resetNodeStatuses = () => {
-    const resetStatuses = {}
-    processNodes.forEach(node => {
-      resetStatuses[node.id] = NODE_STATUS.PENDING
-    })
-    setNodeStatuses(resetStatuses)
-    showNotification('Node statuses reset', 'success')
-  }
-
-  // Toggle entity selection
-  const toggleEntitySelection = (entityCode) => {
-    setSelectedEntities(prev => {
-      if (prev.includes(entityCode)) {
-        return prev.filter(e => e !== entityCode)
-      } else {
-        return [...prev, entityCode]
-      }
-    })
-  }
-
-  // Select all entities
-  const selectAllEntities = () => {
-    setSelectedEntities(availableEntities.map(e => e.element_code))
-  }
-
-  // Clear entity selection
-  const clearEntitySelection = () => {
-    setSelectedEntities([])
-  }
-
-  // Node configuration functions
-  const updateNodeConfiguration = (nodeType, config) => {
-    setNodeConfigurations(prev => ({
-      ...prev,
-      [nodeType]: { ...prev[nodeType], ...config }
-    }))
-  }
-
-  // Get node configuration with defaults
-  const getNodeConfiguration = (nodeType) => {
-    const defaults = {
-      fiscal_management: {
-        years: [2023, 2024, 2025, 2026],
-        periods: ['Q1', 'Q2', 'Q3', 'Q4', 'FY'],
-        default_year: selectedYear,
-        default_period: selectedPeriod
-      },
-      data_input: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        data_sources: ['Trial Balance', 'Manual Entry', 'Import'],
-        validation_rules: true,
-        auto_validation: true,
-        data_format: 'standard'
-      },
-      journal_entry: {
-        auto_reverse: false,
-        approval_required: true,
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        entry_types: ['Manual', 'Automated', 'Recurring'],
-        default_currency: 'USD'
-      },
-      fx_translation: {
-        method: 'current_rate',
-        rate_source: 'central_bank',
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        translation_date: 'period_end',
-        hedge_accounting: false
-      },
-      consolidation_output: {
-        elimination_method: 'full',
-        nci_calculation: 'proportional',
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        output_format: 'standard',
-        include_eliminations: true
-      },
-      profit_loss: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        calculation_method: 'standard',
-        include_segments: true,
-        margin_analysis: true,
-        comparative_periods: 1
-      },
-      nci_allocation: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        allocation_method: 'proportional',
-        ownership_threshold: 50,
-        fair_value_adjustments: true
-      },
-      retained_earnings: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        rollforward_method: 'standard',
-        include_adjustments: true,
-        prior_period_adjustments: true
-      },
-      intercompany_elimination: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        elimination_types: ['Transactions', 'Balances', 'Profits'],
-        matching_tolerance: 0.01,
-        auto_matching: true
-      },
-      goodwill_impairment: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        impairment_method: 'annual',
-        fair_value_source: 'market',
-        discount_rate: 10,
-        growth_rate: 2
-      },
-      deferred_tax: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        calculation_method: 'liability',
-        tax_rates: {},
-        temporary_differences: true,
-        valuation_allowance: false
-      },
-      opening_balance: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        adjustment_types: ['Consolidation', 'Fair Value', 'Elimination'],
-        approval_required: true,
-        audit_trail: true
-      },
-      associate_equity_method: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        ownership_threshold: 20,
-        significant_influence: true,
-        fair_value_option: false,
-        impairment_testing: true
-      },
-      eps_calculation: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        calculation_method: 'weighted_average',
-        diluted_eps: true,
-        share_splits: true,
-        treasury_shares: true
-      },
-      what_if_analysis: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        scenario_types: ['Best Case', 'Worst Case', 'Most Likely'],
-        sensitivity_analysis: true,
-        monte_carlo: false,
-        confidence_level: 95
-      },
-      validation: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        validation_rules: ['Balance Check', 'Completeness', 'Accuracy'],
-        tolerance_level: 0.01,
-        auto_correction: false,
-        alert_threshold: 'medium'
-      },
-      report_generation: {
-        included_entities: selectedEntities,
-        excluded_entities: [],
-        report_types: ['Financial Statements', 'Consolidation Report', 'Variance Analysis'],
-        output_format: 'PDF',
-        comparative_periods: 1,
-        drill_down: true
-      }
-    }
-    
-    return {
-      ...defaults[nodeType],
-      ...nodeConfigurations[nodeType]
-    }
-  }
-
-  // Render flow node tile
-  const renderFlowNodeTile = (node, index) => {
-    const IconComponent = node.icon || Layers
-    const status = nodeStatuses[node.id] || NODE_STATUS.PENDING
-    const statusInfo = getNodeStatusIcon(status)
-    const StatusIcon = statusInfo.icon
-    
-    return (
-      <div key={node.id} className="flex items-center">
-        {/* Node Tile */}
-        <div
-          className={`relative flex-shrink-0 w-64 h-32 bg-white dark:bg-gray-800 border-2 rounded-xl shadow-lg cursor-pointer transition-all hover:shadow-xl ${
-            selectedNode?.id === node.id
-              ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-800'
-              : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300'
-          }`}
-          onClick={() => setSelectedNode(node)}
-          onDoubleClick={() => navigateToNodePage(node.type)}
-        >
-          <div className="p-4 h-full flex flex-col">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${node.color} text-white`}>
-                  <IconComponent className="h-4 w-4" />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-sm text-gray-900 dark:text-white truncate">
-                    {node.name}
-                  </h4>
-                  <p className="text-xs text-indigo-600 dark:text-indigo-400">
-                    {node.category}
-                  </p>
-                </div>
-              </div>
-              <StatusIcon className={`h-5 w-5 ${statusInfo.color}`} />
-            </div>
-            
-            <p className="text-xs text-gray-600 dark:text-gray-300 flex-1 overflow-hidden line-clamp-2">
-              {node.description}
-            </p>
-            
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                Step {index + 1}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    executeNode(node.id, node.name)
-                  }}
-                  disabled={isExecuting || status === NODE_STATUS.RUNNING}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                  title="Run this step"
-                >
-                  <PlayCircle className="h-4 w-4 text-green-600" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    removeNodeFromFlow(node.id)
-                  }}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                  title="Remove from flow"
-                >
-                  <X className="h-4 w-4 text-red-600" />
-                </button>
-              </div>
-            </div>
+  // Render process cards
+  const renderProcessCards = () => (
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {processes.length === 0 ? (
+        <div className="col-span-full text-center py-12">
+          <div className="text-gray-500 dark:text-gray-400">
+            <Layers className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <p>No processes found</p>
+            <p className="text-sm">Create your first process to get started</p>
           </div>
-        </div>
-        
-        {/* Arrow connector */}
-        {index < processNodes.length - 1 && (
-          <div className="flex-shrink-0 mx-4">
-            <ArrowRight className="h-6 w-6 text-gray-400" />
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // Render entity selector
-  const renderEntitySelector = () => {
-    const filteredEntities = getFilteredEntities()
-    
-    return (
-      <div className="relative">
-        <button
-          onClick={() => setEntitySelectorOpen(!entitySelectorOpen)}
-          className="btn-secondary inline-flex items-center gap-2 min-w-48"
-        >
-          <Building2 className="h-4 w-4" />
-          {selectedEntities.length === 0
-            ? 'Select Entities'
-            : selectedEntities.length === 1
-            ? `1 Entity Selected`
-            : `${selectedEntities.length} Entities Selected`
-          }
-          <ChevronDown className={`h-4 w-4 transition-transform ${
-            entitySelectorOpen ? 'rotate-180' : ''
-          }`} />
-        </button>
-        
-        {entitySelectorOpen && (
-          <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-medium text-gray-900 dark:text-white">
-                  Select Entities ({filteredEntities.length} available)
-                </h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setSelectedEntities(filteredEntities.map(e => e.element_code))}
-                    className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    onClick={clearEntitySelection}
-                    className="text-xs text-gray-600 hover:text-gray-700 dark:text-gray-400"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-              
-              {filteredEntities.length === 0 ? (
-                <div className="text-center py-4 text-gray-500 dark:text-gray-400">
-                  <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">No entities available</p>
-                  <p className="text-xs">Check your entity settings or axes configuration</p>
-                </div>
-              ) : (
-                <div className="max-h-64 overflow-y-auto space-y-2">
-                  {filteredEntities.map((entity) => (
-                    <label key={entity.element_code} className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedEntities.includes(entity.element_code)}
-                        onChange={() => toggleEntitySelection(entity.element_code)}
-                        className="form-checkbox mr-3"
-                      />
-                      <div className="flex-1">
-                        <div className="font-medium text-sm text-gray-900 dark:text-white">
-                          {entity.element_name}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {entity.element_code}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ============================================================================
-  // USE EFFECTS
-  // ============================================================================
-
-  useEffect(() => {
-    fetchProcesses()
-    fetchReferenceData()
-    fetchAvailableEntities()
-    fetchAvailableAccounts()
-  }, [fetchProcesses, fetchReferenceData, fetchAvailableEntities, fetchAvailableAccounts])
-
-  useEffect(() => {
-    if (selectedProcessId) {
-      fetchProcessDetails(selectedProcessId)
-      fetchScenarios(selectedProcessId)
-    }
-  }, [selectedProcessId, fetchProcessDetails, fetchScenarios])
-
-  useEffect(() => {
-    initializeProcessNodes()
-  }, [flowMode, initializeProcessNodes])
-
-  // ============================================================================
-  // RENDER FUNCTIONS
-  // ============================================================================
-
-  const handleEditProcess = (process, e) => {
-    e.stopPropagation()
-    setProcessForm({
-      name: process.name,
-      description: process.description || '',
-      fiscal_year: process.fiscal_year
-    })
-    setEditingProcess(process)
-    setProcessDrawerOpen(true)
-  }
-
-  const handleDeleteProcess = async (process, e) => {
-    e.stopPropagation()
-    if (!window.confirm(`Are you sure you want to delete "${process.name}"?`)) return
-    
-    try {
-      const response = await fetch(
-        `/api/financial-process/processes/${process.id}?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-        }
-      )
-      
-      if (!response.ok) throw new Error('Failed to delete process')
-      
-      setProcesses(processes.filter(p => p.id !== process.id))
-      showNotification('Process deleted successfully', 'success')
-    } catch (error) {
-      console.error('Failed to delete process:', error)
-      showNotification('Failed to delete process', 'error')
-    }
-  }
-
-  const renderProcessCard = (process) => (
-    <div
-      key={process.id}
-      className={`group relative flex flex-col overflow-hidden rounded-2xl border p-6 transition cursor-pointer ${
-        selectedProcessId === process.id
-          ? 'border-indigo-500 bg-indigo-50 shadow-lg dark:border-indigo-400 dark:bg-indigo-900/30'
-          : 'border-gray-200 bg-white hover:border-indigo-400 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-400 dark:hover:bg-indigo-900/20'
-      }`}
-      onClick={() => {
-        setSelectedProcessId(process.id)
-        setCurrentView('flow')
-      }}
-      onDoubleClick={(e) => handleEditProcess(process, e)}
-    >
-      {/* Action buttons */}
-      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="flex gap-2">
-          <button
-            onClick={(e) => handleEditProcess(process, e)}
-            className="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            title="Edit Process"
-          >
-            <Edit className="h-3 w-3 text-gray-600 dark:text-gray-400" />
-          </button>
-          <button
-            onClick={(e) => handleDeleteProcess(process, e)}
-            className="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-sm hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            title="Delete Process"
-          >
-            <Trash2 className="h-3 w-3 text-red-600 dark:text-red-400" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-start justify-between">
-        <div className="flex-1 pr-12">
-          <div className="flex items-center gap-3 mb-2">
-            <span className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white`}>
-              <Workflow className="h-5 w-5" />
-            </span>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{process.name}</h3>
-              <p className="text-sm text-indigo-600 dark:text-indigo-300">{process.process_type}</p>
-            </div>
-          </div>
-          {process.description && (
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">{process.description}</p>
-          )}
-          <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              FY {process.fiscal_year}
-            </span>
-            <span className="flex items-center gap-1">
-              <DollarSign className="h-3 w-3" />
-              {process.reporting_currency}
-            </span>
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-              process.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-              process.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
-              'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
-            }`}>
-              {process.status || 'Draft'}
-            </span>
-          </div>
-        </div>
-        <ChevronRight className="h-5 w-5 text-gray-400 group-hover:text-indigo-500" />
-      </div>
-    </div>
-  )
-
-  // Render process flow diagram
-  const renderFlowDiagram = () => (
-    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-900 dark:text-white">Process Flow Diagram</h3>
-        <div className="flex gap-2">
-          <button
-            onClick={resetNodeStatuses}
-            className="btn-secondary text-sm"
-            disabled={isExecuting}
-          >
-            Reset Status
-          </button>
-        </div>
-      </div>
-      
-      {processNodes.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-          <Workflow className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-          <p>No nodes in the flow. Add nodes to get started.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto pb-4">
-          <div className="flex items-center gap-0 min-w-max">
-            {processNodes.map((node, index) => renderFlowNodeTile(node, index))}
+        processes.map((process) => (
+          <div
+            key={process.id}
+            className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all hover:shadow-md dark:border-gray-800 dark:bg-gray-950"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {process.name}
+                </h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {process.description}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  process.status === 'active' 
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
+                }`}>
+                  {process.status}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setEditingProcess(process)
+                    setProcessForm({
+                      name: process.name,
+                      description: process.description,
+                      type: process.type,
+                      fiscal_year: process.fiscal_year,
+                      reporting_currency: process.reporting_currency,
+                      settings: process.settings
+                    })
+                    setProcessDrawerOpen(true)
+                  }}
+                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                Created {new Date(process.created_at).toLocaleDateString()}
+              </div>
+              <button
+                onClick={() => {
+                  showNotification(`Opening ${process.name} process`, 'success')
+                }}
+                className="btn-primary text-sm"
+              >
+                Open Process
+              </button>
+            </div>
           </div>
-        </div>
+        ))
       )}
     </div>
   )
 
-  // Main render logic starts here
-  const renderProcessesView = () => (
+  return (
     <div className="space-y-6">
       {/* Header */}
       <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Financial Process Management</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Process Management</h1>
             <p className="text-gray-600 dark:text-gray-400">
-              Build comprehensive consolidation processes with advanced workflow automation
+              Manage your financial consolidation processes ({processes.length} processes)
             </p>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => navigate('/fiscal-management')}
-              className="btn-secondary inline-flex items-center gap-2"
-            >
-              <Zap className="h-4 w-4" />
-              Scenarios
-            </button>
-            <button
-              onClick={() => setProcessDrawerOpen(true)}
-              className="btn-primary inline-flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Process
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Process Grid */}
-      {processLoading ? (
-        <div className="flex items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-gray-500 dark:border-gray-700 dark:text-gray-400">
-          <Loader2 className="mr-3 h-6 w-6 animate-spin" />
-          Loading processes...
-        </div>
-      ) : processes.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-300 p-12 text-center text-gray-500 dark:border-gray-700 dark:text-gray-400">
-          <Workflow className="mx-auto h-12 w-12 mb-4 text-gray-400" />
-          <h3 className="text-lg font-medium mb-2">No processes yet</h3>
-          <p className="mb-4">Create your first financial process to get started</p>
           <button
             onClick={() => setProcessDrawerOpen(true)}
             className="btn-primary inline-flex items-center gap-2"
           >
             <Plus className="h-4 w-4" />
-            Create Process
+            New Process
           </button>
         </div>
-      ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {processes.map(renderProcessCard)}
-        </div>
-      )}
-    </div>
-  )
+      </section>
 
-  // Flow View
-  const renderFlowView = () => {
-    const selectedProcess = processes.find(p => p.id === selectedProcessId)
-    
-    return (
-      <div className="space-y-6">
-        {/* Flow Header */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setCurrentView('processes')}
-                className="btn-secondary inline-flex items-center gap-2"
-              >
-                <ChevronRight className="h-4 w-4 rotate-180" />
-                Back
-              </button>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {selectedProcess?.name || 'Process Flow'}
-                </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {selectedProcess?.description || 'Execute your financial process workflow'}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={executeProcessSimulation}
-                disabled={isExecuting || selectedEntities.length === 0 || processNodes.length === 0}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                {isExecuting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-                Run Simulation
-              </button>
-              <button
-                onClick={() => {
-                  setCurrentView('settings')
-                  setSelectedSettingsNode(null)
-                }}
-                className="btn-secondary inline-flex items-center gap-2"
-              >
-                <Settings className="h-4 w-4" />
-                Settings
-              </button>
-            </div>
+      {/* Process Cards */}
+      <section>
+        {loading ? (
+          <div className="flex items-center justify-center rounded-2xl border border-dashed border-gray-300 p-12 text-gray-500 dark:border-gray-700 dark:text-gray-400">
+            <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+            Loading processes...
           </div>
-        </section>
-
-        {/* Process Controls */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-          <div className="flex flex-wrap items-center gap-4">
-            {/* Entity Selector */}
-            {renderEntitySelector()}
-            
-            {/* Year and Period Selectors */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Year:</label>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                className="form-select text-sm"
-              >
-                {[2023, 2024, 2025, 2026].map(year => (
-                  <option key={year} value={year}>{year}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Period:</label>
-              <select
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="form-select text-sm"
-              >
-                <option value="Q1">Q1</option>
-                <option value="Q2">Q2</option>
-                <option value="Q3">Q3</option>
-                <option value="Q4">Q4</option>
-                <option value="FY">Full Year</option>
-              </select>
-            </div>
-            
-            {/* Flow Mode Toggle */}
-            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-              <button
-                onClick={() => setFlowMode('entity')}
-                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
-                  flowMode === 'entity'
-                    ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Entity-wise
-              </button>
-              <button
-                onClick={() => setFlowMode('consolidation')}
-                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
-                  flowMode === 'consolidation'
-                    ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
-              >
-                Consolidation
-              </button>
-            </div>
-            
-            <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
-            
-            <button
-              onClick={() => setNodeLibraryOpen(!nodeLibraryOpen)}
-              className={`inline-flex items-center gap-2 text-sm ${
-                nodeLibraryOpen 
-                  ? 'btn-primary' 
-                  : 'btn-secondary'
-              }`}
-            >
-              <Plus className="h-4 w-4" />
-              {nodeLibraryOpen ? 'Hide Library' : 'Add Nodes'}
-            </button>
-          </div>
-        </section>
-
-        {/* Node Library Panel */}
-        {nodeLibraryOpen && (
-          <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
-            <div className="p-4">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                Available Process Nodes - Click to add to flow
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {NODE_LIBRARY.map((nodeType) => {
-                  const IconComponent = nodeType.icon
-                  return (
-                    <div
-                      key={nodeType.type}
-                      onClick={() => addNodeToFlow(nodeType.type)}
-                      className="p-3 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-400 hover:shadow-md transition cursor-pointer bg-white dark:bg-gray-900 group"
-                    >
-                      <div className="flex items-start gap-2 mb-2">
-                        <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${nodeType.color} text-white`}>
-                          <IconComponent className="h-4 w-4" />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                            {nodeType.title}
-                          </h4>
-                          <p className="text-xs text-indigo-600 dark:text-indigo-400">
-                            {nodeType.category}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
-                        {nodeType.description}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </section>
+        ) : (
+          renderProcessCards()
         )}
+      </section>
 
-        {/* Process Flow Diagram */}
-        {renderFlowDiagram()}
-
-        {/* Properties Panel */}
-        {selectedNode && (
-          <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Node Properties</h3>
-                <button
-                  onClick={() => setSelectedNode(null)}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="label">Node Name</label>
-                    <input
-                      type="text"
-                      value={selectedNode.name}
-                      onChange={(e) => {
-                        const updatedNode = { ...selectedNode, name: e.target.value }
-                        setSelectedNode(updatedNode)
-                        setProcessNodes(nodes => 
-                          nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
-                        )
-                      }}
-                      className="form-input"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="label">Description</label>
-                    <textarea
-                      value={selectedNode.description}
-                      onChange={(e) => {
-                        const updatedNode = { ...selectedNode, description: e.target.value }
-                        setSelectedNode(updatedNode)
-                        setProcessNodes(nodes => 
-                          nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
-                        )
-                      }}
-                      className="form-input resize-none"
-                      rows={3}
-                    />
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="label">Node Type</label>
-                    <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
-                      {selectedNode.type}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="label">Status</label>
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const status = nodeStatuses[selectedNode.id] || NODE_STATUS.PENDING
-                        const statusInfo = getNodeStatusIcon(status)
-                        const StatusIcon = statusInfo.icon
-                        return (
-                          <>
-                            <StatusIcon className={`h-4 w-4 ${statusInfo.color}`} />
-                            <span className="text-sm capitalize">{status}</span>
-                          </>
-                        )
-                      })()} 
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-2 pt-4">
-                    <button
-                      onClick={() => navigateToNodePage(selectedNode.type)}
-                      className="btn-primary flex-1 text-sm"
-                    >
-                      Open Module
-                    </button>
-                    <button
-                      onClick={() => removeNodeFromFlow(selectedNode.id)}
-                      className="btn-secondary text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-      </div>
-    )
-  }
-
-  // Settings View
-  const renderSettingsView = () => {
-    const selectedProcess = processes.find(p => p.id === selectedProcessId)
-    // Show ALL nodes from NODE_LIBRARY instead of just flow nodes
-    const allNodes = NODE_LIBRARY
-    
-    return (
-      <div className="space-y-6">
-        {/* Settings Header */}
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setCurrentView('flow')}
-                className="btn-secondary inline-flex items-center gap-2"
-              >
-                <ChevronRight className="h-4 w-4 rotate-180" />
-                Back to Process
-              </button>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  Process Settings - {selectedProcess?.name}
-                </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Configure all available process nodes and their settings
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Settings Content */}
-        <div className="grid grid-cols-12 gap-6">
-          {/* Left Sidebar - All Node List */}
-          <div className="col-span-4">
-            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
-              <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Process Configuration</h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {/* Entity Management - Special Settings Node */}
-                <button
-                  onClick={() => setSelectedSettingsNode('entity_management')}
-                  className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
-                    selectedSettingsNode === 'entity_management'
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white">
-                      <Building2 className="h-4 w-4" />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                        Entity & Account Management
-                      </div>
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400">
-                        Global Settings
-                      </div>
-                    </div>
-                  </div>
-                </button>
-
-                {/* Separator */}
-                <div className="border-t border-gray-200 dark:border-gray-700 my-3"></div>
-                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Process Nodes</h4>
-
-                {/* All Process Nodes */}
-                {allNodes.map((nodeTemplate, index) => {
-                  const IconComponent = nodeTemplate.icon || Layers
-                  const isSelected = selectedSettingsNode === nodeTemplate.type
-                  
-                  return (
-                    <button
-                      key={nodeTemplate.type}
-                      onClick={() => setSelectedSettingsNode(nodeTemplate.type)}
-                      className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
-                        isSelected
-                          ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeTemplate.color} text-white`}>
-                          <IconComponent className="h-4 w-4" />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                            {nodeTemplate.title}
-                          </div>
-                          <div className="text-xs text-indigo-600 dark:text-indigo-400">
-                            {nodeTemplate.category}
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Panel - Node Configuration */}
-          <div className="col-span-8">
-            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-              {selectedSettingsNode ? (
-                <div>
-                  {(() => {
-                    const nodeTemplate = NODE_LIBRARY.find(n => n.type === selectedSettingsNode)
-                    const IconComponent = nodeTemplate?.icon || Layers
-                    const config = getNodeConfiguration(selectedSettingsNode)
-                    
-                    return (
-                      <div>
-                        <div className="flex items-center gap-3 mb-6">
-                          <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${nodeTemplate?.color || 'bg-gray-500'} text-white`}>
-                            <IconComponent className="h-5 w-5" />
-                          </span>
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                              {nodeTemplate?.title || selectedSettingsNode}
-                            </h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {nodeTemplate?.description}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Entity Management Settings */}
-                        {selectedSettingsNode === 'entity_management' && (
-                          <div className="space-y-6">
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Access Control</h4>
-                              <div className="space-y-4">
-                                <div>
-                                  <label className="label">Entity Access Mode</label>
-                                  <select
-                                    value={globalEntitySettings.entityAccessMode}
-                                    onChange={(e) => setGlobalEntitySettings(prev => ({
-                                      ...prev,
-                                      entityAccessMode: e.target.value
-                                    }))}
-                                    className="form-select"
-                                  >
-                                    <option value="all">Show All Entities</option>
-                                    <option value="allowed_only">Show Only Allowed Entities</option>
-                                    <option value="exclude_restricted">Exclude Restricted Entities</option>
-                                  </select>
-                                </div>
-
-                                {globalEntitySettings.entityAccessMode === 'allowed_only' && (
-                                  <div>
-                                    <label className="label">Allowed Entities</label>
-                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                      {availableEntities.map(entity => (
-                                        <label key={entity.element_code} className="flex items-center p-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={globalEntitySettings.allowedEntities.includes(entity.element_code)}
-                                            onChange={(e) => {
-                                              const allowed = globalEntitySettings.allowedEntities
-                                              if (e.target.checked) {
-                                                setGlobalEntitySettings(prev => ({
-                                                  ...prev,
-                                                  allowedEntities: [...allowed, entity.element_code]
-                                                }))
-                                              } else {
-                                                setGlobalEntitySettings(prev => ({
-                                                  ...prev,
-                                                  allowedEntities: allowed.filter(code => code !== entity.element_code)
-                                                }))
-                                              }
-                                            }}
-                                            className="form-checkbox mr-2"
-                                          />
-                                          <span className="text-sm">{entity.element_name} ({entity.element_code})</span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {globalEntitySettings.entityAccessMode === 'exclude_restricted' && (
-                                  <div>
-                                    <label className="label">Restricted Entities</label>
-                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                      {availableEntities.map(entity => (
-                                        <label key={entity.element_code} className="flex items-center p-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={globalEntitySettings.restrictedEntities.includes(entity.element_code)}
-                                            onChange={(e) => {
-                                              const restricted = globalEntitySettings.restrictedEntities
-                                              if (e.target.checked) {
-                                                setGlobalEntitySettings(prev => ({
-                                                  ...prev,
-                                                  restrictedEntities: [...restricted, entity.element_code]
-                                                }))
-                                              } else {
-                                                setGlobalEntitySettings(prev => ({
-                                                  ...prev,
-                                                  restrictedEntities: restricted.filter(code => code !== entity.element_code)
-                                                }))
-                                              }
-                                            }}
-                                            className="form-checkbox mr-2"
-                                          />
-                                          <span className="text-sm">{entity.element_name} ({entity.element_code})</span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Status</h4>
-                              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Total Entities:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{availableEntities.length}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Available:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{getFilteredEntities().length}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Selected:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{selectedEntities.length}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Mode:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white capitalize">
-                                      {globalEntitySettings.entityAccessMode.replace('_', ' ')}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Account Management Section */}
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Account Access Control</h4>
-                              <div className="space-y-4">
-                                <div>
-                                  <label className="label">Account Access Mode</label>
-                                  <select
-                                    value={globalAccountSettings.accountAccessMode}
-                                    onChange={(e) => setGlobalAccountSettings(prev => ({
-                                      ...prev,
-                                      accountAccessMode: e.target.value
-                                    }))}
-                                    className="form-select"
-                                  >
-                                    <option value="all">Show All Accounts</option>
-                                    <option value="allowed_only">Show Only Allowed Accounts</option>
-                                    <option value="exclude_restricted">Exclude Restricted Accounts</option>
-                                  </select>
-                                </div>
-
-                                {globalAccountSettings.accountAccessMode === 'allowed_only' && (
-                                  <div>
-                                    <label className="label">Allowed Accounts</label>
-                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                      {availableAccounts.map(account => (
-                                        <label key={account.element_code} className="flex items-center p-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={globalAccountSettings.allowedAccounts.includes(account.element_code)}
-                                            onChange={(e) => {
-                                              const allowed = globalAccountSettings.allowedAccounts
-                                              if (e.target.checked) {
-                                                setGlobalAccountSettings(prev => ({
-                                                  ...prev,
-                                                  allowedAccounts: [...allowed, account.element_code]
-                                                }))
-                                              } else {
-                                                setGlobalAccountSettings(prev => ({
-                                                  ...prev,
-                                                  allowedAccounts: allowed.filter(code => code !== account.element_code)
-                                                }))
-                                              }
-                                            }}
-                                            className="form-checkbox mr-2"
-                                          />
-                                          <span className="text-sm">{account.element_name} ({account.element_code})</span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {globalAccountSettings.accountAccessMode === 'exclude_restricted' && (
-                                  <div>
-                                    <label className="label">Restricted Accounts</label>
-                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                      {availableAccounts.map(account => (
-                                        <label key={account.element_code} className="flex items-center p-1">
-                                          <input
-                                            type="checkbox"
-                                            checked={globalAccountSettings.restrictedAccounts.includes(account.element_code)}
-                                            onChange={(e) => {
-                                              const restricted = globalAccountSettings.restrictedAccounts
-                                              if (e.target.checked) {
-                                                setGlobalAccountSettings(prev => ({
-                                                  ...prev,
-                                                  restrictedAccounts: [...restricted, account.element_code]
-                                                }))
-                                              } else {
-                                                setGlobalAccountSettings(prev => ({
-                                                  ...prev,
-                                                  restrictedAccounts: restricted.filter(code => code !== account.element_code)
-                                                }))
-                                              }
-                                            }}
-                                            className="form-checkbox mr-2"
-                                          />
-                                          <span className="text-sm">{account.element_name} ({account.element_code})</span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Combined Status</h4>
-                              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Total Entities:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{availableEntities.length}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Available Entities:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{getFilteredEntities().length}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Total Accounts:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{availableAccounts.length}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-medium text-gray-700 dark:text-gray-300">Available Accounts:</span>
-                                    <span className="ml-2 text-gray-900 dark:text-white">{getFilteredAccounts().length}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Quick Actions</h4>
-                              <div className="flex gap-2 flex-wrap">
-                                <button
-                                  onClick={() => {
-                                    fetchAvailableEntities()
-                                    showNotification('Entities refreshed from axes system', 'success')
-                                  }}
-                                  className="btn-secondary text-sm"
-                                >
-                                  Refresh Entities
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    fetchAvailableAccounts()
-                                    showNotification('Accounts refreshed from axes system', 'success')
-                                  }}
-                                  className="btn-secondary text-sm"
-                                >
-                                  Refresh Accounts
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setGlobalEntitySettings({
-                                      allowedEntities: [],
-                                      restrictedEntities: [],
-                                      entityAccessMode: 'all'
-                                    })
-                                    setGlobalAccountSettings({
-                                      allowedAccounts: [],
-                                      restrictedAccounts: [],
-                                      accountAccessMode: 'all'
-                                    })
-                                    showNotification('All settings reset', 'success')
-                                  }}
-                                  className="btn-secondary text-sm"
-                                >
-                                  Reset All Settings
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Dynamic Node Configuration */}
-                        <div className="space-y-6">
-                          {/* Entity Configuration - Common for most nodes */}
-                          {selectedSettingsNode !== 'fiscal_management' && selectedSettingsNode !== 'entity_management' && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Configuration</h4>
-                              <div className="grid grid-cols-2 gap-6">
-                                <div>
-                                  <label className="label">Included Entities</label>
-                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                    {getFilteredEntities().map(entity => (
-                                      <label key={entity.element_code} className="flex items-center p-1">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.included_entities?.includes(entity.element_code)}
-                                          onChange={(e) => {
-                                            const included = config.included_entities || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                included_entities: [...included, entity.element_code]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                included_entities: included.filter(e => e !== entity.element_code)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{entity.element_name}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Excluded Entities</label>
-                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                    {getFilteredEntities().map(entity => (
-                                      <label key={entity.element_code} className="flex items-center p-1">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.excluded_entities?.includes(entity.element_code)}
-                                          onChange={(e) => {
-                                            const excluded = config.excluded_entities || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                excluded_entities: [...excluded, entity.element_code]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                excluded_entities: excluded.filter(e => e !== entity.element_code)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{entity.element_name}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Account Configuration - Common for most nodes */}
-                          {selectedSettingsNode !== 'fiscal_management' && selectedSettingsNode !== 'entity_management' && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Account Configuration</h4>
-                              <div className="grid grid-cols-2 gap-6">
-                                <div>
-                                  <label className="label">Included Accounts</label>
-                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                    {getFilteredAccounts().map(account => (
-                                      <label key={account.element_code} className="flex items-center p-1">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.included_accounts?.includes(account.element_code)}
-                                          onChange={(e) => {
-                                            const included = config.included_accounts || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                included_accounts: [...included, account.element_code]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                included_accounts: included.filter(a => a !== account.element_code)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{account.element_name}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Excluded Accounts</label>
-                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                                    {getFilteredAccounts().map(account => (
-                                      <label key={account.element_code} className="flex items-center p-1">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.excluded_accounts?.includes(account.element_code)}
-                                          onChange={(e) => {
-                                            const excluded = config.excluded_accounts || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                excluded_accounts: [...excluded, account.element_code]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                excluded_accounts: excluded.filter(a => a !== account.element_code)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{account.element_name}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Fiscal Management Settings */}
-                          {selectedSettingsNode === 'fiscal_management' && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Fiscal Year Settings</h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="label">Available Years</label>
-                                  <div className="space-y-2">
-                                    {[2023, 2024, 2025, 2026].map(year => (
-                                      <label key={year} className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.years?.includes(year)}
-                                          onChange={(e) => {
-                                            const years = config.years || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                years: [...years, year]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                years: years.filter(y => y !== year)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{year}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Available Periods</label>
-                                  <div className="space-y-2">
-                                    {['Q1', 'Q2', 'Q3', 'Q4', 'FY'].map(period => (
-                                      <label key={period} className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.periods?.includes(period)}
-                                          onChange={(e) => {
-                                            const periods = config.periods || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                periods: [...periods, period]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                periods: periods.filter(p => p !== period)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{period}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Data Input Settings */}
-                          {selectedSettingsNode === 'data_input' && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Data Input Settings</h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="label">Data Sources</label>
-                                  <div className="space-y-2">
-                                    {['Trial Balance', 'Manual Entry', 'Import'].map(source => (
-                                      <label key={source} className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.data_sources?.includes(source)}
-                                          onChange={(e) => {
-                                            const sources = config.data_sources || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                data_sources: [...sources, source]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                data_sources: sources.filter(s => s !== source)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{source}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Data Format</label>
-                                  <select
-                                    value={config.data_format || 'standard'}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      data_format: e.target.value
-                                    })}
-                                    className="form-select"
-                                  >
-                                    <option value="standard">Standard Format</option>
-                                    <option value="custom">Custom Format</option>
-                                    <option value="excel">Excel Import</option>
-                                  </select>
-                                </div>
-                              </div>
-                              <div className="mt-4 space-y-3">
-                                <label className="flex items-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={config.validation_rules}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      validation_rules: e.target.checked
-                                    })}
-                                    className="form-checkbox mr-2"
-                                  />
-                                  <span className="text-sm">Enable validation rules</span>
-                                </label>
-                                <label className="flex items-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={config.auto_validation}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      auto_validation: e.target.checked
-                                    })}
-                                    className="form-checkbox mr-2"
-                                  />
-                                  <span className="text-sm">Auto-validate on import</span>
-                                </label>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Journal Entry Settings */}
-                          {selectedSettingsNode === 'journal_entry' && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Journal Entry Settings</h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="label">Entry Types</label>
-                                  <div className="space-y-2">
-                                    {['Manual', 'Automated', 'Recurring'].map(type => (
-                                      <label key={type} className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.entry_types?.includes(type)}
-                                          onChange={(e) => {
-                                            const types = config.entry_types || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                entry_types: [...types, type]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                entry_types: types.filter(t => t !== type)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{type}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Default Currency</label>
-                                  <select
-                                    value={config.default_currency || 'USD'}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      default_currency: e.target.value
-                                    })}
-                                    className="form-select"
-                                  >
-                                    <option value="USD">USD</option>
-                                    <option value="EUR">EUR</option>
-                                    <option value="GBP">GBP</option>
-                                  </select>
-                                </div>
-                              </div>
-                              <div className="mt-4 space-y-3">
-                                <label className="flex items-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={config.auto_reverse}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      auto_reverse: e.target.checked
-                                    })}
-                                    className="form-checkbox mr-2"
-                                  />
-                                  <span className="text-sm">Auto-reverse entries</span>
-                                </label>
-                                <label className="flex items-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={config.approval_required}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      approval_required: e.target.checked
-                                    })}
-                                    className="form-checkbox mr-2"
-                                  />
-                                  <span className="text-sm">Require approval</span>
-                                </label>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* FX Translation Settings */}
-                          {selectedSettingsNode === 'fx_translation' && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">FX Translation Settings</h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="label">Translation Method</label>
-                                  <select
-                                    value={config.method || 'current_rate'}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      method: e.target.value
-                                    })}
-                                    className="form-select"
-                                  >
-                                    <option value="current_rate">Current Rate Method</option>
-                                    <option value="temporal">Temporal Method</option>
-                                    <option value="monetary_nonmonetary">Monetary/Non-monetary</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="label">Rate Source</label>
-                                  <select
-                                    value={config.rate_source || 'central_bank'}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      rate_source: e.target.value
-                                    })}
-                                    className="form-select"
-                                  >
-                                    <option value="central_bank">Central Bank</option>
-                                    <option value="bloomberg">Bloomberg</option>
-                                    <option value="manual">Manual Entry</option>
-                                  </select>
-                                </div>
-                              </div>
-                              <div className="mt-4 space-y-3">
-                                <div>
-                                  <label className="label">Translation Date</label>
-                                  <select
-                                    value={config.translation_date || 'period_end'}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      translation_date: e.target.value
-                                    })}
-                                    className="form-select"
-                                  >
-                                    <option value="period_end">Period End</option>
-                                    <option value="average">Average Rate</option>
-                                    <option value="transaction_date">Transaction Date</option>
-                                  </select>
-                                </div>
-                                <label className="flex items-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={config.hedge_accounting}
-                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                      hedge_accounting: e.target.checked
-                                    })}
-                                    className="form-checkbox mr-2"
-                                  />
-                                  <span className="text-sm">Apply hedge accounting</span>
-                                </label>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Add settings for all other node types */}
-                          {['profit_loss', 'nci_allocation', 'retained_earnings', 'intercompany_elimination', 
-                            'goodwill_impairment', 'deferred_tax', 'opening_balance', 'associate_equity_method',
-                            'eps_calculation', 'what_if_analysis', 'validation', 'consolidation_output', 'report_generation'].includes(selectedSettingsNode) && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">
-                                {selectedSettingsNode.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Settings
-                              </h4>
-                              <div className="space-y-4">
-                                {/* Dynamic settings based on node type */}
-                                {Object.entries(config).filter(([key]) => !['included_entities', 'excluded_entities'].includes(key)).map(([key, value]) => (
-                                  <div key={key}>
-                                    <label className="label">
-                                      {key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                                    </label>
-                                    {typeof value === 'boolean' ? (
-                                      <label className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={value}
-                                          onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                            [key]: e.target.checked
-                                          })}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">Enable {key.split('_').join(' ')}</span>
-                                      </label>
-                                    ) : typeof value === 'number' ? (
-                                      <input
-                                        type="number"
-                                        value={value}
-                                        onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                          [key]: parseFloat(e.target.value)
-                                        })}
-                                        className="form-input"
-                                      />
-                                    ) : Array.isArray(value) ? (
-                                      <div className="space-y-2">
-                                        {value.map((item, index) => (
-                                          <div key={index} className="flex items-center gap-2">
-                                            <input
-                                              type="text"
-                                              value={item}
-                                              onChange={(e) => {
-                                                const newArray = [...value]
-                                                newArray[index] = e.target.value
-                                                updateNodeConfiguration(selectedSettingsNode, {
-                                                  [key]: newArray
-                                                })
-                                              }}
-                                              className="form-input flex-1"
-                                            />
-                                            <button
-                                              onClick={() => {
-                                                const newArray = value.filter((_, i) => i !== index)
-                                                updateNodeConfiguration(selectedSettingsNode, {
-                                                  [key]: newArray
-                                                })
-                                              }}
-                                              className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                            >
-                                              <X className="h-4 w-4" />
-                                            </button>
-                                          </div>
-                                        ))}
-                                        <button
-                                          onClick={() => {
-                                            updateNodeConfiguration(selectedSettingsNode, {
-                                              [key]: [...value, '']
-                                            })
-                                          }}
-                                          className="btn-secondary text-sm"
-                                        >
-                                          Add Item
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <input
-                                        type="text"
-                                        value={value}
-                                        onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                          [key]: e.target.value
-                                        })}
-                                        className="form-input"
-                                      />
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Save Configuration */}
-                        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                          <div className="flex justify-end gap-3">
-                            <button
-                              onClick={() => setSelectedSettingsNode(null)}
-                              className="btn-secondary"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => {
-                                showNotification(`Configuration saved for ${nodeTemplate?.title}`, 'success')
-                              }}
-                              className="btn-primary"
-                            >
-                              Save Configuration
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })()} 
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <Settings className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                    Select a Node to Configure
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    Choose a node from the left panel to configure its settings and dependencies.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ============================================================================
-  // MAIN COMPONENT RETURN
-  // ============================================================================
-  return (
-    <>
-      {/* Main Content */}
-      {currentView === 'processes' && renderProcessesView()}
-      
-      {currentView === 'flow' && selectedProcessId && renderFlowView()}
-      
-      {currentView === 'settings' && selectedProcessId && renderSettingsView()}
-      
-      {/* Click outside to close entity selector */}
-      {entitySelectorOpen && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setEntitySelectorOpen(false)}
-        />
-      )}
-      
-      {/* Always render modals */}
-      <div>
-
-        {/* Process Creation Modal */}
-        {processDrawerOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+      {/* Process Creation Modal */}
+      {processDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-xl">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 {editingProcess ? 'Edit Process' : 'Create New Process'}
               </h2>
               <button
@@ -2854,7 +312,10 @@ const Process = () => {
                   setProcessForm({ 
                     name: '', 
                     description: '',
-                    fiscal_year: new Date().getFullYear()
+                    type: 'actuals',
+                    fiscal_year: new Date().getFullYear(),
+                    reporting_currency: 'USD',
+                    settings: {}
                   })
                 }}
                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
@@ -2870,7 +331,7 @@ const Process = () => {
                   value={processForm.name}
                   onChange={(e) => setProcessForm({ ...processForm, name: e.target.value })}
                   className="form-input"
-                  placeholder="e.g., 2025 Q4 Consolidation"
+                  placeholder="Enter process name"
                 />
               </div>
               <div>
@@ -2878,83 +339,71 @@ const Process = () => {
                 <textarea
                   value={processForm.description}
                   onChange={(e) => setProcessForm({ ...processForm, description: e.target.value })}
-                  className="form-input resize-none"
+                  className="form-textarea"
                   rows={3}
-                  placeholder="Describe the purpose of this process"
+                  placeholder="Enter process description"
                 />
               </div>
-              <div>
-                <label className="label">Fiscal Year</label>
-                <input
-                  type="number"
-                  value={processForm.fiscal_year}
-                  onChange={(e) => setProcessForm({ ...processForm, fiscal_year: parseInt(e.target.value) })}
-                  className="form-input"
-                  min="2020"
-                  max="2030"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Type</label>
+                  <select
+                    value={processForm.type}
+                    onChange={(e) => setProcessForm({ ...processForm, type: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="actuals">Actuals</option>
+                    <option value="budget">Budget</option>
+                    <option value="forecast">Forecast</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Fiscal Year</label>
+                  <select
+                    value={processForm.fiscal_year}
+                    onChange={(e) => setProcessForm({ ...processForm, fiscal_year: parseInt(e.target.value) })}
+                    className="form-select"
+                  >
+                    {[2023, 2024, 2025, 2026].map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => {
                     setProcessDrawerOpen(false)
                     setEditingProcess(null)
-                    setProcessForm({ 
-                      name: '', 
-                      description: '',
-                      fiscal_year: new Date().getFullYear()
-                    })
                   }}
                   className="btn-secondary flex-1"
-                  disabled={loading}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={saveProcess}
-                  className="btn-primary flex-1 inline-flex items-center justify-center gap-2"
-                  disabled={loading || !processForm.name.trim()}
+                  disabled={loading}
+                  className="btn-primary flex-1"
                 >
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {editingProcess ? 'Updating...' : 'Creating...'}
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4" />
-                      {editingProcess ? 'Update Process' : 'Create Process'}
-                    </>
-                  )}
+                  {loading ? 'Saving...' : editingProcess ? 'Update' : 'Create'}
                 </button>
               </div>
             </div>
-            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Notification */}
-        {notification && (
-          <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border px-5 py-3 shadow-lg ${
-            notification.type === 'success'
-              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-200'
-              : 'border-rose-500 bg-rose-50 text-rose-700 dark:border-rose-400 dark:bg-rose-900/30 dark:text-rose-200'
-          }`}
-        >
-          {notification.type === 'success' ? (
-            <CheckCircle className="h-5 w-5" />
-          ) : (
-            <AlertCircle className="h-5 w-5" />
-          )}
-            <span className="text-sm font-medium">{notification.message}</span>
-            <button onClick={() => setNotification(null)} className="text-xs uppercase tracking-wide">
-              Dismiss
-            </button>
-          </div>
-        )}
-      </div>
-    </>
+      {/* Notification */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 rounded-lg p-4 shadow-lg ${
+          notification.type === 'success' 
+            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+            : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+        }`}>
+          {notification.message}
+        </div>
+      )}
+    </div>
   )
 }
 
