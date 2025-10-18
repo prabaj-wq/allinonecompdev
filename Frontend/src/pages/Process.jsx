@@ -439,7 +439,6 @@ const Process = () => {
   const [notification, setNotification] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedSettingsNode, setSelectedSettingsNode] = useState(null)
   const [nodeConfigurations, setNodeConfigurations] = useState({})
 
@@ -874,25 +873,125 @@ const Process = () => {
         included_entities: selectedEntities,
         excluded_entities: [],
         data_sources: ['Trial Balance', 'Manual Entry', 'Import'],
-        validation_rules: true
+        validation_rules: true,
+        auto_validation: true,
+        data_format: 'standard'
       },
       journal_entry: {
         auto_reverse: false,
         approval_required: true,
         included_entities: selectedEntities,
-        excluded_entities: []
+        excluded_entities: [],
+        entry_types: ['Manual', 'Automated', 'Recurring'],
+        default_currency: 'USD'
       },
       fx_translation: {
         method: 'current_rate',
         rate_source: 'central_bank',
         included_entities: selectedEntities,
-        excluded_entities: []
+        excluded_entities: [],
+        translation_date: 'period_end',
+        hedge_accounting: false
       },
       consolidation_output: {
         elimination_method: 'full',
         nci_calculation: 'proportional',
         included_entities: selectedEntities,
-        excluded_entities: []
+        excluded_entities: [],
+        output_format: 'standard',
+        include_eliminations: true
+      },
+      profit_loss: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        calculation_method: 'standard',
+        include_segments: true,
+        margin_analysis: true,
+        comparative_periods: 1
+      },
+      nci_allocation: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        allocation_method: 'proportional',
+        ownership_threshold: 50,
+        fair_value_adjustments: true
+      },
+      retained_earnings: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        rollforward_method: 'standard',
+        include_adjustments: true,
+        prior_period_adjustments: true
+      },
+      intercompany_elimination: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        elimination_types: ['Transactions', 'Balances', 'Profits'],
+        matching_tolerance: 0.01,
+        auto_matching: true
+      },
+      goodwill_impairment: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        impairment_method: 'annual',
+        fair_value_source: 'market',
+        discount_rate: 10,
+        growth_rate: 2
+      },
+      deferred_tax: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        calculation_method: 'liability',
+        tax_rates: {},
+        temporary_differences: true,
+        valuation_allowance: false
+      },
+      opening_balance: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        adjustment_types: ['Consolidation', 'Fair Value', 'Elimination'],
+        approval_required: true,
+        audit_trail: true
+      },
+      associate_equity_method: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        ownership_threshold: 20,
+        significant_influence: true,
+        fair_value_option: false,
+        impairment_testing: true
+      },
+      eps_calculation: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        calculation_method: 'weighted_average',
+        diluted_eps: true,
+        share_splits: true,
+        treasury_shares: true
+      },
+      what_if_analysis: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        scenario_types: ['Best Case', 'Worst Case', 'Most Likely'],
+        sensitivity_analysis: true,
+        monte_carlo: false,
+        confidence_level: 95
+      },
+      validation: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        validation_rules: ['Balance Check', 'Completeness', 'Accuracy'],
+        tolerance_level: 0.01,
+        auto_correction: false,
+        alert_threshold: 'medium'
+      },
+      report_generation: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        report_types: ['Financial Statements', 'Consolidation Report', 'Variance Analysis'],
+        output_format: 'PDF',
+        comparative_periods: 1,
+        drill_down: true
       }
     }
     
@@ -1636,74 +1735,10 @@ const Process = () => {
                           </div>
                         </div>
 
-                        {/* Node-specific configuration */}
-                        {selectedSettingsNode === 'fiscal_management' && (
-                          <div className="space-y-6">
-                            <div>
-                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Fiscal Year Settings</h4>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <label className="label">Available Years</label>
-                                  <div className="space-y-2">
-                                    {[2023, 2024, 2025, 2026].map(year => (
-                                      <label key={year} className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.years?.includes(year)}
-                                          onChange={(e) => {
-                                            const years = config.years || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                years: [...years, year]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                years: years.filter(y => y !== year)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{year}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                                <div>
-                                  <label className="label">Available Periods</label>
-                                  <div className="space-y-2">
-                                    {['Q1', 'Q2', 'Q3', 'Q4', 'FY'].map(period => (
-                                      <label key={period} className="flex items-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={config.periods?.includes(period)}
-                                          onChange={(e) => {
-                                            const periods = config.periods || []
-                                            if (e.target.checked) {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                periods: [...periods, period]
-                                              })
-                                            } else {
-                                              updateNodeConfiguration(selectedSettingsNode, {
-                                                periods: periods.filter(p => p !== period)
-                                              })
-                                            }
-                                          }}
-                                          className="form-checkbox mr-2"
-                                        />
-                                        <span className="text-sm">{period}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Entity-based nodes configuration */}
-                        {['data_input', 'journal_entry', 'fx_translation', 'consolidation_output'].includes(selectedSettingsNode) && (
-                          <div className="space-y-6">
+                        {/* Dynamic Node Configuration */}
+                        <div className="space-y-6">
+                          {/* Entity Configuration - Common for most nodes */}
+                          {selectedSettingsNode !== 'fiscal_management' && (
                             <div>
                               <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Configuration</h4>
                               <div className="grid grid-cols-2 gap-6">
@@ -1763,75 +1798,375 @@ const Process = () => {
                                 </div>
                               </div>
                             </div>
+                          )}
 
-                            {/* Node-specific settings */}
-                            {selectedSettingsNode === 'journal_entry' && (
-                              <div>
-                                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Journal Entry Settings</h4>
-                                <div className="space-y-3">
-                                  <label className="flex items-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={config.auto_reverse}
-                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                        auto_reverse: e.target.checked
-                                      })}
-                                      className="form-checkbox mr-2"
-                                    />
-                                    <span className="text-sm">Auto-reverse entries</span>
-                                  </label>
-                                  <label className="flex items-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={config.approval_required}
-                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                        approval_required: e.target.checked
-                                      })}
-                                      className="form-checkbox mr-2"
-                                    />
-                                    <span className="text-sm">Require approval</span>
-                                  </label>
-                                </div>
-                              </div>
-                            )}
-
-                            {selectedSettingsNode === 'fx_translation' && (
-                              <div>
-                                <h4 className="font-medium text-gray-900 dark:text-white mb-3">FX Translation Settings</h4>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="label">Translation Method</label>
-                                    <select
-                                      value={config.method || 'current_rate'}
-                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                        method: e.target.value
-                                      })}
-                                      className="form-select"
-                                    >
-                                      <option value="current_rate">Current Rate Method</option>
-                                      <option value="temporal">Temporal Method</option>
-                                      <option value="monetary_nonmonetary">Monetary/Non-monetary</option>
-                                    </select>
+                          {/* Fiscal Management Settings */}
+                          {selectedSettingsNode === 'fiscal_management' && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Fiscal Year Settings</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="label">Available Years</label>
+                                  <div className="space-y-2">
+                                    {[2023, 2024, 2025, 2026].map(year => (
+                                      <label key={year} className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.years?.includes(year)}
+                                          onChange={(e) => {
+                                            const years = config.years || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                years: [...years, year]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                years: years.filter(y => y !== year)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{year}</span>
+                                      </label>
+                                    ))}
                                   </div>
-                                  <div>
-                                    <label className="label">Rate Source</label>
-                                    <select
-                                      value={config.rate_source || 'central_bank'}
-                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
-                                        rate_source: e.target.value
-                                      })}
-                                      className="form-select"
-                                    >
-                                      <option value="central_bank">Central Bank</option>
-                                      <option value="bloomberg">Bloomberg</option>
-                                      <option value="manual">Manual Entry</option>
-                                    </select>
+                                </div>
+                                <div>
+                                  <label className="label">Available Periods</label>
+                                  <div className="space-y-2">
+                                    {['Q1', 'Q2', 'Q3', 'Q4', 'FY'].map(period => (
+                                      <label key={period} className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.periods?.includes(period)}
+                                          onChange={(e) => {
+                                            const periods = config.periods || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                periods: [...periods, period]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                periods: periods.filter(p => p !== period)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{period}</span>
+                                      </label>
+                                    ))}
                                   </div>
                                 </div>
                               </div>
-                            )}
-                          </div>
-                        )}
+                            </div>
+                          )}
+
+                          {/* Data Input Settings */}
+                          {selectedSettingsNode === 'data_input' && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Data Input Settings</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="label">Data Sources</label>
+                                  <div className="space-y-2">
+                                    {['Trial Balance', 'Manual Entry', 'Import'].map(source => (
+                                      <label key={source} className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.data_sources?.includes(source)}
+                                          onChange={(e) => {
+                                            const sources = config.data_sources || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                data_sources: [...sources, source]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                data_sources: sources.filter(s => s !== source)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{source}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="label">Data Format</label>
+                                  <select
+                                    value={config.data_format || 'standard'}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      data_format: e.target.value
+                                    })}
+                                    className="form-select"
+                                  >
+                                    <option value="standard">Standard Format</option>
+                                    <option value="custom">Custom Format</option>
+                                    <option value="excel">Excel Import</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="mt-4 space-y-3">
+                                <label className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={config.validation_rules}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      validation_rules: e.target.checked
+                                    })}
+                                    className="form-checkbox mr-2"
+                                  />
+                                  <span className="text-sm">Enable validation rules</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={config.auto_validation}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      auto_validation: e.target.checked
+                                    })}
+                                    className="form-checkbox mr-2"
+                                  />
+                                  <span className="text-sm">Auto-validate on import</span>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Journal Entry Settings */}
+                          {selectedSettingsNode === 'journal_entry' && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Journal Entry Settings</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="label">Entry Types</label>
+                                  <div className="space-y-2">
+                                    {['Manual', 'Automated', 'Recurring'].map(type => (
+                                      <label key={type} className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.entry_types?.includes(type)}
+                                          onChange={(e) => {
+                                            const types = config.entry_types || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                entry_types: [...types, type]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                entry_types: types.filter(t => t !== type)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{type}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="label">Default Currency</label>
+                                  <select
+                                    value={config.default_currency || 'USD'}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      default_currency: e.target.value
+                                    })}
+                                    className="form-select"
+                                  >
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="GBP">GBP</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="mt-4 space-y-3">
+                                <label className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={config.auto_reverse}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      auto_reverse: e.target.checked
+                                    })}
+                                    className="form-checkbox mr-2"
+                                  />
+                                  <span className="text-sm">Auto-reverse entries</span>
+                                </label>
+                                <label className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={config.approval_required}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      approval_required: e.target.checked
+                                    })}
+                                    className="form-checkbox mr-2"
+                                  />
+                                  <span className="text-sm">Require approval</span>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* FX Translation Settings */}
+                          {selectedSettingsNode === 'fx_translation' && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">FX Translation Settings</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="label">Translation Method</label>
+                                  <select
+                                    value={config.method || 'current_rate'}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      method: e.target.value
+                                    })}
+                                    className="form-select"
+                                  >
+                                    <option value="current_rate">Current Rate Method</option>
+                                    <option value="temporal">Temporal Method</option>
+                                    <option value="monetary_nonmonetary">Monetary/Non-monetary</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="label">Rate Source</label>
+                                  <select
+                                    value={config.rate_source || 'central_bank'}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      rate_source: e.target.value
+                                    })}
+                                    className="form-select"
+                                  >
+                                    <option value="central_bank">Central Bank</option>
+                                    <option value="bloomberg">Bloomberg</option>
+                                    <option value="manual">Manual Entry</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="mt-4 space-y-3">
+                                <div>
+                                  <label className="label">Translation Date</label>
+                                  <select
+                                    value={config.translation_date || 'period_end'}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      translation_date: e.target.value
+                                    })}
+                                    className="form-select"
+                                  >
+                                    <option value="period_end">Period End</option>
+                                    <option value="average">Average Rate</option>
+                                    <option value="transaction_date">Transaction Date</option>
+                                  </select>
+                                </div>
+                                <label className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={config.hedge_accounting}
+                                    onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                      hedge_accounting: e.target.checked
+                                    })}
+                                    className="form-checkbox mr-2"
+                                  />
+                                  <span className="text-sm">Apply hedge accounting</span>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Add settings for all other node types */}
+                          {['profit_loss', 'nci_allocation', 'retained_earnings', 'intercompany_elimination', 
+                            'goodwill_impairment', 'deferred_tax', 'opening_balance', 'associate_equity_method',
+                            'eps_calculation', 'what_if_analysis', 'validation', 'consolidation_output', 'report_generation'].includes(selectedSettingsNode) && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">
+                                {selectedSettingsNode.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} Settings
+                              </h4>
+                              <div className="space-y-4">
+                                {/* Dynamic settings based on node type */}
+                                {Object.entries(config).filter(([key]) => !['included_entities', 'excluded_entities'].includes(key)).map(([key, value]) => (
+                                  <div key={key}>
+                                    <label className="label">
+                                      {key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                                    </label>
+                                    {typeof value === 'boolean' ? (
+                                      <label className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={value}
+                                          onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                            [key]: e.target.checked
+                                          })}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">Enable {key.split('_').join(' ')}</span>
+                                      </label>
+                                    ) : typeof value === 'number' ? (
+                                      <input
+                                        type="number"
+                                        value={value}
+                                        onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                          [key]: parseFloat(e.target.value)
+                                        })}
+                                        className="form-input"
+                                      />
+                                    ) : Array.isArray(value) ? (
+                                      <div className="space-y-2">
+                                        {value.map((item, index) => (
+                                          <div key={index} className="flex items-center gap-2">
+                                            <input
+                                              type="text"
+                                              value={item}
+                                              onChange={(e) => {
+                                                const newArray = [...value]
+                                                newArray[index] = e.target.value
+                                                updateNodeConfiguration(selectedSettingsNode, {
+                                                  [key]: newArray
+                                                })
+                                              }}
+                                              className="form-input flex-1"
+                                            />
+                                            <button
+                                              onClick={() => {
+                                                const newArray = value.filter((_, i) => i !== index)
+                                                updateNodeConfiguration(selectedSettingsNode, {
+                                                  [key]: newArray
+                                                })
+                                              }}
+                                              className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                            >
+                                              <X className="h-4 w-4" />
+                                            </button>
+                                          </div>
+                                        ))}
+                                        <button
+                                          onClick={() => {
+                                            updateNodeConfiguration(selectedSettingsNode, {
+                                              [key]: [...value, '']
+                                            })
+                                          }}
+                                          className="btn-secondary text-sm"
+                                        >
+                                          Add Item
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <input
+                                        type="text"
+                                        value={value}
+                                        onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                          [key]: e.target.value
+                                        })}
+                                        className="form-input"
+                                      />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
                         {/* Save Configuration */}
                         <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -1896,138 +2231,6 @@ const Process = () => {
       
       {/* Always render modals */}
       <div>
-        {/* Settings Modal */}
-        {settingsOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="w-full max-w-2xl max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
-              <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Process Settings</h2>
-                <button
-                  onClick={() => setSettingsOpen(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              <div className="space-y-6">
-                {/* General Settings */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">General Settings</h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="label">Consolidation Method</label>
-                      <select className="form-select">
-                        <option value="full">Full Consolidation</option>
-                        <option value="proportional">Proportional Consolidation</option>
-                        <option value="equity">Equity Method</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">Reporting Currency</label>
-                      <select className="form-select">
-                        <option value="USD">USD - US Dollar</option>
-                        <option value="EUR">EUR - Euro</option>
-                        <option value="GBP">GBP - British Pound</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Elimination Settings */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Elimination Settings</h3>
-                  <div className="space-y-3">
-                    <label className="flex items-center">
-                      <input type="checkbox" className="form-checkbox" defaultChecked />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Eliminate intercompany transactions
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input type="checkbox" className="form-checkbox" defaultChecked />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Eliminate intercompany balances
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input type="checkbox" className="form-checkbox" />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Apply minority interest adjustments
-                      </span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* FX Translation Settings */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">FX Translation</h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="label">Translation Method</label>
-                      <select className="form-select">
-                        <option value="current">Current Rate Method</option>
-                        <option value="temporal">Temporal Method</option>
-                        <option value="mixed">Mixed Method</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">Rate Source</label>
-                      <select className="form-select">
-                        <option value="manual">Manual Entry</option>
-                        <option value="api">API Feed</option>
-                        <option value="file">File Import</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Validation Settings */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Validation & Controls</h3>
-                  <div className="space-y-3">
-                    <label className="flex items-center">
-                      <input type="checkbox" className="form-checkbox" defaultChecked />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Enable balance validation
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input type="checkbox" className="form-checkbox" defaultChecked />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Require approval for execution
-                      </span>
-                    </label>
-                    <label className="flex items-center">
-                      <input type="checkbox" className="form-checkbox" />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                        Generate audit trail
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-800">
-              <button
-                onClick={() => setSettingsOpen(false)}
-                className="btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setSettingsOpen(false)
-                  showNotification('Settings saved successfully', 'success')
-                }}
-                className="btn-primary"
-              >
-                Save Settings
-              </button>
-            </div>
-            </div>
-          </div>
-        )}
 
         {/* Process Creation Modal */}
         {processDrawerOpen && (
