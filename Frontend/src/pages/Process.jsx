@@ -626,6 +626,40 @@ const Process = () => {
     setNodeLibraryOpen(false)
   }
 
+  const handleNodeDragStart = (event, nodeType) => {
+    setDraggedNode(nodeType.type)
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'copy'
+      event.dataTransfer.setData('application/node-type', nodeType.type)
+      event.dataTransfer.setData('text/plain', nodeType.type)
+    }
+  }
+
+  const handleNodeDragEnd = () => {
+    setDraggedNode(null)
+  }
+
+  const handleCanvasDragOver = (event) => {
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy'
+    }
+  }
+
+  const handleCanvasDrop = (event) => {
+    event.preventDefault()
+    const nodeType =
+      (event.dataTransfer && event.dataTransfer.getData('application/node-type')) ||
+      (event.dataTransfer && event.dataTransfer.getData('text/plain')) ||
+      draggedNode
+
+    if (!nodeType) return
+
+    const position = getNodePosition(event.nativeEvent ?? event)
+    addNodeToCanvas(nodeType, position)
+    setDraggedNode(null)
+  }
+
   const updateNodePosition = async (nodeId, newPosition) => {
     setCanvasNodes(nodes => 
       nodes.map(node => 
@@ -1178,6 +1212,9 @@ const Process = () => {
                   return (
                     <div
                       key={nodeType.type}
+                      draggable
+                      onDragStart={(e) => handleNodeDragStart(e, nodeType)}
+                      onDragEnd={handleNodeDragEnd}
                       onClick={() => {
                         const centerX = 300 + Math.random() * 100
                         const centerY = 200 + Math.random() * 100
@@ -1218,6 +1255,8 @@ const Process = () => {
               className="absolute inset-0 cursor-crosshair"
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
+              onDragOver={handleCanvasDragOver}
+              onDrop={handleCanvasDrop}
               onClick={(e) => {
                 if (e.target === e.currentTarget) {
                   setSelectedNode(null)
