@@ -348,6 +348,7 @@ const Process = () => {
   const [isExecuting, setIsExecuting] = useState(false)
   const [executionStep, setExecutionStep] = useState(0)
   const [availableEntities, setAvailableEntities] = useState([])
+  const [availableAccounts, setAvailableAccounts] = useState([])
   const [entitySelectorOpen, setEntitySelectorOpen] = useState(false)
 
   // Fetch available entities from axes_entity
@@ -388,6 +389,50 @@ const Process = () => {
         { element_code: 'ENTITY001', element_name: 'Parent Company' },
         { element_code: 'ENTITY002', element_name: 'Subsidiary A' },
         { element_code: 'ENTITY003', element_name: 'Subsidiary B' }
+      ])
+    }
+  }, [selectedCompany, isAuthenticated, getAuthHeaders])
+
+  // Fetch available accounts from axes_account
+  const fetchAvailableAccounts = useCallback(async () => {
+    if (!selectedCompany || !isAuthenticated) return
+    
+    try {
+      console.log('Fetching accounts for company:', selectedCompany)
+      const response = await fetch(
+        `/api/axes-account/elements?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'GET',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) {
+        console.error('Account fetch failed with status:', response.status)
+        throw new Error(`Failed to load accounts (${response.status})`)
+      }
+      const data = await response.json()
+      console.log('Fetched accounts:', data)
+      
+      // Ensure we have the right data structure
+      const accounts = data.elements || data.data || data || []
+      setAvailableAccounts(accounts)
+      
+      if (accounts.length === 0) {
+        showNotification('No accounts found. Please check your axes account configuration.', 'warning')
+      } else {
+        console.log(`Loaded ${accounts.length} accounts`)
+      }
+    } catch (error) {
+      console.error('Failed to load accounts:', error)
+      showNotification(`Unable to load accounts: ${error.message}`, 'error')
+      // Set some fallback accounts for testing
+      setAvailableAccounts([
+        { element_code: 'ACC001', element_name: 'Cash and Cash Equivalents' },
+        { element_code: 'ACC002', element_name: 'Accounts Receivable' },
+        { element_code: 'ACC003', element_name: 'Inventory' },
+        { element_code: 'ACC004', element_name: 'Property, Plant & Equipment' },
+        { element_code: 'ACC005', element_name: 'Accounts Payable' }
       ])
     }
   }, [selectedCompany, isAuthenticated, getAuthHeaders])
@@ -466,6 +511,11 @@ const Process = () => {
     restrictedEntities: [],
     entityAccessMode: 'all' // 'all', 'allowed_only', 'exclude_restricted'
   })
+  const [globalAccountSettings, setGlobalAccountSettings] = useState({
+    allowedAccounts: [],
+    restrictedAccounts: [],
+    accountAccessMode: 'all' // 'all', 'allowed_only', 'exclude_restricted'
+  })
 
 
   // Utility Functions
@@ -493,6 +543,24 @@ const Process = () => {
         return availableEntities
     }
   }, [availableEntities, globalEntitySettings])
+
+  // Get filtered accounts based on global settings
+  const getFilteredAccounts = useCallback(() => {
+    if (!availableAccounts.length) return []
+    
+    switch (globalAccountSettings.accountAccessMode) {
+      case 'allowed_only':
+        return availableAccounts.filter(account => 
+          globalAccountSettings.allowedAccounts.includes(account.element_code)
+        )
+      case 'exclude_restricted':
+        return availableAccounts.filter(account => 
+          !globalAccountSettings.restrictedAccounts.includes(account.element_code)
+        )
+      default: // 'all'
+        return availableAccounts
+    }
+  }, [availableAccounts, globalAccountSettings])
 
   // Execute process simulation
   const executeProcessSimulation = async () => {
@@ -1214,7 +1282,8 @@ const Process = () => {
     fetchProcesses()
     fetchReferenceData()
     fetchAvailableEntities()
-  }, [fetchProcesses, fetchReferenceData, fetchAvailableEntities])
+    fetchAvailableAccounts()
+  }, [fetchProcesses, fetchReferenceData, fetchAvailableEntities, fetchAvailableAccounts])
 
   useEffect(() => {
     if (selectedProcessId) {
@@ -1747,7 +1816,7 @@ const Process = () => {
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
-                        Entity Management
+                        Entity & Account Management
                       </div>
                       <div className="text-xs text-emerald-600 dark:text-emerald-400">
                         Global Settings
@@ -1935,9 +2004,119 @@ const Process = () => {
                               </div>
                             </div>
 
+                            {/* Account Management Section */}
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Account Access Control</h4>
+                              <div className="space-y-4">
+                                <div>
+                                  <label className="label">Account Access Mode</label>
+                                  <select
+                                    value={globalAccountSettings.accountAccessMode}
+                                    onChange={(e) => setGlobalAccountSettings(prev => ({
+                                      ...prev,
+                                      accountAccessMode: e.target.value
+                                    }))}
+                                    className="form-select"
+                                  >
+                                    <option value="all">Show All Accounts</option>
+                                    <option value="allowed_only">Show Only Allowed Accounts</option>
+                                    <option value="exclude_restricted">Exclude Restricted Accounts</option>
+                                  </select>
+                                </div>
+
+                                {globalAccountSettings.accountAccessMode === 'allowed_only' && (
+                                  <div>
+                                    <label className="label">Allowed Accounts</label>
+                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                      {availableAccounts.map(account => (
+                                        <label key={account.element_code} className="flex items-center p-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={globalAccountSettings.allowedAccounts.includes(account.element_code)}
+                                            onChange={(e) => {
+                                              const allowed = globalAccountSettings.allowedAccounts
+                                              if (e.target.checked) {
+                                                setGlobalAccountSettings(prev => ({
+                                                  ...prev,
+                                                  allowedAccounts: [...allowed, account.element_code]
+                                                }))
+                                              } else {
+                                                setGlobalAccountSettings(prev => ({
+                                                  ...prev,
+                                                  allowedAccounts: allowed.filter(code => code !== account.element_code)
+                                                }))
+                                              }
+                                            }}
+                                            className="form-checkbox mr-2"
+                                          />
+                                          <span className="text-sm">{account.element_name} ({account.element_code})</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {globalAccountSettings.accountAccessMode === 'exclude_restricted' && (
+                                  <div>
+                                    <label className="label">Restricted Accounts</label>
+                                    <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                      {availableAccounts.map(account => (
+                                        <label key={account.element_code} className="flex items-center p-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={globalAccountSettings.restrictedAccounts.includes(account.element_code)}
+                                            onChange={(e) => {
+                                              const restricted = globalAccountSettings.restrictedAccounts
+                                              if (e.target.checked) {
+                                                setGlobalAccountSettings(prev => ({
+                                                  ...prev,
+                                                  restrictedAccounts: [...restricted, account.element_code]
+                                                }))
+                                              } else {
+                                                setGlobalAccountSettings(prev => ({
+                                                  ...prev,
+                                                  restrictedAccounts: restricted.filter(code => code !== account.element_code)
+                                                }))
+                                              }
+                                            }}
+                                            className="form-checkbox mr-2"
+                                          />
+                                          <span className="text-sm">{account.element_name} ({account.element_code})</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Combined Status</h4>
+                              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Total Entities:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{availableEntities.length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Available Entities:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{getFilteredEntities().length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Total Accounts:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{availableAccounts.length}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-medium text-gray-700 dark:text-gray-300">Available Accounts:</span>
+                                    <span className="ml-2 text-gray-900 dark:text-white">{getFilteredAccounts().length}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
                             <div>
                               <h4 className="font-medium text-gray-900 dark:text-white mb-3">Quick Actions</h4>
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 flex-wrap">
                                 <button
                                   onClick={() => {
                                     fetchAvailableEntities()
@@ -1949,16 +2128,30 @@ const Process = () => {
                                 </button>
                                 <button
                                   onClick={() => {
+                                    fetchAvailableAccounts()
+                                    showNotification('Accounts refreshed from axes system', 'success')
+                                  }}
+                                  className="btn-secondary text-sm"
+                                >
+                                  Refresh Accounts
+                                </button>
+                                <button
+                                  onClick={() => {
                                     setGlobalEntitySettings({
                                       allowedEntities: [],
                                       restrictedEntities: [],
                                       entityAccessMode: 'all'
                                     })
-                                    showNotification('Entity settings reset', 'success')
+                                    setGlobalAccountSettings({
+                                      allowedAccounts: [],
+                                      restrictedAccounts: [],
+                                      accountAccessMode: 'all'
+                                    })
+                                    showNotification('All settings reset', 'success')
                                   }}
                                   className="btn-secondary text-sm"
                                 >
-                                  Reset Settings
+                                  Reset All Settings
                                 </button>
                               </div>
                             </div>
@@ -2022,6 +2215,69 @@ const Process = () => {
                                           className="form-checkbox mr-2"
                                         />
                                         <span className="text-sm">{entity.element_name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Account Configuration - Common for most nodes */}
+                          {selectedSettingsNode !== 'fiscal_management' && selectedSettingsNode !== 'entity_management' && (
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Account Configuration</h4>
+                              <div className="grid grid-cols-2 gap-6">
+                                <div>
+                                  <label className="label">Included Accounts</label>
+                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                    {getFilteredAccounts().map(account => (
+                                      <label key={account.element_code} className="flex items-center p-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.included_accounts?.includes(account.element_code)}
+                                          onChange={(e) => {
+                                            const included = config.included_accounts || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                included_accounts: [...included, account.element_code]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                included_accounts: included.filter(a => a !== account.element_code)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{account.element_name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="label">Excluded Accounts</label>
+                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                    {getFilteredAccounts().map(account => (
+                                      <label key={account.element_code} className="flex items-center p-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.excluded_accounts?.includes(account.element_code)}
+                                          onChange={(e) => {
+                                            const excluded = config.excluded_accounts || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                excluded_accounts: [...excluded, account.element_code]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                excluded_accounts: excluded.filter(a => a !== account.element_code)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{account.element_name}</span>
                                       </label>
                                     ))}
                                   </div>
