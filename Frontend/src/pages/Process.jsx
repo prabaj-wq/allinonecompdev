@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
-import { useAuth } from '../contexts/AuthContext'
 import {
   Plus, Settings, Play, Pause, RotateCcw, ChevronRight, X,
   Building2, TrendingUp, Users, Repeat, Globe, Link, Target,
@@ -87,7 +86,6 @@ const NODE_LIBRARY = [
 
 const Process = () => {
   const { selectedCompany } = useCompany()
-  const { isAuthenticated, getAuthHeaders } = useAuth()
   const navigate = useNavigate()
 
   // Main State
@@ -114,31 +112,54 @@ const Process = () => {
 
   // Initialize with demo processes
   useEffect(() => {
-    console.log('🚀 Process module initializing...')
+    console.log('🚀 Process module initializing for company:', selectedCompany)
     
-    const demoProcesses = [
-      {
-        id: 'demo-1',
-        name: 'Actuals',
-        description: 'Actual financial consolidation process',
-        type: 'actuals',
-        status: 'active',
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'demo-2', 
-        name: 'Budget',
-        description: 'Budget planning and consolidation',
-        type: 'budget',
-        status: 'draft',
-        created_at: new Date().toISOString()
-      }
-    ]
-    
-    console.log('📋 Setting demo processes:', demoProcesses)
-    setProcesses(demoProcesses)
-    setLoading(false)
-  }, [])
+    try {
+      const demoProcesses = [
+        {
+          id: 'demo-1',
+          name: 'Actuals Process',
+          description: 'Actual financial consolidation process for monthly reporting',
+          type: 'actuals',
+          status: 'active',
+          fiscal_year: new Date().getFullYear(),
+          reporting_currency: 'USD',
+          company: selectedCompany,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'demo-2', 
+          name: 'Budget Process',
+          description: 'Budget planning and consolidation process',
+          type: 'budget',
+          status: 'draft',
+          fiscal_year: new Date().getFullYear(),
+          reporting_currency: 'USD',
+          company: selectedCompany,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'demo-3',
+          name: 'Forecast Process',
+          description: 'Financial forecasting and projection process',
+          type: 'forecast',
+          status: 'active',
+          fiscal_year: new Date().getFullYear(),
+          reporting_currency: 'USD',
+          company: selectedCompany,
+          created_at: new Date().toISOString()
+        }
+      ]
+      
+      console.log('📋 Setting demo processes:', demoProcesses)
+      setProcesses(demoProcesses)
+    } catch (error) {
+      console.error('❌ Error initializing processes:', error)
+      showNotification('Failed to initialize processes', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedCompany])
 
   // Save Process
   const saveProcess = async () => {
@@ -158,6 +179,7 @@ const Process = () => {
         fiscal_year: processForm.fiscal_year,
         reporting_currency: processForm.reporting_currency,
         settings: processForm.settings,
+        company: selectedCompany,
         status: 'active',
         created_at: editingProcess?.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -245,24 +267,52 @@ const Process = () => {
               </div>
             </div>
             
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                <span>FY {process.fiscal_year}</span>
+                <span>{process.reporting_currency}</span>
+              </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 Created {new Date(process.created_at).toLocaleDateString()}
               </div>
-              <button
-                onClick={() => {
-                  showNotification(`Opening ${process.name} process`, 'success')
-                }}
-                className="btn-primary text-sm"
-              >
-                Open Process
-              </button>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    showNotification(`Opening ${process.name} workflow`, 'success')
+                    // Navigate to process workflow view
+                  }}
+                  className="btn-primary text-sm flex-1"
+                >
+                  Open Workflow
+                </button>
+                <button
+                  onClick={() => {
+                    showNotification(`Running ${process.name} process`, 'success')
+                  }}
+                  className="btn-secondary text-sm px-3"
+                  title="Run Process"
+                >
+                  <Play className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         ))
       )}
     </div>
   )
+
+  // Show loading if company is not selected yet
+  if (!selectedCompany) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+          <p className="text-gray-500 dark:text-gray-400">Loading company context...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -272,7 +322,7 @@ const Process = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Process Management</h1>
             <p className="text-gray-600 dark:text-gray-400">
-              Manage your financial consolidation processes ({processes.length} processes)
+              Manage financial consolidation processes for {selectedCompany} ({processes.length} processes)
             </p>
           </div>
           <button
