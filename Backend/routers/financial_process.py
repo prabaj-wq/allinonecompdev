@@ -929,3 +929,267 @@ async def get_process_alerts(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching alerts: {str(e)}")
+
+# ============================================================================
+# NODE EXECUTION AND STATUS TRACKING
+# ============================================================================
+
+@router.post("/processes/{process_id}/execute-node")
+async def execute_individual_node(
+    process_id: str,
+    node_data: dict = Body(...),
+    company_name: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """Execute an individual node in the process"""
+    try:
+        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
+        node_id = node_data.get("node_id")
+        node_type = node_data.get("node_type")
+        entities = node_data.get("entities", [])
+        
+        # Create node execution record
+        execution_id = str(uuid.uuid4())
+        
+        create_execution_query = text(f"""
+            INSERT INTO {company_db_name}.process_executions 
+            (id, company_id, process_id, execution_type, status, started_at, executed_by, 
+             execution_data)
+            VALUES (:id, :company_id, :process_id, :execution_type, 'running', NOW(), 
+                    :executed_by, :execution_data)
+        """)
+        
+        execution_data = {
+            "node_id": node_id,
+            "node_type": node_type,
+            "entities": entities,
+            "execution_mode": "individual_node"
+        }
+        
+        db.execute(create_execution_query, {
+            "id": execution_id,
+            "company_id": str(uuid.uuid4()),
+            "process_id": process_id,
+            "execution_type": "node_execution",
+            "executed_by": str(current_user.id),
+            "execution_data": json.dumps(execution_data)
+        })
+        
+        # Simulate node execution based on type
+        import time
+        import random
+        
+        # Simulate processing time
+        processing_time = random.uniform(1, 3)  # 1-3 seconds
+        time.sleep(processing_time)
+        
+        # Simulate success/failure
+        success_rate = 0.9  # 90% success rate
+        is_success = random.random() < success_rate
+        
+        if is_success:
+            results = {
+                "status": "completed",
+                "message": f"{node_type} executed successfully",
+                "entities_processed": len(entities),
+                "processing_time_ms": int(processing_time * 1000),
+                "records_affected": random.randint(10, 100)
+            }
+            status = "success"
+        else:
+            results = {
+                "status": "error",
+                "message": f"Failed to execute {node_type}",
+                "error_details": "Simulated execution error for testing",
+                "processing_time_ms": int(processing_time * 1000)
+            }
+            status = "error"
+        
+        # Update execution record
+        update_execution_query = text(f"""
+            UPDATE {company_db_name}.process_executions 
+            SET status = :status, completed_at = NOW(), 
+                execution_time_ms = :execution_time,
+                results = :results
+            WHERE id = :execution_id
+        """)
+        
+        db.execute(update_execution_query, {
+            "execution_id": execution_id,
+            "status": status,
+            "execution_time": int(processing_time * 1000),
+            "results": json.dumps(results)
+        })
+        
+        db.commit()
+        
+        return {
+            "execution_id": execution_id,
+            "node_id": node_id,
+            "status": status,
+            "results": results
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error executing node: {str(e)}")
+
+@router.post("/processes/{process_id}/execute-flow")
+async def execute_process_flow(
+    process_id: str,
+    flow_data: dict = Body(...),
+    company_name: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """Execute entire process flow sequentially"""
+    try:
+        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
+        
+        flow_mode = flow_data.get("flow_mode", "entity")
+        entities = flow_data.get("entities", [])
+        year = flow_data.get("year")
+        period = flow_data.get("period")
+        
+        # Create flow execution record
+        execution_id = str(uuid.uuid4())
+        
+        create_execution_query = text(f"""
+            INSERT INTO {company_db_name}.process_executions 
+            (id, company_id, process_id, execution_type, status, started_at, executed_by, 
+             execution_data)
+            VALUES (:id, :company_id, :process_id, :execution_type, 'running', NOW(), 
+                    :executed_by, :execution_data)
+        """)
+        
+        execution_data = {
+            "flow_mode": flow_mode,
+            "entities": entities,
+            "year": year,
+            "period": period,
+            "execution_mode": "full_flow"
+        }
+        
+        db.execute(create_execution_query, {
+            "id": execution_id,
+            "company_id": str(uuid.uuid4()),
+            "process_id": process_id,
+            "execution_type": "flow_execution",
+            "executed_by": str(current_user.id),
+            "execution_data": json.dumps(execution_data)
+        })
+        
+        # Define flow steps based on mode
+        if flow_mode == "entity":
+            flow_steps = [
+                "data_input", "journal_entry", "fx_translation", "deferred_tax",
+                "profit_loss", "retained_earnings", "validation", "report_generation"
+            ]
+        else:  # consolidation
+            flow_steps = [
+                "data_input", "intercompany_elimination", "nci_allocation",
+                "goodwill_impairment", "consolidation_output", "report_generation"
+            ]
+        
+        # Execute each step
+        step_results = []
+        total_processing_time = 0
+        
+        for i, step in enumerate(flow_steps):
+            import time
+            import random
+            
+            step_time = random.uniform(0.5, 2.0)  # 0.5-2 seconds per step
+            time.sleep(step_time)
+            total_processing_time += step_time
+            
+            step_result = {
+                "step": i + 1,
+                "node_type": step,
+                "status": "completed",
+                "processing_time_ms": int(step_time * 1000),
+                "entities_processed": len(entities),
+                "records_affected": random.randint(5, 50)
+            }
+            step_results.append(step_result)
+        
+        # Final results
+        results = {
+            "status": "completed",
+            "flow_mode": flow_mode,
+            "total_steps": len(flow_steps),
+            "entities_processed": len(entities),
+            "total_processing_time_ms": int(total_processing_time * 1000),
+            "step_results": step_results,
+            "summary": {
+                "journals_created": random.randint(20, 100),
+                "eliminations_processed": random.randint(5, 25) if flow_mode == "consolidation" else 0,
+                "reports_generated": 3
+            }
+        }
+        
+        # Update execution record
+        update_execution_query = text(f"""
+            UPDATE {company_db_name}.process_executions 
+            SET status = 'success', completed_at = NOW(), 
+                execution_time_ms = :execution_time,
+                results = :results
+            WHERE id = :execution_id
+        """)
+        
+        db.execute(update_execution_query, {
+            "execution_id": execution_id,
+            "execution_time": int(total_processing_time * 1000),
+            "results": json.dumps(results)
+        })
+        
+        db.commit()
+        
+        return {
+            "execution_id": execution_id,
+            "status": "success",
+            "results": results
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error executing flow: {str(e)}")
+
+@router.get("/processes/{process_id}/execution-history")
+async def get_execution_history(
+    process_id: str,
+    company_name: str = Query(...),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """Get execution history for a process"""
+    try:
+        company_db_name = f"company_{company_name.lower().replace(' ', '_').replace('-', '_')}"
+        
+        query = text(f"""
+            SELECT id, execution_type, status, started_at, completed_at, 
+                   execution_time_ms, results, execution_data
+            FROM {company_db_name}.process_executions
+            WHERE process_id = :process_id
+            ORDER BY started_at DESC
+            LIMIT :limit
+        """)
+        
+        result = db.execute(query, {"process_id": process_id, "limit": limit})
+        executions = []
+        
+        for row in result:
+            execution = dict(row._mapping)
+            # Parse JSON fields
+            if execution['results']:
+                execution['results'] = json.loads(execution['results'])
+            if execution['execution_data']:
+                execution['execution_data'] = json.loads(execution['execution_data'])
+            executions.append(execution)
+        
+        return {"executions": executions}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching execution history: {str(e)}")

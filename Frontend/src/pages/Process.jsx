@@ -52,29 +52,64 @@ import {
   Maximize2,
   Grid,
   Layers3,
-  BookOpen
+  BookOpen,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  PlayCircle,
+  StopCircle
 } from 'lucide-react'
 
-const PROCESS_TYPES = [
-  'Profit & Loss Calculation',
-  'NCI Handling', 
-  'Retained Earnings Rollforward',
-  'FX Translation',
-  'Intercompany Eliminations',
-  'Goodwill & Fair Value Adjustments',
-  'Deferred Taxes',
-  'Opening Balance Adjustments',
-  'Minority/Associate/JV Accounting',
-  'Prior Period Errors & Changes',
-  'Statement of Changes in Equity',
-  'OCI Items',
-  'EPS Calculation',
-  'Valuation & Impairment',
-  'What-If Simulation',
-  'Scenario Version Control',
-  'Alerts & Exceptions',
-  'Entity Structure & Ownership'
+// Define process flow categories
+const ENTITY_FLOW = [
+  'data_input',
+  'journal_entry',
+  'fx_translation',
+  'deferred_tax',
+  'profit_loss',
+  'retained_earnings',
+  'validation',
+  'report_generation'
 ]
+
+const CONSOLIDATION_FLOW = [
+  'data_input',
+  'intercompany_elimination',
+  'nci_allocation',
+  'goodwill_impairment',
+  'consolidation_output',
+  'report_generation'
+]
+
+// Node execution status
+const NODE_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  ERROR: 'error'
+}
+
+const createBezierPath = (fromX, fromY, toX, toY) => {
+  const dx = Math.abs(toX - fromX)
+  const control = Math.max(dx * 0.5, 80)
+  const controlPoint1X = fromX + control
+  const controlPoint2X = toX - control
+  return `M ${fromX},${fromY} C ${controlPoint1X},${fromY} ${controlPoint2X},${toY} ${toX},${toY}`
+}
+
+const getNodeAnchorPosition = (node, side = 'out') => {
+  if (!node) {
+    return { x: 0, y: 0 }
+  }
+
+  const width = node.width ?? 200
+  const height = node.height ?? 100
+  const x = side === 'out' ? node.x + width : node.x
+  const y = node.y + height / 2
+
+  return { x, y }
+}
 
 const NODE_LIBRARY = [
   {
@@ -283,11 +318,17 @@ const Process = () => {
   const { isAuthenticated, getAuthHeaders } = useAuth()
   const navigate = useNavigate()
   const canvasRef = useRef(null)
+  const draggedPositionRef = useRef(null)
+  const connectionAnchorRef = useRef(null)
 
   // Main State
-  const [currentView, setCurrentView] = useState('processes') // processes, canvas, scenarios, execution
+  const [currentView, setCurrentView] = useState('processes') // processes, flow, settings, execution
   const [selectedProcessId, setSelectedProcessId] = useState(null)
   const [selectedScenarioId, setSelectedScenarioId] = useState(null)
+  const [selectedEntities, setSelectedEntities] = useState([])
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [selectedPeriod, setSelectedPeriod] = useState('Q4')
+  const [flowMode, setFlowMode] = useState('entity') // 'entity' or 'consolidation'
   
   // Process Management
   const [processes, setProcesses] = useState([])
@@ -300,22 +341,66 @@ const Process = () => {
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false)
   const [editingProcess, setEditingProcess] = useState(null)
   
-  // Canvas State
-  const [canvasMode, setCanvasMode] = useState('entity') // 'entity' or 'consolidation'
-  const [canvasNodes, setCanvasNodes] = useState([])
-  const [canvasConnections, setCanvasConnections] = useState([])
+  // Flow State
+  const [processNodes, setProcessNodes] = useState([])
+  const [nodeStatuses, setNodeStatuses] = useState({})
   const [selectedNode, setSelectedNode] = useState(null)
-  const [canvasZoom, setCanvasZoom] = useState(1)
-  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
-  const [showGrid, setShowGrid] = useState(true)
   const [nodeLibraryOpen, setNodeLibraryOpen] = useState(false)
-  const [draggedNode, setDraggedNode] = useState(null)
-  const [isConnecting, setIsConnecting] = useState(false)
-  const [connectionStart, setConnectionStart] = useState(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [draggedNodeId, setDraggedNodeId] = useState(null)
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
-  
+  const [isExecuting, setIsExecuting] = useState(false)
+  const [executionStep, setExecutionStep] = useState(0)
+  const [availableEntities, setAvailableEntities] = useState([])
+  const [entitySelectorOpen, setEntitySelectorOpen] = useState(false)
+
+  // Fetch available entities from axes_entity
+  const fetchAvailableEntities = useCallback(async () => {
+    if (!selectedCompany || !isAuthenticated) return
+    
+    try {
+      const response = await fetch(
+        `/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'GET',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        }
+      )
+      if (!response.ok) throw new Error('Failed to load entities')
+      const data = await response.json()
+      setAvailableEntities(data.elements || [])
+    } catch (error) {
+      console.error('Failed to load entities:', error)
+      showNotification('Unable to load entities', 'error')
+    }
+  }, [selectedCompany, isAuthenticated, getAuthHeaders])
+
+  // Initialize process nodes based on flow mode
+  const initializeProcessNodes = useCallback(() => {
+    const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
+    const nodes = flowNodes.map((nodeType, index) => {
+      const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
+      return {
+        id: `${nodeType}_${index}`,
+        type: nodeType,
+        name: nodeTemplate?.title || nodeType,
+        description: nodeTemplate?.description || '',
+        icon: nodeTemplate?.icon || Layers,
+        color: nodeTemplate?.color || 'bg-gray-500',
+        category: nodeTemplate?.category || 'Processing',
+        status: NODE_STATUS.PENDING,
+        order: index,
+        dependencies: index > 0 ? [flowNodes[index - 1]] : []
+      }
+    })
+    setProcessNodes(nodes)
+    
+    // Initialize node statuses
+    const statuses = {}
+    nodes.forEach(node => {
+      statuses[node.id] = NODE_STATUS.PENDING
+    })
+    setNodeStatuses(statuses)
+  }, [flowMode])
+
   // Scenario Management
   const [scenarios, setScenarios] = useState([])
   const [scenarioForm, setScenarioForm] = useState({
@@ -366,20 +451,115 @@ const Process = () => {
 
   const authHeaders = () => getAuthHeaders()
 
-  // Canvas Utility Functions
-  const generateNodeId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-  
-  const getNodePosition = (event) => {
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect) return { x: 0, y: 0 }
+  // Execute process simulation
+  const executeProcessSimulation = async () => {
+    if (!selectedProcessId || selectedEntities.length === 0) {
+      showNotification('Please select entities and ensure a process is selected', 'error')
+      return
+    }
+
+    setIsExecuting(true)
+    setExecutionStep(0)
     
-    return {
-      x: (event.clientX - rect.left - canvasOffset.x) / canvasZoom,
-      y: (event.clientY - rect.top - canvasOffset.y) / canvasZoom
+    try {
+      const response = await fetch(
+        `/api/financial-process/processes/${selectedProcessId}/execute-flow?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            flow_mode: flowMode,
+            entities: selectedEntities,
+            year: selectedYear,
+            period: selectedPeriod
+          })
+        }
+      )
+      
+      if (!response.ok) throw new Error('Failed to execute process flow')
+      const data = await response.json()
+      
+      // Update node statuses based on execution results
+      const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
+      const newStatuses = {}
+      
+      flowNodes.forEach((nodeType, index) => {
+        const nodeId = `${nodeType}_${index}`
+        newStatuses[nodeId] = NODE_STATUS.COMPLETED
+      })
+      
+      setNodeStatuses(newStatuses)
+      showNotification(`Process simulation completed successfully in ${data.results.total_processing_time_ms}ms`, 'success')
+      
+    } catch (error) {
+      console.error('Process execution failed:', error)
+      showNotification('Process execution failed', 'error')
+      
+      // Mark all nodes as error
+      const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
+      const errorStatuses = {}
+      flowNodes.forEach((nodeType, index) => {
+        const nodeId = `${nodeType}_${index}`
+        errorStatuses[nodeId] = NODE_STATUS.ERROR
+      })
+      setNodeStatuses(errorStatuses)
+    } finally {
+      setIsExecuting(false)
+      setExecutionStep(0)
     }
   }
 
-  // Node Navigation
+  // Execute individual node
+  const executeNode = async (nodeId, nodeType) => {
+    if (isExecuting || selectedEntities.length === 0) {
+      showNotification('Please select entities before executing individual nodes', 'error')
+      return
+    }
+    
+    setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.RUNNING }))
+    
+    try {
+      const response = await fetch(
+        `/api/financial-process/processes/${selectedProcessId}/execute-node?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            node_id: nodeId,
+            node_type: nodeType,
+            entities: selectedEntities,
+            year: selectedYear,
+            period: selectedPeriod
+          })
+        }
+      )
+      
+      if (!response.ok) throw new Error('Failed to execute node')
+      const data = await response.json()
+      
+      if (data.status === 'success') {
+        setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.COMPLETED }))
+        showNotification(`${nodeType} executed successfully`, 'success')
+      } else {
+        setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.ERROR }))
+        showNotification(`Failed to execute ${nodeType}: ${data.results?.message || 'Unknown error'}`, 'error')
+      }
+    } catch (error) {
+      console.error('Node execution failed:', error)
+      setNodeStatuses(prev => ({ ...prev, [nodeId]: NODE_STATUS.ERROR }))
+      showNotification(`Failed to execute ${nodeType}`, 'error')
+    }
+  }
+
+  // Node Navigation with context
   const navigateToNodePage = (nodeType) => {
     const nodeRoutes = {
       'fiscal_management': '/fiscal-management',
@@ -397,11 +577,21 @@ const Process = () => {
       'validation': '/audit-trail',
       'consolidation_output': '/consolidation',
       'report_generation': '/reports',
-      'data_input': '/trial-balance'
+      'data_input': '/trial-balance',
+      'journal_entry': '/journal-entries'
     }
     
     const route = nodeRoutes[nodeType] || '/dashboard'
-    navigate(route)
+    
+    // Pass context parameters
+    const params = new URLSearchParams({
+      year: selectedYear.toString(),
+      period: selectedPeriod,
+      entities: selectedEntities.join(','),
+      process: selectedProcessId || ''
+    })
+    
+    navigate(`${route}?${params.toString()}`)
   }
 
 
@@ -484,7 +674,7 @@ const Process = () => {
     }
   }
 
-  // Fetch Process Details
+  // Fetch Process Details and initialize nodes
   const fetchProcessDetails = useCallback(async (processId) => {
     if (!selectedCompany || !processId) return
     
@@ -502,29 +692,16 @@ const Process = () => {
       if (!response.ok) throw new Error('Failed to load process details')
       const data = await response.json()
       
-      // Map backend field names to frontend (x_position -> x, y_position -> y)
-      const mappedNodes = (data.nodes || []).map(node => ({
-        ...node,
-        x: node.x_position || node.x || 100,
-        y: node.y_position || node.y || 100,
-        type: node.node_type || node.type,
-        width: 200,
-        height: 100
-      }))
+      // Initialize process nodes based on flow mode
+      initializeProcessNodes()
       
-      // Filter nodes by canvas mode
-      const filteredNodes = mappedNodes.filter(node => 
-        node.canvas_mode === canvasMode || !node.canvas_mode // Handle legacy nodes without canvas_mode
-      )
-      setCanvasNodes(filteredNodes)
-      setCanvasConnections(data.connections || [])
     } catch (error) {
       console.error('Failed to load process details:', error)
       showNotification('Failed to load process details', 'error')
     } finally {
       setLoading(false)
     }
-  }, [selectedCompany, getAuthHeaders, canvasMode])
+  }, [selectedCompany, getAuthHeaders, initializeProcessNodes])
 
   // Fetch Scenarios
   const fetchScenarios = useCallback(async (processId) => {
@@ -572,321 +749,256 @@ const Process = () => {
   }, [selectedCompany, isAuthenticated, getAuthHeaders])
 
 
-  // Canvas Functions
-  const addNodeToCanvas = async (nodeType, position) => {
+  // Add node to flow
+  const addNodeToFlow = (nodeType) => {
     const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
     if (!nodeTemplate) return
 
     const newNode = {
-      id: generateNodeId(),
+      id: `${nodeType}_${processNodes.length}`,
       type: nodeType,
       name: nodeTemplate.title,
       description: nodeTemplate.description,
-      x: position?.x || Math.random() * 300 + 50,
-      y: position?.y || Math.random() * 200 + 50,
-      width: 200,
-      height: 100,
-      configuration: {},
-      canvas_mode: canvasMode,
-      is_active: true
+      icon: nodeTemplate.icon,
+      color: nodeTemplate.color,
+      category: nodeTemplate.category,
+      status: NODE_STATUS.PENDING,
+      order: processNodes.length,
+      dependencies: processNodes.length > 0 ? [processNodes[processNodes.length - 1].type] : []
     }
 
-    // Save to backend
-    try {
-      const headers = {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json'
-      }
-      
-      const response = await fetch(
-        `/api/financial-process/processes/${selectedProcessId}/nodes?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify({
-            node_type: newNode.type,  // Backend expects 'node_type' not 'type'
-            name: newNode.name,
-            description: newNode.description,
-            sequence: canvasNodes.length + 1,
-            x_position: newNode.x,
-            y_position: newNode.y,
-            canvas_mode: canvasMode,
-            configuration: newNode.configuration
-          })
-        }
-      )
-
-      if (response.ok) {
-        const savedNode = await response.json()
-        newNode.id = savedNode.id // Use backend ID
-        setCanvasNodes([...canvasNodes, newNode])
-        setSelectedNode(newNode)
-        showNotification('Node added successfully', 'success')
-      } else {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('Failed to add node:', response.status, errorData)
-        showNotification(`Failed to add node: ${errorData.detail || response.statusText}`, 'error')
-      }
-    } catch (error) {
-      console.error('Error adding node:', error)
-      showNotification(`Error adding node: ${error.message}`, 'error')
-    }
-    
+    setProcessNodes([...processNodes, newNode])
+    setNodeStatuses(prev => ({ ...prev, [newNode.id]: NODE_STATUS.PENDING }))
+    showNotification('Node added to flow', 'success')
     setNodeLibraryOpen(false)
   }
 
-  const handleNodeDragStart = (event, nodeType) => {
-    setDraggedNode(nodeType.type)
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'copy'
-      event.dataTransfer.setData('application/node-type', nodeType.type)
-      event.dataTransfer.setData('text/plain', nodeType.type)
+  // Remove node from flow
+  const removeNodeFromFlow = (nodeId) => {
+    setProcessNodes(nodes => nodes.filter(n => n.id !== nodeId))
+    setNodeStatuses(prev => {
+      const newStatuses = { ...prev }
+      delete newStatuses[nodeId]
+      return newStatuses
+    })
+    if (selectedNode?.id === nodeId) {
+      setSelectedNode(null)
     }
+    showNotification('Node removed from flow', 'success')
   }
 
-  const handleNodeDragEnd = () => {
-    setDraggedNode(null)
-  }
-
-  const handleCanvasDragOver = (event) => {
-    event.preventDefault()
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'copy'
-    }
-  }
-
-  const handleCanvasDrop = (event) => {
-    event.preventDefault()
-    const nodeType =
-      (event.dataTransfer && event.dataTransfer.getData('application/node-type')) ||
-      (event.dataTransfer && event.dataTransfer.getData('text/plain')) ||
-      draggedNode
-
-    if (!nodeType) return
-
-    const position = getNodePosition(event.nativeEvent ?? event)
-    addNodeToCanvas(nodeType, position)
-    setDraggedNode(null)
-  }
-
-  const updateNodePosition = async (nodeId, newPosition) => {
-    setCanvasNodes(nodes => 
-      nodes.map(node => 
-        node.id === nodeId 
-          ? { ...node, x: newPosition.x, y: newPosition.y }
-          : node
-      )
-    )
+  // Move node in flow
+  const moveNodeInFlow = (nodeId, direction) => {
+    const nodeIndex = processNodes.findIndex(n => n.id === nodeId)
+    if (nodeIndex === -1) return
     
-    // Save position to backend
-    try {
-      const headers = {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json'
-      }
-      
-      await fetch(
-        `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'PUT',
-          headers: headers,
-          body: JSON.stringify({ x_position: newPosition.x, y_position: newPosition.y })
-        }
-      )
-    } catch (error) {
-      console.error('Error updating node position:', error)
+    const newIndex = direction === 'up' ? nodeIndex - 1 : nodeIndex + 1
+    if (newIndex < 0 || newIndex >= processNodes.length) return
+    
+    const newNodes = [...processNodes]
+    const [movedNode] = newNodes.splice(nodeIndex, 1)
+    newNodes.splice(newIndex, 0, { ...movedNode, order: newIndex })
+    
+    // Update orders
+    newNodes.forEach((node, index) => {
+      node.order = index
+    })
+    
+    setProcessNodes(newNodes)
+  }
+
+  // Get node status icon and color
+  const getNodeStatusIcon = (status) => {
+    switch (status) {
+      case NODE_STATUS.COMPLETED:
+        return { icon: CheckCircle, color: 'text-green-500' }
+      case NODE_STATUS.RUNNING:
+        return { icon: Loader2, color: 'text-blue-500 animate-spin' }
+      case NODE_STATUS.ERROR:
+        return { icon: AlertCircle, color: 'text-red-500' }
+      default:
+        return { icon: Clock, color: 'text-gray-400' }
     }
   }
 
-  const deleteNode = async (nodeId) => {
-    try {
-      const headers = {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json'
-      }
-      
-      const response = await fetch(
-        `/api/financial-process/nodes/${nodeId}?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'DELETE',
-          headers: headers
-        }
-      )
-      
-      if (!response.ok) throw new Error('Failed to delete node')
-      
-      setCanvasNodes(nodes => nodes.filter(n => n.id !== nodeId))
-      setCanvasConnections(connections => 
-        connections.filter(c => c.from_node_id !== nodeId && c.to_node_id !== nodeId)
-      )
-      if (selectedNode?.id === nodeId) {
-        setSelectedNode(null)
-      }
-      showNotification('Node deleted successfully', 'success')
-    } catch (error) {
-      console.error('Error deleting node:', error)
-      showNotification('Error deleting node', 'error')
-    }
+  // Reset all node statuses
+  const resetNodeStatuses = () => {
+    const resetStatuses = {}
+    processNodes.forEach(node => {
+      resetStatuses[node.id] = NODE_STATUS.PENDING
+    })
+    setNodeStatuses(resetStatuses)
+    showNotification('Node statuses reset', 'success')
   }
 
-  const createConnection = async (fromNodeId, toNodeId) => {
-    // Check if connection already exists
-    const exists = canvasConnections.some(
-      c => c.from_node_id === fromNodeId && c.to_node_id === toNodeId
-    )
-    if (exists) {
-      showNotification('Connection already exists', 'error')
-      return
-    }
-
-    try {
-      const headers = {
-        ...getAuthHeaders(),
-        'Content-Type': 'application/json'
-      }
-      
-      const response = await fetch(
-        `/api/financial-process/processes/${selectedProcessId}/connections?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify({
-            from_node_id: fromNodeId,
-            to_node_id: toNodeId,
-            connection_type: 'data_flow',
-            conditions: {},
-            transformation_rules: {}
-          })
-        }
-      )
-
-      if (response.ok) {
-        const newConnection = await response.json()
-        setCanvasConnections([...canvasConnections, newConnection])
-        showNotification('Connection created', 'success')
+  // Toggle entity selection
+  const toggleEntitySelection = (entityCode) => {
+    setSelectedEntities(prev => {
+      if (prev.includes(entityCode)) {
+        return prev.filter(e => e !== entityCode)
       } else {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('Failed to create connection:', response.status, errorData)
-        showNotification(`Failed to create connection: ${errorData.detail || response.statusText}`, 'error')
+        return [...prev, entityCode]
       }
-    } catch (error) {
-      console.error('Error creating connection:', error)
-      showNotification(`Error creating connection: ${error.message}`, 'error')
-    }
-  }
-
-  const handleNodeClick = (e, node) => {
-    e.stopPropagation()
-    // Single click - select node and show properties
-    setSelectedNode(node)
-  }
-
-  const handleNodeMouseDown = (e, node) => {
-    e.stopPropagation()
-    
-    // If Shift key is pressed, start connection mode
-    if (e.shiftKey) {
-      if (!isConnecting) {
-        setIsConnecting(true)
-        setConnectionStart(node.id)
-      } else {
-        // Complete the connection
-        if (connectionStart && connectionStart !== node.id) {
-          createConnection(connectionStart, node.id)
-        }
-        setIsConnecting(false)
-        setConnectionStart(null)
-      }
-      return // Don't start dragging in connection mode
-    }
-    
-    // Start dragging
-    setIsDragging(true)
-    setDraggedNodeId(node.id)
-    setSelectedNode(node)
-    
-    const rect = canvasRef.current.getBoundingClientRect()
-    setDragOffset({
-      x: e.clientX - rect.left - node.x,
-      y: e.clientY - rect.top - node.y
     })
   }
 
-  const handleMouseMove = (e) => {
-    if (isDragging && draggedNodeId) {
-      const rect = canvasRef.current.getBoundingClientRect()
-      const newX = e.clientX - rect.left - dragOffset.x
-      const newY = e.clientY - rect.top - dragOffset.y
-      
-      setCanvasNodes(nodes =>
-        nodes.map(node =>
-          node.id === draggedNodeId
-            ? { ...node, x: Math.max(0, newX), y: Math.max(0, newY) }
-            : node
-        )
-      )
-    }
+  // Select all entities
+  const selectAllEntities = () => {
+    setSelectedEntities(availableEntities.map(e => e.element_code))
   }
 
-  const handleMouseUp = () => {
-    if (isDragging && draggedNodeId) {
-      const draggedNode = canvasNodes.find(n => n.id === draggedNodeId)
-      if (draggedNode) {
-        updateNodePosition(draggedNodeId, { x: draggedNode.x, y: draggedNode.y })
-      }
-    }
-    setIsDragging(false)
-    setDraggedNodeId(null)
+  // Clear entity selection
+  const clearEntitySelection = () => {
+    setSelectedEntities([])
   }
 
-  const startConnection = (nodeId) => {
-    setIsConnecting(true)
-    setConnectionStart(nodeId)
+  // Render flow node tile
+  const renderFlowNodeTile = (node, index) => {
+    const IconComponent = node.icon || Layers
+    const status = nodeStatuses[node.id] || NODE_STATUS.PENDING
+    const statusInfo = getNodeStatusIcon(status)
+    const StatusIcon = statusInfo.icon
+    
+    return (
+      <div key={node.id} className="flex items-center">
+        {/* Node Tile */}
+        <div
+          className={`relative flex-shrink-0 w-64 h-32 bg-white dark:bg-gray-800 border-2 rounded-xl shadow-lg cursor-pointer transition-all hover:shadow-xl ${
+            selectedNode?.id === node.id
+              ? 'border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-800'
+              : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300'
+          }`}
+          onClick={() => setSelectedNode(node)}
+          onDoubleClick={() => navigateToNodePage(node.type)}
+        >
+          <div className="p-4 h-full flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${node.color} text-white`}>
+                  <IconComponent className="h-4 w-4" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                    {node.name}
+                  </h4>
+                  <p className="text-xs text-indigo-600 dark:text-indigo-400">
+                    {node.category}
+                  </p>
+                </div>
+              </div>
+              <StatusIcon className={`h-5 w-5 ${statusInfo.color}`} />
+            </div>
+            
+            <p className="text-xs text-gray-600 dark:text-gray-300 flex-1 overflow-hidden line-clamp-2">
+              {node.description}
+            </p>
+            
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Step {index + 1}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    executeNode(node.id, node.name)
+                  }}
+                  disabled={isExecuting || status === NODE_STATUS.RUNNING}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                  title="Run this step"
+                >
+                  <PlayCircle className="h-4 w-4 text-green-600" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    removeNodeFromFlow(node.id)
+                  }}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                  title="Remove from flow"
+                >
+                  <X className="h-4 w-4 text-red-600" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Arrow connector */}
+        {index < processNodes.length - 1 && (
+          <div className="flex-shrink-0 mx-4">
+            <ArrowRight className="h-6 w-6 text-gray-400" />
+          </div>
+        )}
+      </div>
+    )
   }
 
-  const completeConnection = (toNodeId) => {
-    if (isConnecting && connectionStart && connectionStart !== toNodeId) {
-      const newConnection = {
-        id: `conn_${Date.now()}`,
-        from_node_id: connectionStart,
-        to_node_id: toNodeId,
-        connection_type: 'data_flow'
-      }
-      setCanvasConnections([...canvasConnections, newConnection])
-    }
-    setIsConnecting(false)
-    setConnectionStart(null)
-  }
-
-  const executeProcess = async () => {
-    if (!selectedProcessId || !selectedScenarioId) {
-      showNotification('Please select a process and scenario', 'error')
-      return
-    }
-
-    setExecutionLoading(true)
-    try {
-      const response = await fetch(
-        `/api/financial-process/processes/${selectedProcessId}/execute?scenario_id=${selectedScenarioId}&company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include',
+  // Render entity selector
+  const renderEntitySelector = () => (
+    <div className="relative">
+      <button
+        onClick={() => setEntitySelectorOpen(!entitySelectorOpen)}
+        className="btn-secondary inline-flex items-center gap-2 min-w-48"
+      >
+        <Building2 className="h-4 w-4" />
+        {selectedEntities.length === 0
+          ? 'Select Entities'
+          : selectedEntities.length === 1
+          ? `1 Entity Selected`
+          : `${selectedEntities.length} Entities Selected`
         }
-      )
-
-      if (!response.ok) throw new Error('Failed to execute process')
-      const data = await response.json()
+        <ChevronDown className={`h-4 w-4 transition-transform ${
+          entitySelectorOpen ? 'rotate-180' : ''
+        }`} />
+      </button>
       
-      setExecutionResults(data.results)
-      showNotification('Process executed successfully', 'success')
-    } catch (error) {
-      console.error('Failed to execute process:', error)
-      showNotification('Failed to execute process', 'error')
-    } finally {
-      setExecutionLoading(false)
-    }
-  }
+      {entitySelectorOpen && (
+        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-medium text-gray-900 dark:text-white">Select Entities</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={selectAllEntities}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={clearEntitySelection}
+                  className="text-xs text-gray-600 hover:text-gray-700 dark:text-gray-400"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {availableEntities.map((entity) => (
+                <label key={entity.element_code} className="flex items-center p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedEntities.includes(entity.element_code)}
+                    onChange={() => toggleEntitySelection(entity.element_code)}
+                    className="form-checkbox mr-3"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm text-gray-900 dark:text-white">
+                      {entity.element_name}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {entity.element_code}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 
   // ============================================================================
   // USE EFFECTS
@@ -895,7 +1007,8 @@ const Process = () => {
   useEffect(() => {
     fetchProcesses()
     fetchReferenceData()
-  }, [fetchProcesses, fetchReferenceData])
+    fetchAvailableEntities()
+  }, [fetchProcesses, fetchReferenceData, fetchAvailableEntities])
 
   useEffect(() => {
     if (selectedProcessId) {
@@ -903,6 +1016,10 @@ const Process = () => {
       fetchScenarios(selectedProcessId)
     }
   }, [selectedProcessId, fetchProcessDetails, fetchScenarios])
+
+  useEffect(() => {
+    initializeProcessNodes()
+  }, [flowMode, initializeProcessNodes])
 
   // ============================================================================
   // RENDER FUNCTIONS
@@ -953,7 +1070,7 @@ const Process = () => {
       }`}
       onClick={() => {
         setSelectedProcessId(process.id)
-        setCurrentView('canvas')
+        setCurrentView('flow')
       }}
       onDoubleClick={(e) => handleEditProcess(process, e)}
     >
@@ -1014,54 +1131,36 @@ const Process = () => {
     </div>
   )
 
-  const renderCanvasNode = (node) => {
-    const nodeTemplate = NODE_LIBRARY.find(n => n.type === node.type)
-    const IconComponent = nodeTemplate?.icon || Layers
-    
-    return (
-      <div
-        key={node.id}
-        className={`absolute bg-white dark:bg-gray-800 border-2 rounded-lg shadow-lg cursor-pointer select-none transition-all ${
-          selectedNode?.id === node.id 
-            ? 'border-indigo-500 shadow-indigo-200 dark:shadow-indigo-800/50 ring-2 ring-indigo-200 dark:ring-indigo-800' 
-            : 'border-gray-200 dark:border-gray-600 hover:border-indigo-300'
-        } ${isConnecting && connectionStart === node.id ? 'ring-2 ring-blue-400' : ''}`}
-        style={{
-          left: node.x,
-          top: node.y,
-          width: node.width,
-          height: node.height,
-          zIndex: selectedNode?.id === node.id ? 10 : 2
-        }}
-        onClick={(e) => handleNodeClick(e, node)}
-        onMouseDown={(e) => handleNodeMouseDown(e, node)}
-        onDoubleClick={(e) => {
-          e.stopPropagation()
-          navigateToNodePage(node.type)
-        }}
-      >
-        <div className="p-3 h-full flex flex-col relative">
-          <div className="flex items-center gap-2 mb-2">
-            <span className={`flex h-6 w-6 items-center justify-center rounded ${nodeTemplate?.color || 'bg-gray-500'} text-white text-xs`}>
-              <IconComponent className="h-3 w-3" />
-            </span>
-            <span className="text-xs font-medium text-gray-900 dark:text-white truncate">
-              {node.name}
-            </span>
-          </div>
-          <p className="text-xs text-gray-600 dark:text-gray-300 flex-1 overflow-hidden">
-            {node.description}
-          </p>
-          
-          {/* Connection Points */}
-          <div className="absolute -right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-blue-500 rounded-full opacity-0 hover:opacity-100 transition-opacity cursor-pointer" 
-               title="Connection point" />
-          <div className="absolute -left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-green-500 rounded-full opacity-0 hover:opacity-100 transition-opacity cursor-pointer" 
-               title="Connection point" />
+  // Render process flow diagram
+  const renderFlowDiagram = () => (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-900 dark:text-white">Process Flow Diagram</h3>
+        <div className="flex gap-2">
+          <button
+            onClick={resetNodeStatuses}
+            className="btn-secondary text-sm"
+            disabled={isExecuting}
+          >
+            Reset Status
+          </button>
         </div>
       </div>
-    )
-  }
+      
+      {processNodes.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+          <Workflow className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+          <p>No nodes in the flow. Add nodes to get started.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto pb-4">
+          <div className="flex items-center gap-0 min-w-max">
+            {processNodes.map((node, index) => renderFlowNodeTile(node, index))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 
   // Main render logic starts here
   const renderProcessesView = () => (
@@ -1121,13 +1220,13 @@ const Process = () => {
     </div>
   )
 
-  // Canvas View
-  const renderCanvasView = () => {
+  // Flow View
+  const renderFlowView = () => {
     const selectedProcess = processes.find(p => p.id === selectedProcessId)
     
     return (
       <div className="space-y-6">
-        {/* Canvas Header */}
+        {/* Flow Header */}
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -1140,50 +1239,25 @@ const Process = () => {
               </button>
               <div>
                 <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-                  {selectedProcess?.name || 'Process Canvas'}
+                  {selectedProcess?.name || 'Process Flow'}
                 </h1>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {selectedProcess?.description || 'Design your financial process workflow'}
+                  {selectedProcess?.description || 'Execute your financial process workflow'}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Canvas Mode Toggle */}
-              <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
-                <button
-                  onClick={() => setCanvasMode('entity')}
-                  className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
-                    canvasMode === 'entity'
-                      ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                  }`}
-                >
-                  Entity-wise
-                </button>
-                <button
-                  onClick={() => setCanvasMode('consolidation')}
-                  className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
-                    canvasMode === 'consolidation'
-                      ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                  }`}
-                >
-                  Consolidation
-                </button>
-              </div>
-              
-              <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
-              
               <button
-                onClick={() => setNodeLibraryOpen(!nodeLibraryOpen)}
-                className={`inline-flex items-center gap-2 ${
-                  nodeLibraryOpen 
-                    ? 'btn-primary' 
-                    : 'btn-secondary'
-                }`}
+                onClick={executeProcessSimulation}
+                disabled={isExecuting || selectedEntities.length === 0 || processNodes.length === 0}
+                className="btn-primary inline-flex items-center gap-2"
               >
-                <Plus className="h-4 w-4" />
-                {nodeLibraryOpen ? 'Hide Nodes' : 'Show Node Library'}
+                {isExecuting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+                Run Simulation
               </button>
               <button
                 onClick={() => setSettingsOpen(true)}
@@ -1192,44 +1266,100 @@ const Process = () => {
                 <Settings className="h-4 w-4" />
                 Settings
               </button>
-              <button
-                onClick={executeProcess}
-                disabled={executionLoading || canvasNodes.length === 0}
-                className="btn-primary inline-flex items-center gap-2"
-              >
-                {executionLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-                Start Simulation
-              </button>
             </div>
           </div>
         </section>
 
-        {/* Horizontal Node Library Panel */}
+        {/* Process Controls */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Entity Selector */}
+            {renderEntitySelector()}
+            
+            {/* Year and Period Selectors */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Year:</label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                className="form-select text-sm"
+              >
+                {[2023, 2024, 2025, 2026].map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Period:</label>
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="form-select text-sm"
+              >
+                <option value="Q1">Q1</option>
+                <option value="Q2">Q2</option>
+                <option value="Q3">Q3</option>
+                <option value="Q4">Q4</option>
+                <option value="FY">Full Year</option>
+              </select>
+            </div>
+            
+            {/* Flow Mode Toggle */}
+            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+              <button
+                onClick={() => setFlowMode('entity')}
+                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
+                  flowMode === 'entity'
+                    ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                Entity-wise
+              </button>
+              <button
+                onClick={() => setFlowMode('consolidation')}
+                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
+                  flowMode === 'consolidation'
+                    ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                Consolidation
+              </button>
+            </div>
+            
+            <div className="w-px h-6 bg-gray-300 dark:bg-gray-600" />
+            
+            <button
+              onClick={() => setNodeLibraryOpen(!nodeLibraryOpen)}
+              className={`inline-flex items-center gap-2 text-sm ${
+                nodeLibraryOpen 
+                  ? 'btn-primary' 
+                  : 'btn-secondary'
+              }`}
+            >
+              <Plus className="h-4 w-4" />
+              {nodeLibraryOpen ? 'Hide Library' : 'Add Nodes'}
+            </button>
+          </div>
+        </section>
+
+        {/* Node Library Panel */}
         {nodeLibraryOpen && (
           <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950 overflow-hidden">
             <div className="p-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                Available Process Nodes - Click to add to canvas
+                Available Process Nodes - Click to add to flow
               </h3>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {NODE_LIBRARY.map((nodeType) => {
                   const IconComponent = nodeType.icon
                   return (
                     <div
                       key={nodeType.type}
-                      draggable
-                      onDragStart={(e) => handleNodeDragStart(e, nodeType)}
-                      onDragEnd={handleNodeDragEnd}
-                      onClick={() => {
-                        const centerX = 300 + Math.random() * 100
-                        const centerY = 200 + Math.random() * 100
-                        addNodeToCanvas(nodeType.type, { x: centerX, y: centerY })
-                      }}
-                      className="flex-shrink-0 w-48 p-3 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-400 hover:shadow-md transition cursor-pointer bg-white dark:bg-gray-900 group"
+                      onClick={() => addNodeToFlow(nodeType.type)}
+                      className="p-3 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:border-indigo-400 hover:shadow-md transition cursor-pointer bg-white dark:bg-gray-900 group"
                     >
                       <div className="flex items-start gap-2 mb-2">
                         <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${nodeType.color} text-white`}>
@@ -1255,113 +1385,13 @@ const Process = () => {
           </section>
         )}
 
-        {/* Canvas with Properties Panel */}
-        <div className="flex gap-6" style={{ height: 'calc(100vh - 320px)', minHeight: '500px' }}>
-          {/* Main Canvas */}
-          <div className="flex-1 relative rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 overflow-hidden">
-            <div
-              ref={canvasRef}
-              className="absolute inset-0 cursor-crosshair"
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onDragOver={handleCanvasDragOver}
-              onDrop={handleCanvasDrop}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  setSelectedNode(null)
-                  if (isConnecting) {
-                    setIsConnecting(false)
-                    setConnectionStart(null)
-                  }
-                }
-              }}
-            >
-              {/* Render Connections */}
-              <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }}>
-                {canvasConnections.map(connection => {
-                  const fromNode = canvasNodes.find(n => n.id === connection.from_node_id)
-                  const toNode = canvasNodes.find(n => n.id === connection.to_node_id)
-                  if (!fromNode || !toNode) return null
-                  
-                  const fromX = fromNode.x + fromNode.width
-                  const fromY = fromNode.y + fromNode.height / 2
-                  const toX = toNode.x
-                  const toY = toNode.y + toNode.height / 2
-                  
-                  return (
-                    <line
-                      key={connection.id}
-                      x1={fromX}
-                      y1={fromY}
-                      x2={toX}
-                      y2={toY}
-                      stroke="#4f46e5"
-                      strokeWidth="2"
-                      markerEnd="url(#arrowhead)"
-                    />
-                  )
-                })}
-                <defs>
-                  <marker
-                    id="arrowhead"
-                    markerWidth="10"
-                    markerHeight="7"
-                    refX="9"
-                    refY="3.5"
-                    orient="auto"
-                  >
-                    <polygon
-                      points="0 0, 10 3.5, 0 7"
-                      fill="#4f46e5"
-                    />
-                  </marker>
-                </defs>
-              </svg>
-              
-              {/* Render Nodes */}
-              {canvasNodes.map(renderCanvasNode)}
-              
-              {/* Connection Helper */}
-              {isConnecting && (
-                <div className="absolute top-4 left-4 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-2 rounded-lg text-sm">
-                  Hold Shift and click another node to connect
-                </div>
-              )}
-            </div>
+        {/* Process Flow Diagram */}
+        {renderFlowDiagram()}
 
-          {/* Canvas Controls */}
-          <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2">
-            <button
-              onClick={() => setCanvasZoom(Math.max(0.5, canvasZoom - 0.1))}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-            >
-              <ZoomOut className="h-4 w-4" />
-            </button>
-            <span className="text-sm text-gray-600 dark:text-gray-400 px-2">
-              {Math.round(canvasZoom * 100)}%
-            </span>
-            <button
-              onClick={() => setCanvasZoom(Math.min(2, canvasZoom + 0.1))}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-            >
-              <ZoomIn className="h-4 w-4" />
-            </button>
-            <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-1" />
-            <button
-              onClick={() => {
-                setCanvasZoom(1)
-                setCanvasOffset({ x: 0, y: 0 })
-              }}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-            >
-              <Maximize2 className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-          
         {/* Properties Panel */}
         {selectedNode && (
-          <div className="w-80 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6">
+          <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
+            <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Node Properties</h3>
                 <button
@@ -1372,64 +1402,85 @@ const Process = () => {
                 </button>
               </div>
               
-              <div className="space-y-4">
-                <div>
-                  <label className="label">Node Name</label>
-                  <input
-                    type="text"
-                    value={selectedNode.name}
-                    onChange={(e) => {
-                      const updatedNode = { ...selectedNode, name: e.target.value }
-                      setSelectedNode(updatedNode)
-                      setCanvasNodes(nodes => 
-                        nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
-                      )
-                    }}
-                    className="form-input"
-                  />
-                </div>
-                
-                <div>
-                  <label className="label">Description</label>
-                  <textarea
-                    value={selectedNode.description}
-                    onChange={(e) => {
-                      const updatedNode = { ...selectedNode, description: e.target.value }
-                      setSelectedNode(updatedNode)
-                      setCanvasNodes(nodes => 
-                        nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
-                      )
-                    }}
-                    className="form-input resize-none"
-                    rows={3}
-                  />
-                </div>
-                
-                <div>
-                  <label className="label">Node Type</label>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
-                    {selectedNode.type}
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">Node Name</label>
+                    <input
+                      type="text"
+                      value={selectedNode.name}
+                      onChange={(e) => {
+                        const updatedNode = { ...selectedNode, name: e.target.value }
+                        setSelectedNode(updatedNode)
+                        setProcessNodes(nodes => 
+                          nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
+                        )
+                      }}
+                      className="form-input"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="label">Description</label>
+                    <textarea
+                      value={selectedNode.description}
+                      onChange={(e) => {
+                        const updatedNode = { ...selectedNode, description: e.target.value }
+                        setSelectedNode(updatedNode)
+                        setProcessNodes(nodes => 
+                          nodes.map(n => n.id === selectedNode.id ? updatedNode : n)
+                        )
+                      }}
+                      className="form-input resize-none"
+                      rows={3}
+                    />
                   </div>
                 </div>
                 
-                <div className="flex gap-2 pt-4">
-                  <button
-                    onClick={() => navigateToNodePage(selectedNode.type)}
-                    className="btn-primary flex-1 text-sm"
-                  >
-                    Open Module
-                  </button>
-                  <button
-                    onClick={() => deleteNode(selectedNode.id)}
-                    className="btn-secondary text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                <div className="space-y-4">
+                  <div>
+                    <label className="label">Node Type</label>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                      {selectedNode.type}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="label">Status</label>
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const status = nodeStatuses[selectedNode.id] || NODE_STATUS.PENDING
+                        const statusInfo = getNodeStatusIcon(status)
+                        const StatusIcon = statusInfo.icon
+                        return (
+                          <>
+                            <StatusIcon className={`h-4 w-4 ${statusInfo.color}`} />
+                            <span className="text-sm capitalize">{status}</span>
+                          </>
+                        )
+                      })()} 
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 pt-4">
+                    <button
+                      onClick={() => navigateToNodePage(selectedNode.type)}
+                      className="btn-primary flex-1 text-sm"
+                    >
+                      Open Module
+                    </button>
+                    <button
+                      onClick={() => removeNodeFromFlow(selectedNode.id)}
+                      className="btn-secondary text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </section>
+        )}
       </div>
     )
   }
@@ -1442,7 +1493,15 @@ const Process = () => {
       {/* Main Content */}
       {currentView === 'processes' && renderProcessesView()}
       
-      {currentView === 'canvas' && selectedProcessId && renderCanvasView()}
+      {currentView === 'flow' && selectedProcessId && renderFlowView()}
+      
+      {/* Click outside to close entity selector */}
+      {entitySelectorOpen && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setEntitySelectorOpen(false)}
+        />
+      )}
       
       {/* Always render modals */}
       <div>
