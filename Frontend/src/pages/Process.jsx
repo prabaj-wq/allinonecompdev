@@ -317,12 +317,11 @@ const Process = () => {
   const { selectedCompany } = useCompany()
   const { isAuthenticated, getAuthHeaders } = useAuth()
   const navigate = useNavigate()
-  const canvasRef = useRef(null)
-  const draggedPositionRef = useRef(null)
-  const connectionAnchorRef = useRef(null)
+  // Refs for flow management
+  const flowContainerRef = useRef(null)
 
   // Main State
-  const [currentView, setCurrentView] = useState('processes') // processes, flow, settings, execution
+  const [currentView, setCurrentView] = useState('processes') // processes, flow, settings
   const [selectedProcessId, setSelectedProcessId] = useState(null)
   const [selectedScenarioId, setSelectedScenarioId] = useState(null)
   const [selectedEntities, setSelectedEntities] = useState([])
@@ -441,6 +440,8 @@ const Process = () => {
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [selectedSettingsNode, setSelectedSettingsNode] = useState(null)
+  const [nodeConfigurations, setNodeConfigurations] = useState({})
 
 
   // Utility Functions
@@ -852,6 +853,55 @@ const Process = () => {
     setSelectedEntities([])
   }
 
+  // Node configuration functions
+  const updateNodeConfiguration = (nodeType, config) => {
+    setNodeConfigurations(prev => ({
+      ...prev,
+      [nodeType]: { ...prev[nodeType], ...config }
+    }))
+  }
+
+  // Get node configuration with defaults
+  const getNodeConfiguration = (nodeType) => {
+    const defaults = {
+      fiscal_management: {
+        years: [2023, 2024, 2025, 2026],
+        periods: ['Q1', 'Q2', 'Q3', 'Q4', 'FY'],
+        default_year: selectedYear,
+        default_period: selectedPeriod
+      },
+      data_input: {
+        included_entities: selectedEntities,
+        excluded_entities: [],
+        data_sources: ['Trial Balance', 'Manual Entry', 'Import'],
+        validation_rules: true
+      },
+      journal_entry: {
+        auto_reverse: false,
+        approval_required: true,
+        included_entities: selectedEntities,
+        excluded_entities: []
+      },
+      fx_translation: {
+        method: 'current_rate',
+        rate_source: 'central_bank',
+        included_entities: selectedEntities,
+        excluded_entities: []
+      },
+      consolidation_output: {
+        elimination_method: 'full',
+        nci_calculation: 'proportional',
+        included_entities: selectedEntities,
+        excluded_entities: []
+      }
+    }
+    
+    return {
+      ...defaults[nodeType],
+      ...nodeConfigurations[nodeType]
+    }
+  }
+
   // Render flow node tile
   const renderFlowNodeTile = (node, index) => {
     const IconComponent = node.icon || Layers
@@ -1260,7 +1310,10 @@ const Process = () => {
                 Run Simulation
               </button>
               <button
-                onClick={() => setSettingsOpen(true)}
+                onClick={() => {
+                  setCurrentView('settings')
+                  setSelectedSettingsNode(null)
+                }}
                 className="btn-secondary inline-flex items-center gap-2"
               >
                 <Settings className="h-4 w-4" />
@@ -1485,6 +1538,342 @@ const Process = () => {
     )
   }
 
+  // Settings View
+  const renderSettingsView = () => {
+    const selectedProcess = processes.find(p => p.id === selectedProcessId)
+    const flowNodes = flowMode === 'entity' ? ENTITY_FLOW : CONSOLIDATION_FLOW
+    
+    return (
+      <div className="space-y-6">
+        {/* Settings Header */}
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setCurrentView('flow')}
+                className="btn-secondary inline-flex items-center gap-2"
+              >
+                <ChevronRight className="h-4 w-4 rotate-180" />
+                Back to Process
+              </button>
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                  Process Settings - {selectedProcess?.name}
+                </h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Configure individual nodes and their dependencies
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Settings Content */}
+        <div className="grid grid-cols-12 gap-6">
+          {/* Left Sidebar - Node List */}
+          <div className="col-span-4">
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Process Nodes</h3>
+              <div className="space-y-2">
+                {flowNodes.map((nodeType, index) => {
+                  const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
+                  const IconComponent = nodeTemplate?.icon || Layers
+                  const isSelected = selectedSettingsNode === nodeType
+                  
+                  return (
+                    <button
+                      key={nodeType}
+                      onClick={() => setSelectedSettingsNode(nodeType)}
+                      className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                        isSelected
+                          ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${nodeTemplate?.color || 'bg-gray-500'} text-white`}>
+                          <IconComponent className="h-4 w-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                            {nodeTemplate?.title || nodeType}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            Step {index + 1}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Panel - Node Configuration */}
+          <div className="col-span-8">
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+              {selectedSettingsNode ? (
+                <div>
+                  {(() => {
+                    const nodeTemplate = NODE_LIBRARY.find(n => n.type === selectedSettingsNode)
+                    const IconComponent = nodeTemplate?.icon || Layers
+                    const config = getNodeConfiguration(selectedSettingsNode)
+                    
+                    return (
+                      <div>
+                        <div className="flex items-center gap-3 mb-6">
+                          <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${nodeTemplate?.color || 'bg-gray-500'} text-white`}>
+                            <IconComponent className="h-5 w-5" />
+                          </span>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                              {nodeTemplate?.title || selectedSettingsNode}
+                            </h3>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              {nodeTemplate?.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Node-specific configuration */}
+                        {selectedSettingsNode === 'fiscal_management' && (
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Fiscal Year Settings</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="label">Available Years</label>
+                                  <div className="space-y-2">
+                                    {[2023, 2024, 2025, 2026].map(year => (
+                                      <label key={year} className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.years?.includes(year)}
+                                          onChange={(e) => {
+                                            const years = config.years || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                years: [...years, year]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                years: years.filter(y => y !== year)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{year}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="label">Available Periods</label>
+                                  <div className="space-y-2">
+                                    {['Q1', 'Q2', 'Q3', 'Q4', 'FY'].map(period => (
+                                      <label key={period} className="flex items-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.periods?.includes(period)}
+                                          onChange={(e) => {
+                                            const periods = config.periods || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                periods: [...periods, period]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                periods: periods.filter(p => p !== period)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{period}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Entity-based nodes configuration */}
+                        {['data_input', 'journal_entry', 'fx_translation', 'consolidation_output'].includes(selectedSettingsNode) && (
+                          <div className="space-y-6">
+                            <div>
+                              <h4 className="font-medium text-gray-900 dark:text-white mb-3">Entity Configuration</h4>
+                              <div className="grid grid-cols-2 gap-6">
+                                <div>
+                                  <label className="label">Included Entities</label>
+                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                    {availableEntities.map(entity => (
+                                      <label key={entity.element_code} className="flex items-center p-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.included_entities?.includes(entity.element_code)}
+                                          onChange={(e) => {
+                                            const included = config.included_entities || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                included_entities: [...included, entity.element_code]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                included_entities: included.filter(e => e !== entity.element_code)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{entity.element_name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="label">Excluded Entities</label>
+                                  <div className="max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                                    {availableEntities.map(entity => (
+                                      <label key={entity.element_code} className="flex items-center p-1">
+                                        <input
+                                          type="checkbox"
+                                          checked={config.excluded_entities?.includes(entity.element_code)}
+                                          onChange={(e) => {
+                                            const excluded = config.excluded_entities || []
+                                            if (e.target.checked) {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                excluded_entities: [...excluded, entity.element_code]
+                                              })
+                                            } else {
+                                              updateNodeConfiguration(selectedSettingsNode, {
+                                                excluded_entities: excluded.filter(e => e !== entity.element_code)
+                                              })
+                                            }
+                                          }}
+                                          className="form-checkbox mr-2"
+                                        />
+                                        <span className="text-sm">{entity.element_name}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Node-specific settings */}
+                            {selectedSettingsNode === 'journal_entry' && (
+                              <div>
+                                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Journal Entry Settings</h4>
+                                <div className="space-y-3">
+                                  <label className="flex items-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={config.auto_reverse}
+                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                        auto_reverse: e.target.checked
+                                      })}
+                                      className="form-checkbox mr-2"
+                                    />
+                                    <span className="text-sm">Auto-reverse entries</span>
+                                  </label>
+                                  <label className="flex items-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={config.approval_required}
+                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                        approval_required: e.target.checked
+                                      })}
+                                      className="form-checkbox mr-2"
+                                    />
+                                    <span className="text-sm">Require approval</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+
+                            {selectedSettingsNode === 'fx_translation' && (
+                              <div>
+                                <h4 className="font-medium text-gray-900 dark:text-white mb-3">FX Translation Settings</h4>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="label">Translation Method</label>
+                                    <select
+                                      value={config.method || 'current_rate'}
+                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                        method: e.target.value
+                                      })}
+                                      className="form-select"
+                                    >
+                                      <option value="current_rate">Current Rate Method</option>
+                                      <option value="temporal">Temporal Method</option>
+                                      <option value="monetary_nonmonetary">Monetary/Non-monetary</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="label">Rate Source</label>
+                                    <select
+                                      value={config.rate_source || 'central_bank'}
+                                      onChange={(e) => updateNodeConfiguration(selectedSettingsNode, {
+                                        rate_source: e.target.value
+                                      })}
+                                      className="form-select"
+                                    >
+                                      <option value="central_bank">Central Bank</option>
+                                      <option value="bloomberg">Bloomberg</option>
+                                      <option value="manual">Manual Entry</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Save Configuration */}
+                        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex justify-end gap-3">
+                            <button
+                              onClick={() => setSelectedSettingsNode(null)}
+                              className="btn-secondary"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                showNotification(`Configuration saved for ${nodeTemplate?.title}`, 'success')
+                              }}
+                              className="btn-primary"
+                            >
+                              Save Configuration
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()} 
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Settings className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                    Select a Node to Configure
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Choose a node from the left panel to configure its settings and dependencies.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ============================================================================
   // MAIN COMPONENT RETURN
   // ============================================================================
@@ -1494,6 +1883,8 @@ const Process = () => {
       {currentView === 'processes' && renderProcessesView()}
       
       {currentView === 'flow' && selectedProcessId && renderFlowView()}
+      
+      {currentView === 'settings' && selectedProcessId && renderSettingsView()}
       
       {/* Click outside to close entity selector */}
       {entitySelectorOpen && (
