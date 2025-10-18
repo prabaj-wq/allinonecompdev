@@ -51,7 +51,8 @@ import {
   ZoomOut,
   Maximize2,
   Grid,
-  Layers3
+  Layers3,
+  BookOpen
 } from 'lucide-react'
 
 const PROCESS_TYPES = [
@@ -195,6 +196,14 @@ const NODE_LIBRARY = [
     icon: FileSpreadsheet,
     category: 'Output',
     color: 'bg-gray-500'
+  },
+  {
+    type: 'journal_entry',
+    title: 'Journal Entries',
+    description: 'Create and manage journal entries linked to workflows',
+    icon: BookOpen,
+    category: 'Journal',
+    color: 'bg-rose-500'
   },
   {
     type: 'fiscal_management',
