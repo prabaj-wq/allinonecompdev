@@ -718,6 +718,13 @@ const Process = () => {
   useEffect(() => {
     if (fiscalYears.length > 0) {
       fetchAllPeriods()
+    } else {
+      // Clear periods and scenarios when no fiscal years
+      setAvailablePeriods([])
+      setSelectedPeriods([])
+      setScenarios([])
+      setSelectedScenario(null)
+      setSelectedYear(null)
     }
   }, [fiscalYears])
 
@@ -1006,6 +1013,8 @@ const Process = () => {
       if (response.ok) {
         const result = await response.json()
         console.log('✅ Configuration saved to PostgreSQL:', result)
+        setHasUnsavedChanges(false)
+        setLastSavedAt(new Date())
       } else {
         const errorText = await response.text()
         console.error(`❌ Failed to save configuration (${response.status}):`, errorText)
@@ -1411,7 +1420,10 @@ const Process = () => {
                   Add Node
                 </button>
                 <button 
-                  onClick={saveProcessConfiguration}
+                  onClick={async () => {
+                    await saveProcessConfiguration()
+                    showNotification('✅ Process flow saved successfully!', 'success')
+                  }}
                   className="btn-success inline-flex items-center gap-2 text-sm"
                 >
                   <CheckCircle className="h-4 w-4" />
@@ -1576,20 +1588,26 @@ const Process = () => {
                       showNotification('🔒 Fiscal settings are locked. Unlock to make changes.', 'error')
                       return
                     }
+                    if (fiscalYears.length === 0) {
+                      showNotification('⚠️ No fiscal years found. Please add fiscal years in Fiscal Management first.', 'error')
+                      return
+                    }
                     setShowPeriodSelector(!showPeriodSelector)
                   }}
-                  disabled={fiscalSettingsLocked}
+                  disabled={fiscalSettingsLocked || fiscalYears.length === 0}
                   className={`px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg transition-all flex items-center gap-2 ${
-                    fiscalSettingsLocked
+                    fiscalSettingsLocked || fiscalYears.length === 0
                       ? 'opacity-60 cursor-not-allowed'
                       : 'hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-400'
                   }`}
                 >
                   <Calendar className="h-4 w-4" />
                   <span className="font-medium">
-                    {selectedPeriods.length === 0 
-                      ? 'Select Periods' 
-                      : `${selectedPeriods.length} Period${selectedPeriods.length === 1 ? '' : 's'}`}
+                    {fiscalYears.length === 0 
+                      ? 'No Fiscal Years Available'
+                      : selectedPeriods.length === 0 
+                        ? 'Select Periods' 
+                        : `${selectedPeriods.length} Period${selectedPeriods.length === 1 ? '' : 's'}`}
                   </span>
                   <ChevronRight className={`h-4 w-4 transition-transform ${showPeriodSelector ? 'rotate-90' : ''}`} />
                 </button>
@@ -1605,7 +1623,6 @@ const Process = () => {
                           <button
                             onClick={() => {
                               setSelectedPeriods(availablePeriods.map(p => p.id))
-                              saveProcessConfiguration()
                             }}
                             className="text-xs text-blue-600 hover:text-blue-700"
                           >
@@ -1614,7 +1631,6 @@ const Process = () => {
                           <button
                             onClick={() => {
                               setSelectedPeriods([])
-                              saveProcessConfiguration()
                             }}
                             className="text-xs text-gray-600 hover:text-gray-700"
                           >
@@ -1623,7 +1639,13 @@ const Process = () => {
                         </div>
                       </div>
                       <div className="p-2">
-                        {availablePeriods.length === 0 ? (
+                        {fiscalYears.length === 0 ? (
+                          <div className="text-center py-6 text-sm text-gray-500">
+                            <Calendar className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                            <p className="font-medium mb-1">No Fiscal Years Found</p>
+                            <p>Please add fiscal years in Fiscal Management settings first.</p>
+                          </div>
+                        ) : availablePeriods.length === 0 ? (
                           <div className="text-center py-4 text-sm text-gray-500">
                             No periods available. Create periods in Fiscal Management.
                           </div>
@@ -1666,8 +1688,7 @@ const Process = () => {
                                     <span className="text-xs text-gray-500">({period.period_code})</span>
                                     {period.fiscalYearName && (
                                       <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                                        {period.fiscalYearName}
-                                      </span>
+                                        {period.fiscalYearName}</span>
                                     )}
                                   </div>
                                 </div>
@@ -1690,17 +1711,18 @@ const Process = () => {
                     return
                   }
                   setSelectedScenario(e.target.value)
-                  saveProcessConfiguration() // Auto-save
                 }}
-                disabled={fiscalSettingsLocked}
+                disabled={fiscalSettingsLocked || fiscalYears.length === 0}
                 className={`px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg transition-all ${
-                  fiscalSettingsLocked 
+                  fiscalSettingsLocked || fiscalYears.length === 0
                     ? 'opacity-60 cursor-not-allowed' 
                     : 'hover:border-blue-400'
                 }`}
               >
-                <option value="">Select Scenario</option>
-                {scenarios.map((scenario) => (
+                <option value="">
+                  {fiscalYears.length === 0 ? 'No Fiscal Years Available' : 'Select Scenario'}
+                </option>
+                {fiscalYears.length > 0 && scenarios.map((scenario) => (
                   <option key={scenario.id} value={scenario.id}>
                     {scenario.scenario_name} ({scenario.scenario_type})
                   </option>
@@ -1736,10 +1758,9 @@ const Process = () => {
                 </span>
               </button>
 
-              {/* Auto-save indicator */}
-              <div className="ml-auto flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                Auto-saving
+              {/* Save status indicator */}
+              <div className="ml-auto">
+                {renderSaveStatus()}
               </div>
             </div>
           </div>
@@ -2096,10 +2117,9 @@ const Process = () => {
                 </p>
               </div>
             </div>
-            {/* Auto-save indicator */}
-            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="font-medium">Auto-saving</span>
+            {/* Save status indicator */}
+            <div>
+              {renderSaveStatus()}
             </div>
           </div>
         </div>

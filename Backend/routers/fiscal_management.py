@@ -181,6 +181,15 @@ def ensure_fiscal_tables(company_name: str):
                     ALTER TABLE scenarios 
                     ADD COLUMN IF NOT EXISTS next_scenario_offsets JSONB DEFAULT '[]'
                 """)
+                # Add new reference columns for enhanced reference scenarios
+                cur.execute("""
+                    ALTER TABLE scenarios 
+                    ADD COLUMN IF NOT EXISTS previous_references JSONB DEFAULT '[]'
+                """)
+                cur.execute("""
+                    ALTER TABLE scenarios 
+                    ADD COLUMN IF NOT EXISTS upcoming_references JSONB DEFAULT '[]'
+                """)
             except Exception as e:
                 print(f"Note: Could not add scenario reference columns: {e}")
             
@@ -806,6 +815,7 @@ async def update_scenario(
                     allow_overrides = %s, auto_calculate = %s, consolidation_method = %s,
                     custom_field_definitions = %s, settings = %s,
                     previous_scenario_offsets = %s, next_scenario_offsets = %s,
+                    previous_references = %s, upcoming_references = %s,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
@@ -826,6 +836,8 @@ async def update_scenario(
                 json.dumps(scenario_data.get('settings', {})),
                 json.dumps(scenario_data.get('previous_scenario_offsets', [])),
                 json.dumps(scenario_data.get('next_scenario_offsets', [])),
+                json.dumps(scenario_data.get('previous_references', [])),
+                json.dumps(scenario_data.get('upcoming_references', [])),
                 scenario_id
             ))
             
