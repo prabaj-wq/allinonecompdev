@@ -15,11 +15,16 @@ router = APIRouter(prefix="/data-input", tags=["data-input"])
 # Database configuration
 def get_db_config():
     """Get database configuration from environment variables"""
+    if os.getenv('DOCKER_ENV') == 'true':
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')
+    else:
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
+    
     return {
-        'host': os.getenv('POSTGRES_HOST', 'postgres'),
-        'port': int(os.getenv('POSTGRES_PORT', 5432)),
-        'user': os.getenv('POSTGRES_USER', 'root'),
-        'password': os.getenv('POSTGRES_PASSWORD', 'root@123')
+        'host': POSTGRES_HOST,
+        'port': os.getenv('POSTGRES_PORT', '5432'),
+        'user': 'postgres',
+        'password': os.getenv('POSTGRES_PASSWORD', 'epm_password')
     }
 
 def get_company_db_name(company_name: str) -> str:
