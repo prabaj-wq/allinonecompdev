@@ -121,6 +121,7 @@ class FinancialProcess(Base):
     
     # Process Settings
     settings = Column(JSONB, default={})  # Rounding, validation rules, etc.
+    default_entity_id = Column(String(255), nullable=True)  # Default entity context for process
     
     # Metadata
     created_by = Column(UUID(as_uuid=True))
@@ -513,4 +514,83 @@ class ProcessAuditTrail(Base):
     
     __table_args__ = (
         Index('idx_audit_process', 'process_id'),
+    )
+
+class ProcessNodeConfig(Base):
+    """Entity-specific node configurations"""
+    __tablename__ = "process_node_configs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False, index=True)
+    node_id = Column(UUID(as_uuid=True), ForeignKey('financial_process_nodes.id'), nullable=False, index=True)
+    entity_id = Column(String(255), nullable=True, index=True)  # NULL = All Entities, otherwise specific entity
+    
+    # Configuration
+    enabled = Column(Boolean, default=True, nullable=False)
+    override_settings = Column(JSONB, default={})  # Custom config for that entity
+    
+    # Metadata
+    created_by = Column(UUID(as_uuid=True))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_by = Column(UUID(as_uuid=True))
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_node_config_process_entity', 'process_id', 'entity_id'),
+        Index('idx_node_config_node_entity', 'node_id', 'entity_id'),
+        UniqueConstraint('process_id', 'node_id', 'entity_id', name='uq_process_node_entity_config'),
+    )
+
+class ProcessRunLog(Base):
+    """Process execution logs per entity"""
+    __tablename__ = "process_run_logs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    process_id = Column(UUID(as_uuid=True), ForeignKey('financial_processes.id'), nullable=False, index=True)
+    entity_id = Column(String(255), nullable=True, index=True)  # NULL = All Entities
+    scenario_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    
+    # Execution details
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False)  # 'Running', 'Completed', 'Error', 'Cancelled'
+    
+    # Results
+    nodes_executed = Column(Integer, default=0)
+    nodes_failed = Column(Integer, default=0)
+    summary = Column(JSONB, default={})  # Execution summary, errors, warnings
+    
+    # Metadata
+    executed_by = Column(UUID(as_uuid=True))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_run_log_process_entity', 'process_id', 'entity_id'),
+        Index('idx_run_log_status', 'status'),
+        Index('idx_run_log_start_time', 'start_time'),
+    )
+
+class ProcessNodeRunLog(Base):
+    """Individual node execution logs"""
+    __tablename__ = "process_node_run_logs"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_log_id = Column(UUID(as_uuid=True), ForeignKey('process_run_logs.id'), nullable=False, index=True)
+    node_id = Column(UUID(as_uuid=True), ForeignKey('financial_process_nodes.id'), nullable=False, index=True)
+    
+    # Execution details
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False)  # 'Running', 'Completed', 'Error', 'Skipped'
+    
+    # Results
+    input_data = Column(JSONB, default={})
+    output_data = Column(JSONB, default={})
+    error_message = Column(Text, nullable=True)
+    execution_time_ms = Column(Integer, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_node_run_log', 'run_log_id', 'node_id'),
     )

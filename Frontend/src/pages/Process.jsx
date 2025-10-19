@@ -569,6 +569,12 @@ const Process = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [lastSavedAt, setLastSavedAt] = useState(null)
 
+  // Entity-specific Configuration State
+  const [selectedEntityContext, setSelectedEntityContext] = useState('all') // 'all' or specific entity ID
+  const [entityNodeConfigs, setEntityNodeConfigs] = useState({}) // { entityId: { nodeId: { enabled: true, settings: {} } } }
+  const [showLaunchModal, setShowLaunchModal] = useState(false)
+  const [launchEntityId, setLaunchEntityId] = useState('all')
+
   const markUnsavedChanges = useCallback(() => {
     setHasUnsavedChanges(true)
   }, [])
@@ -727,6 +733,14 @@ const Process = () => {
       setSelectedYear(null)
     }
   }, [fiscalYears])
+
+  // Auto-select all entities when consolidation mode is selected
+  useEffect(() => {
+    if (flowMode === 'consolidation' && availableEntities.length > 0) {
+      const allEntityIds = availableEntities.map(e => getEntityIdentifier(e))
+      setSelectedEntities(allEntityIds)
+    }
+  }, [flowMode, availableEntities, getEntityIdentifier])
 
   // Fetch entities from AxesEntity - with fallback data for development/testing when API is unavailable
   const fetchEntities = async () => {
@@ -1026,6 +1040,39 @@ const Process = () => {
     }
   }
 
+  // Entity Configuration Functions
+  const getEntityNodeConfig = (entityId, nodeId) => {
+    return entityNodeConfigs[entityId]?.[nodeId] || { enabled: true, settings: {} }
+  }
+
+  const updateEntityNodeConfig = (entityId, nodeId, config) => {
+    setEntityNodeConfigs(prev => ({
+      ...prev,
+      [entityId]: {
+        ...prev[entityId],
+        [nodeId]: { ...prev[entityId]?.[nodeId], ...config }
+      }
+    }))
+    setHasUnsavedChanges(true)
+  }
+
+  const getFilteredNodesForEntity = (entityId) => {
+    if (entityId === 'all') return workflowNodes
+    
+    return workflowNodes.filter(node => {
+      const config = getEntityNodeConfig(entityId, node.id)
+      return config.enabled
+    })
+  }
+
+  const handleConsolidationModeEntitySelection = () => {
+    if (flowMode === 'consolidation') {
+      // Auto-select all entities for consolidation
+      setSelectedEntities(availableEntities.map(e => getEntityIdentifier(e)))
+      showNotification('All entities selected for consolidation mode', 'success')
+    }
+  }
+
   // Save Process
   const saveProcess = async () => {
     if (!processForm.name.trim()) {
@@ -1236,8 +1283,9 @@ const Process = () => {
     showNotification(`Added ${nodeTemplate.title} to workflow`, 'success')
     setShowNodeLibrary(false)
     
-    // Auto-save with a small delay to ensure state is updated
-    // Manual save - removed auto-save
+    // Update save status after adding node
+    setHasUnsavedChanges(true)
+    setLastSavedAt(new Date())
   }
 
   // Remove node from workflow
@@ -1372,7 +1420,9 @@ const Process = () => {
     }
 
     showNotification('✅ Simulation completed successfully!', 'success')
-    // Manual save - removed auto-save after simulation
+    // Update save status after simulation
+    setHasUnsavedChanges(true)
+    setLastSavedAt(new Date())
   }
 
   // Render workflow view with advanced layout
@@ -1427,7 +1477,7 @@ const Process = () => {
                   className="btn-success inline-flex items-center gap-2 text-sm"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Save
+                  Save Flow
                 </button>
                 <button 
                   onClick={() => setCurrentView('settings')}
@@ -1443,6 +1493,14 @@ const Process = () => {
                 >
                   <Play className="h-4 w-4" />
                   Run Simulation
+                </button>
+                <button 
+                  onClick={() => setShowLaunchModal(true)}
+                  disabled={workflowNodes.length === 0}
+                  className="btn-success inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Zap className="h-4 w-4" />
+                  Launch Process
                 </button>
               </div>
             </div>
@@ -1495,6 +1553,25 @@ const Process = () => {
                   <Layers className="h-4 w-4 inline mr-1" />
                   Consolidation
                 </button>
+              </div>
+
+              {/* Entity Context Selector */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Entity Context:
+                </label>
+                <select
+                  value={selectedEntityContext}
+                  onChange={(e) => setSelectedEntityContext(e.target.value)}
+                  className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Entities</option>
+                  {availableEntities.map((entity) => (
+                    <option key={getEntityIdentifier(entity)} value={getEntityIdentifier(entity)}>
+                      {getEntityName(entity)} ({getEntityCode(entity)})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Entity Selector */}
@@ -2090,6 +2167,87 @@ const Process = () => {
             </div>
           )}
         </div>
+
+        {/* Launch Process Modal */}
+        {showLaunchModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-w-full mx-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Launch Process
+                </h3>
+                <button
+                  onClick={() => setShowLaunchModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Launch for Entity:
+                  </label>
+                  <select
+                    value={launchEntityId}
+                    onChange={(e) => setLaunchEntityId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                  >
+                    <option value="all">All Entities</option>
+                    {availableEntities.map((entity) => (
+                      <option key={getEntityIdentifier(entity)} value={getEntityIdentifier(entity)}>
+                        {getEntityName(entity)} ({getEntityCode(entity)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Nodes to Execute:
+                  </label>
+                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    {getFilteredNodesForEntity(launchEntityId).map((node) => (
+                      <div key={node.id} className="flex items-center gap-2 py-1">
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                          {node.title}
+                        </span>
+                      </div>
+                    ))}
+                    {getFilteredNodesForEntity(launchEntityId).length === 0 && (
+                      <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
+                        No nodes configured for this entity
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setShowLaunchModal(false)}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      // TODO: Implement entity-specific launch logic
+                      showNotification(`🚀 Launching process for ${launchEntityId === 'all' ? 'all entities' : 'selected entity'}...`, 'success')
+                      setShowLaunchModal(false)
+                    }}
+                    disabled={getFilteredNodesForEntity(launchEntityId).length === 0}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Zap className="h-4 w-4 inline mr-1" />
+                    Launch
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -2124,6 +2282,32 @@ const Process = () => {
           </div>
         </div>
 
+        {/* Entity Context Selector */}
+        <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 px-4 py-3">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Configure Settings for:
+            </label>
+            <select
+              value={selectedEntityContext}
+              onChange={(e) => setSelectedEntityContext(e.target.value)}
+              className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Entities (Default)</option>
+              {availableEntities.map((entity) => (
+                <option key={getEntityIdentifier(entity)} value={getEntityIdentifier(entity)}>
+                  {getEntityName(entity)} ({getEntityCode(entity)})
+                </option>
+              ))}
+            </select>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {selectedEntityContext === 'all' 
+                ? 'Changes apply to all entities unless overridden' 
+                : `Configuring specific settings for ${availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.name || 'selected entity'}`}
+            </div>
+          </div>
+        </div>
+
         {/* Settings Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Sidebar - Node List */}
@@ -2142,6 +2326,10 @@ const Process = () => {
                   const workflowNode = workflowNodes.find(n => n.type === nodeTemplate.type)
                   const isInWorkflow = !!workflowNode
                   const isActive = selectedNode?.type === nodeTemplate.type || selectedNode?.id === workflowNode?.id
+                  
+                  // Get entity-specific configuration
+                  const entityConfig = workflowNode ? getEntityNodeConfig(selectedEntityContext, workflowNode.id) : { enabled: true, settings: {} }
+                  const isEnabledForEntity = entityConfig.enabled
                   
                   return (
                     <button
@@ -2183,6 +2371,15 @@ const Process = () => {
                             {isInWorkflow && (
                               <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded">
                                 ✓
+                              </span>
+                            )}
+                            {isInWorkflow && selectedEntityContext !== 'all' && (
+                              <span className={`px-1.5 py-0.5 text-xs rounded ${
+                                isEnabledForEntity 
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' 
+                                  : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              }`}>
+                                {isEnabledForEntity ? 'ON' : 'OFF'}
                               </span>
                             )}
                           </div>
@@ -2289,6 +2486,66 @@ const Process = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Entity-Specific Configuration */}
+                    {workflowNodes.find(n => n.id === selectedNode.id) && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                          Entity Configuration
+                        </h3>
+                        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                {selectedEntityContext === 'all' ? 'Default Configuration' : `Configuration for ${availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.name || 'Selected Entity'}`}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {selectedEntityContext === 'all' 
+                                  ? 'This configuration applies to all entities unless overridden'
+                                  : 'This configuration is specific to the selected entity'}
+                              </p>
+                            </div>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={getEntityNodeConfig(selectedEntityContext, selectedNode.id).enabled}
+                                onChange={(e) => {
+                                  updateEntityNodeConfig(selectedEntityContext, selectedNode.id, { enabled: e.target.checked })
+                                }}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Enabled
+                              </span>
+                            </label>
+                          </div>
+                          
+                          {selectedEntityContext === 'all' && (
+                            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                              <div className="flex items-center gap-2 mb-2">
+                                <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                                  Apply to All Entities
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const config = getEntityNodeConfig('all', selectedNode.id)
+                                  availableEntities.forEach(entity => {
+                                    const entityId = getEntityIdentifier(entity)
+                                    updateEntityNodeConfig(entityId, selectedNode.id, config)
+                                  })
+                                  showNotification('Configuration applied to all entities', 'success')
+                                }}
+                                className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                              >
+                                Apply Current Settings to All Entities
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Dependencies */}
                     <div>
