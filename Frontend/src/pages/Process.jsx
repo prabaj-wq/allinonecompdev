@@ -512,9 +512,12 @@ const Process = () => {
         if (config.periods) setSelectedPeriods(config.periods)
         if (config.scenario) setSelectedScenario(config.scenario)
         if (config.fiscalSettingsLocked !== undefined) setFiscalSettingsLocked(config.fiscalSettingsLocked)
+      } else {
+        console.warn(`⚠️ Configuration load returned status ${response.status}`)
       }
     } catch (error) {
       console.error('❌ Error loading process configuration:', error)
+      showNotification('Failed to load configuration', 'error')
     }
   }
 
@@ -544,17 +547,23 @@ const Process = () => {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany,
           ...getAuthHeaders()
         },
         body: JSON.stringify(config)
       })
       
       if (response.ok) {
-        showNotification('Configuration saved successfully', 'success')
+        const result = await response.json()
+        console.log('✅ Configuration saved to PostgreSQL:', result)
+      } else {
+        const errorText = await response.text()
+        console.error(`❌ Failed to save configuration (${response.status}):`, errorText)
+        showNotification('Failed to save configuration', 'error')
       }
     } catch (error) {
       console.error('❌ Error saving configuration:', error)
-      showNotification('Failed to save configuration', 'error')
+      showNotification('Failed to save configuration - check connection', 'error')
     }
   }
 
@@ -755,20 +764,42 @@ const Process = () => {
       sequence: workflowNodes.length
     }
     
-    setWorkflowNodes([...workflowNodes, newNode])
+    const updatedNodes = [...workflowNodes, newNode]
+    setWorkflowNodes(updatedNodes)
+    
+    // IMPORTANT: Also update the mode-specific workflow
+    if (flowMode === 'entity') {
+      setEntityWorkflowNodes(updatedNodes)
+    } else {
+      setConsolidationWorkflowNodes(updatedNodes)
+    }
+    
     showNotification(`Added ${nodeTemplate.title} to workflow`, 'success')
     setShowNodeLibrary(false)
-    saveProcessConfiguration() // Auto-save
+    
+    // Auto-save with a small delay to ensure state is updated
+    setTimeout(() => saveProcessConfiguration(), 100)
   }
 
   // Remove node from workflow
   const removeNodeFromWorkflow = (nodeId) => {
-    setWorkflowNodes(workflowNodes.filter(n => n.id !== nodeId))
+    const updatedNodes = workflowNodes.filter(n => n.id !== nodeId)
+    setWorkflowNodes(updatedNodes)
+    
+    // IMPORTANT: Also update the mode-specific workflow
+    if (flowMode === 'entity') {
+      setEntityWorkflowNodes(updatedNodes)
+    } else {
+      setConsolidationWorkflowNodes(updatedNodes)
+    }
+    
     if (selectedNode?.id === nodeId) {
       setSelectedNode(null)
     }
     showNotification('Node removed from workflow', 'success')
-    saveProcessConfiguration() // Auto-save
+    
+    // Auto-save with a small delay to ensure state is updated
+    setTimeout(() => saveProcessConfiguration(), 100)
   }
 
   // Run individual node
@@ -1908,49 +1939,48 @@ const Process = () => {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Period
-                    </label>
-                    <select
-                      value={selectedPeriod || ''}
-                      onChange={(e) => setSelectedPeriod(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
-                    >
-                      <option value="">Select Period</option>
-                      <option value="Q1">Q1 (Jan-Mar)</option>
-                      <option value="Q2">Q2 (Apr-Jun)</option>
-                      <option value="Q3">Q3 (Jul-Sep)</option>
-                      <option value="Q4">Q4 (Oct-Dec)</option>
-                      <option value="FY">Full Year</option>
-                    </select>
-                  </div>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">
+                        Current Selection
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Fiscal Year: </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {selectedYear ? fiscalYears.find(fy => fy.id === selectedYear)?.year || 'N/A' : 'Not selected'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Periods: </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {selectedPeriods.length > 0 ? `${selectedPeriods.length} selected` : 'Not selected'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600 dark:text-gray-400">Scenario: </span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {selectedScenario ? scenarios.find(s => s.id === selectedScenario)?.scenario_name || 'N/A' : 'Not selected'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Scenario
-                    </label>
-                    <select
-                      value={selectedScenario}
-                      onChange={(e) => setSelectedScenario(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
-                    >
-                      <option value="Actuals">Actuals</option>
-                      <option value="Budget">Budget</option>
-                      <option value="Forecast">Forecast</option>
-                    </select>
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <p className="text-sm text-amber-800 dark:text-amber-300">
+                        <strong>Note:</strong> Use the toolbar above to select fiscal year, periods, and scenario. This dialog shows your current selection.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="pt-4">
                     <button
                       onClick={() => {
-                        saveProcessConfiguration()
                         setShowFiscalSetup(false)
-                        showNotification('Fiscal settings updated', 'success')
                       }}
                       className="w-full btn-primary"
                     >
-                      Apply Settings
+                      Close
                     </button>
                   </div>
                 </div>

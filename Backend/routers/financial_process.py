@@ -72,6 +72,18 @@ def ensure_financial_tables(conn):
         )
     """)
 
+    # Create process_configurations table for storing workflow configurations
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS process_configurations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            configuration JSONB NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(process_id)
+        )
+    """)
+
     # Backfill newer columns that might be missing on existing databases
     cur.execute("""
         ALTER TABLE financial_processes
@@ -1193,3 +1205,100 @@ async def get_execution_history(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching execution history: {str(e)}")
+
+# ============================================================================
+# PROCESS CONFIGURATION MANAGEMENT
+# ============================================================================
+
+@router.get("/processes/{process_id}/configuration")
+async def get_process_configuration(
+    process_id: str,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Get process configuration including workflow nodes, settings, and fiscal parameters"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get configuration from process_configurations table
+            cur.execute("""
+                SELECT configuration, updated_at
+                FROM process_configurations
+                WHERE process_id = %s
+            """, (process_id,))
+            
+            config_row = cur.fetchone()
+            
+            if not config_row:
+                # Return empty configuration if none exists yet
+                return {
+                    "nodes": [],
+                    "entityWorkflowNodes": [],
+                    "consolidationWorkflowNodes": [],
+                    "flowMode": "entity",
+                    "selectedEntities": [],
+                    "fiscalYear": None,
+                    "periods": [],
+                    "scenario": None,
+                    "fiscalSettingsLocked": False
+                }
+            
+            # Return the stored configuration
+            config = config_row['configuration']
+            config['updated_at'] = config_row['updated_at'].isoformat() if config_row['updated_at'] else None
+            
+            return config
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching configuration: {str(e)}")
+
+@router.put("/processes/{process_id}/configuration")
+async def save_process_configuration(
+    process_id: str,
+    configuration: dict = Body(...),
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Save process configuration including workflow nodes, settings, and fiscal parameters"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Check if configuration already exists
+            cur.execute("""
+                SELECT id FROM process_configurations
+                WHERE process_id = %s
+            """, (process_id,))
+            
+            existing = cur.fetchone()
+            
+            if existing:
+                # Update existing configuration
+                cur.execute("""
+                    UPDATE process_configurations
+                    SET configuration = %s, updated_at = NOW()
+                    WHERE process_id = %s
+                    RETURNING id, updated_at
+                """, (json.dumps(configuration), process_id))
+            else:
+                # Insert new configuration
+                config_id = str(uuid.uuid4())
+                cur.execute("""
+                    INSERT INTO process_configurations 
+                    (id, process_id, configuration, created_at, updated_at)
+                    VALUES (%s, %s, %s, NOW(), NOW())
+                    RETURNING id, updated_at
+                """, (config_id, process_id, json.dumps(configuration)))
+            
+            result = cur.fetchone()
+            conn.commit()
+            
+            return {
+                "message": "Configuration saved successfully",
+                "configuration_id": str(result['id']),
+                "updated_at": result['updated_at'].isoformat() if result['updated_at'] else None
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving configuration: {str(e)}")
