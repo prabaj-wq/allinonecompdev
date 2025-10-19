@@ -335,7 +335,11 @@ const Process = () => {
       
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error('Authentication failed. Please log in again.')
+          console.error('❌ Authentication failed, redirecting to login...')
+          localStorage.removeItem('authToken')
+          localStorage.removeItem('user')
+          window.location.href = '/login'
+          return
         } else if (response.status === 404) {
           throw new Error('Company database not found.')
         } else {
@@ -679,7 +683,11 @@ const Process = () => {
       
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error('Authentication failed. Please log in again.')
+          console.error('❌ Authentication failed, redirecting to login...')
+          localStorage.removeItem('authToken')
+          localStorage.removeItem('user')
+          window.location.href = '/login'
+          return
         } else if (response.status === 404) {
           throw new Error('Company database not found.')
         } else {
