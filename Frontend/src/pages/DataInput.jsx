@@ -201,7 +201,7 @@ const DataInput = () => {
         fx_rate: parseFloat(formData.fx_rate) || null
       }
 
-      const response = await fetch(`/api/data-input/${activeCard}/entries?company_name=${encodeURIComponent(selectedCompany)}`, {
+      const response = await fetch(`/api/data-input/${activeCard}/manual-entry?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         credentials: 'include',
         headers: {

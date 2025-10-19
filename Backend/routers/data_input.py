@@ -199,6 +199,46 @@ async def get_custom_fields(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Entries Endpoints
+@router.get("/{card_type}/entries")
+async def get_entries(
+    card_type: str,
+    process_id: int = Query(...),
+    scenario_id: int = Query(...),
+    company_name: str = Query(...),
+    limit: int = Query(500),
+    offset: int = Query(0),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get entries for a specific card type filtered by process and scenario"""
+    try:
+        create_tables_if_not_exist(company_name)
+        table_map = {
+            'entity_amounts': 'entity_amounts',
+            'ic_amounts': 'ic_amounts',
+            'other_amounts': 'other_amounts'
+        }
+        table_name = table_map.get(card_type)
+        if not table_name:
+            raise HTTPException(status_code=400, detail="Invalid card type")
+
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                f"""
+                SELECT * FROM {table_name}
+                WHERE process_id = %s AND scenario_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                (process_id, scenario_id, limit, offset)
+            )
+            rows = cur.fetchall()
+
+        return rows
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/custom-fields/{card_type}")
 async def create_custom_field(
     card_type: str,
@@ -375,7 +415,84 @@ async def create_manual_entry(
         
         with get_company_connection(company_name) as conn:
             cur = conn.cursor()
-            # Insert entry (simplified - add proper INSERT based on card type)
+            username = current_user.get('username', 'system')
+            now = datetime.utcnow()
+
+            table_map = {
+                'entity_amounts': 'entity_amounts',
+                'ic_amounts': 'ic_amounts',
+                'other_amounts': 'other_amounts'
+            }
+            table_name = table_map.get(card_type)
+            if not table_name:
+                raise HTTPException(status_code=400, detail="Invalid card type")
+
+            # Normalize common fields
+            process_id = int(entry_data.get('process_id'))
+            scenario_id = int(entry_data.get('scenario_id'))
+            year_id = int(entry_data.get('year_id')) if entry_data.get('year_id') is not None else None
+            period_id = int(entry_data.get('period_id')) if entry_data.get('period_id') is not None else None
+            amount = float(entry_data.get('amount') or 0)
+            currency = entry_data.get('currency') or entry_data.get('currency_code') or 'USD'
+            description = entry_data.get('description')
+            origin = entry_data.get('origin') or 'manual'
+
+            if card_type == 'entity_amounts':
+                entity_id = int(entry_data.get('entity_id'))
+                account_id = int(entry_data.get('account_id'))
+                cur.execute(
+                    """
+                    INSERT INTO entity_amounts (
+                        process_id, scenario_id, year_id, period_id, entity_id, account_id,
+                        amount, currency, description, custom_fields, origin, created_by, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        process_id, scenario_id, year_id, period_id, entity_id, account_id,
+                        amount, currency, description, json.dumps(entry_data.get('custom_fields') or {}),
+                        origin, username, now, now
+                    )
+                )
+            elif card_type == 'ic_amounts':
+                from_entity_id = int(entry_data.get('from_entity_id'))
+                to_entity_id = int(entry_data.get('to_entity_id'))
+                account_id = int(entry_data.get('account_id'))
+                cur.execute(
+                    """
+                    INSERT INTO ic_amounts (
+                        process_id, scenario_id, year_id, period_id,
+                        from_entity_id, to_entity_id, account_id,
+                        amount, currency, description, custom_fields, origin, created_by, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        process_id, scenario_id, year_id, period_id,
+                        from_entity_id, to_entity_id, account_id,
+                        amount, currency, description, json.dumps(entry_data.get('custom_fields') or {}),
+                        origin, username, now, now
+                    )
+                )
+            elif card_type == 'other_amounts':
+                entity_id = entry_data.get('entity_id')
+                entity_id = int(entity_id) if entity_id not in (None, "") else None
+                account_id = int(entry_data.get('account_id'))
+                adjustment_type = entry_data.get('adjustment_type')  # Not stored separately yet
+                cur.execute(
+                    """
+                    INSERT INTO other_amounts (
+                        process_id, scenario_id, year_id, period_id, entity_id, account_id,
+                        amount, currency, description, custom_fields, origin, created_by, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        process_id, scenario_id, year_id, period_id, entity_id, account_id,
+                        amount, currency, description, json.dumps({"adjustment_type": adjustment_type, **(entry_data.get('custom_fields') or {})}),
+                        origin, username, now, now
+                    )
+                )
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported card type")
+
             conn.commit()
             
         return {"message": "Entry created successfully"}

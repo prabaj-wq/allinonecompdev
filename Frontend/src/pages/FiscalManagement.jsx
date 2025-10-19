@@ -734,11 +734,17 @@ const SettingsTab = ({ year }) => {
     enable_intercompany_eliminations: year.settings?.enable_intercompany_eliminations ?? true,
     auto_calculate_minority_interest: year.settings?.auto_calculate_minority_interest ?? true,
     enable_currency_translation: year.settings?.enable_currency_translation ?? true,
-    consolidation_method: year.settings?.consolidation_method ?? 'full'
+    consolidation_method: year.settings?.consolidation_method ?? 'full',
+    reference_years_enabled: year.settings?.reference_years_enabled ?? false,
+    reference_years_mode: year.settings?.reference_years_mode ?? 'previous'
   });
   
   const [scenarios, setScenarios] = useState([]);
   const [periods, setPeriods] = useState([]);
+  const [allYears, setAllYears] = useState([]);
+  const [previousOffsets, setPreviousOffsets] = useState(Array.isArray(year.previous_year_offsets) ? year.previous_year_offsets : []);
+  const [nextOffsets, setNextOffsets] = useState(Array.isArray(year.next_year_offsets) ? year.next_year_offsets : []);
+  const [selectedRefYearId, setSelectedRefYearId] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   
@@ -768,6 +774,15 @@ const SettingsTab = ({ year }) => {
           const periodsData = await periodsResponse.json();
           setPeriods(periodsData.periods || []);
         }
+
+        // Fetch all fiscal years to compute reference offsets and show list
+        const yearsResponse = await fetch(`/api/fiscal-management/fiscal-years`, {
+          headers: { 'X-Company-Database': selectedCompany }
+        });
+        if (yearsResponse.ok) {
+          const yearsData = await yearsResponse.json();
+          setAllYears(yearsData.fiscal_years || []);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -796,7 +811,9 @@ const SettingsTab = ({ year }) => {
         },
         body: JSON.stringify({
           settings: settings,
-          custom_fields: year.custom_fields || {}
+          custom_fields: year.custom_fields || {},
+          previous_year_offsets: previousOffsets,
+          next_year_offsets: nextOffsets
         })
       });
       
@@ -812,6 +829,37 @@ const SettingsTab = ({ year }) => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const getYearOrder = () => {
+    // Sort allYears by start_date ascending to compute relative offsets
+    return [...allYears].sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+  };
+
+  const computeOffsetForYear = (targetYearId) => {
+    const ordered = getYearOrder();
+    const currentIndex = ordered.findIndex((y) => y.id === year.id);
+    const targetIndex = ordered.findIndex((y) => y.id === Number(targetYearId));
+    if (currentIndex === -1 || targetIndex === -1) return 0;
+    return targetIndex - currentIndex; // negative for previous, positive for next
+  };
+
+  const addReferenceByYear = () => {
+    if (!selectedRefYearId) return;
+    const offset = computeOffsetForYear(selectedRefYearId);
+    if (offset === 0) return;
+    if (offset < 0) {
+      const val = Math.abs(offset);
+      if (!previousOffsets.includes(val)) setPreviousOffsets([...previousOffsets, val].sort((a,b)=>a-b));
+    } else {
+      if (!nextOffsets.includes(offset)) setNextOffsets([...nextOffsets, offset].sort((a,b)=>a-b));
+    }
+    setSelectedRefYearId('');
+  };
+
+  const removeOffset = (direction, value) => {
+    if (direction === 'previous') setPreviousOffsets(previousOffsets.filter(v => v !== value));
+    else setNextOffsets(nextOffsets.filter(v => v !== value));
   };
   
   return (

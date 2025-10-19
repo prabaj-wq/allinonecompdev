@@ -317,141 +317,6 @@ const Process = () => {
   }
 
   // Fallback data functions for development/testing when backend is unavailable
-  const getFallbackProcesses = () => {
-    return [
-      {
-        id: 'fallback-1',
-        name: 'Monthly Close Process',
-        description: 'Standard monthly financial close workflow',
-        process_type: 'monthly_close',
-        status: 'active',
-        fiscal_year: 2024,
-        reporting_currency: 'USD',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      },
-      {
-        id: 'fallback-2',
-        name: 'Quarterly Consolidation',
-        description: 'Quarterly consolidation and reporting workflow',
-        process_type: 'consolidation',
-        status: 'active',
-        fiscal_year: 2024,
-        reporting_currency: 'USD',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-    ]
-  }
-
-  const getFallbackEntities = () => {
-    return [
-      { code: 'ENT001', name: 'Parent Company', currency: 'USD', is_active: true },
-      { code: 'ENT002', name: 'US Subsidiary', currency: 'USD', is_active: true },
-      { code: 'ENT003', name: 'European Subsidiary', currency: 'EUR', is_active: true },
-      { code: 'ENT004', name: 'Asian Subsidiary', currency: 'JPY', is_active: true }
-    ]
-  }
-
-  const getFallbackWorkflowNodes = () => {
-    return [
-      {
-        id: 'node-1',
-        type: 'data_input',
-        title: 'Data Input',
-        description: 'Import and validate financial data from various sources',
-        icon: 'Upload',
-        color: 'bg-blue-500',
-        category: 'Entity',
-        flowType: 'entity',
-        dependencies: [],
-        status: 'pending',
-        config: {
-          enabled: true,
-          availableForEntity: true,
-          availableForConsolidation: false,
-          restrictions: {}
-        },
-        sequence: 0
-      },
-      {
-        id: 'node-2',
-        type: 'journal_entry',
-        title: 'Journal Entries',
-        description: 'Create and manage journal entries',
-        icon: 'BookOpen',
-        color: 'bg-blue-600',
-        category: 'Entity',
-        flowType: 'entity',
-        dependencies: ['data_input'],
-        status: 'pending',
-        config: {
-          enabled: true,
-          availableForEntity: true,
-          availableForConsolidation: false,
-          restrictions: {}
-        },
-        sequence: 1
-      },
-      {
-        id: 'node-3',
-        type: 'profit_loss',
-        title: 'Profit & Loss',
-        description: 'Calculate comprehensive P&L statements',
-        icon: 'TrendingUp',
-        color: 'bg-green-500',
-        category: 'Entity',
-        flowType: 'entity',
-        dependencies: ['journal_entry'],
-        status: 'pending',
-        config: {
-          enabled: true,
-          availableForEntity: true,
-          availableForConsolidation: false,
-          restrictions: {}
-        },
-        sequence: 2
-      },
-      {
-        id: 'node-4',
-        type: 'validation',
-        title: 'Validation',
-        description: 'Validate balances and completeness checks',
-        icon: 'AlertCircle',
-        color: 'bg-red-600',
-        category: 'Entity',
-        flowType: 'both',
-        dependencies: [],
-        status: 'pending',
-        config: {
-          enabled: true,
-          availableForEntity: true,
-          availableForConsolidation: true,
-          restrictions: {}
-        },
-        sequence: 3
-      },
-      {
-        id: 'node-5',
-        type: 'reports',
-        title: 'Reports',
-        description: 'Generate financial reports and statements',
-        icon: 'FileSpreadsheet',
-        color: 'bg-gray-500',
-        category: 'Entity',
-        flowType: 'both',
-        dependencies: [],
-        status: 'pending',
-        config: {
-          enabled: true,
-          availableForEntity: true,
-          availableForConsolidation: true,
-          restrictions: {}
-        },
-        sequence: 4
-      }
-    ]
-  }
 
   // Fetch processes from database - with fallback data for development/testing when API is unavailable
   const fetchProcesses = async () => {
@@ -490,8 +355,8 @@ const Process = () => {
     } catch (error) {
       console.error('❌ Error fetching processes:', error)
       showNotification(error.message || 'Failed to load processes', 'error')
-      // Use fallback processes for development/testing when backend is unavailable
-      setProcesses(getFallbackProcesses())
+      // Do not inject mock data; show empty to reflect real backend state
+      setProcesses([])
     } finally {
       setLoading(false)
     }
@@ -532,13 +397,13 @@ const Process = () => {
         setAvailableEntities(data || [])
       } else {
         console.warn('⚠️ Entity API returned status:', response.status)
-        // Use fallback entities for development/testing
-        setAvailableEntities(getFallbackEntities())
+        // Do not inject mock data
+        setAvailableEntities([])
       }
     } catch (error) {
       console.error('❌ Error fetching entities:', error)
-      // Use fallback entities for development/testing
-      setAvailableEntities(getFallbackEntities())
+      // Do not inject mock data
+      setAvailableEntities([])
     }
   }
 
@@ -566,13 +431,13 @@ const Process = () => {
         // Periods will be fetched by useEffect when fiscalYears changes
       } else {
         console.warn('⚠️ Fiscal years API returned status:', response.status)
-        // Use fallback fiscal years for development/testing
-        setFiscalYears(getFallbackFiscalYears())
+        // Do not inject mock data
+        setFiscalYears([])
       }
     } catch (error) {
       console.error('❌ Error fetching fiscal years:', error)
-      // Use fallback fiscal years for development/testing
-      setFiscalYears(getFallbackFiscalYears())
+      // Do not inject mock data
+      setFiscalYears([])
     }
   }
 
@@ -722,29 +587,29 @@ const Process = () => {
         if (config.fiscalSettingsLocked !== undefined) setFiscalSettingsLocked(config.fiscalSettingsLocked)
       } else {
         console.warn(`⚠️ Configuration load returned status ${response.status}`)
-        // Use fallback configuration for development/testing
-        setWorkflowNodes(getFallbackWorkflowNodes())
-        setEntityWorkflowNodes(getFallbackWorkflowNodes())
+        // Do not inject mock configuration
+        setWorkflowNodes([])
+        setEntityWorkflowNodes([])
         setConsolidationWorkflowNodes([])
         setFlowMode('entity')
-        setSelectedEntities(['ENT001', 'ENT002'])
-        setSelectedYear('fy-2024')
-        setSelectedPeriods(['Q1', 'Q2'])
-        setSelectedScenario('actual')
+        setSelectedEntities([])
+        setSelectedYear(null)
+        setSelectedPeriods([])
+        setSelectedScenario(null)
         setFiscalSettingsLocked(false)
       }
     } catch (error) {
       console.error('❌ Error loading process configuration:', error)
       showNotification('Failed to load configuration', 'error')
-      // Use fallback configuration for development/testing
-      setWorkflowNodes(getFallbackWorkflowNodes())
-      setEntityWorkflowNodes(getFallbackWorkflowNodes())
+      // Do not inject mock configuration
+      setWorkflowNodes([])
+      setEntityWorkflowNodes([])
       setConsolidationWorkflowNodes([])
       setFlowMode('entity')
-      setSelectedEntities(['ENT001', 'ENT002'])
-      setSelectedYear('fy-2024')
-      setSelectedPeriods(['Q1', 'Q2'])
-      setSelectedScenario('actual')
+      setSelectedEntities([])
+      setSelectedYear(null)
+      setSelectedPeriods([])
+      setSelectedScenario(null)
       setFiscalSettingsLocked(false)
     }
   }
