@@ -123,6 +123,7 @@ const Process = () => {
       
       const response = await fetch(`/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'GET',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
@@ -141,7 +142,7 @@ const Process = () => {
       
       const data = await response.json()
       console.log('📋 Fetched processes:', data)
-      setProcesses(data || [])
+      setProcesses((data && Array.isArray(data)) ? data : (data?.processes || []))
     } catch (error) {
       console.error('❌ Error fetching processes:', error)
       showNotification(error.message || 'Failed to load processes', 'error')
@@ -181,6 +182,7 @@ const Process = () => {
         // Update existing process
         response = await fetch(`/api/financial-process/processes/${editingProcess.id}?company_name=${encodeURIComponent(selectedCompany)}`, {
           method: 'PUT',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             ...getAuthHeaders()
@@ -191,6 +193,7 @@ const Process = () => {
         // Create new process
         response = await fetch(`/api/financial-process/processes?company_name=${encodeURIComponent(selectedCompany)}`, {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             ...getAuthHeaders()
@@ -277,10 +280,10 @@ const Process = () => {
                     setProcessForm({
                       name: process.name,
                       description: process.description,
-                      type: process.type,
+                      type: process.process_type || process.type || 'actuals',
                       fiscal_year: process.fiscal_year,
                       reporting_currency: process.reporting_currency,
-                      settings: process.settings
+                      settings: process.settings || {}
                     })
                     setProcessDrawerOpen(true)
                   }}
