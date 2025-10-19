@@ -63,6 +63,11 @@ def ensure_fiscal_tables(company_name: str):
                     description TEXT,
                     is_consolidation_year BOOLEAN DEFAULT TRUE,
                     consolidation_method VARCHAR(50) DEFAULT 'full',
+                    roll_forward_method VARCHAR(50) DEFAULT 'copy_previous_period',
+                    roll_forward_copy_scope VARCHAR(50) DEFAULT 'amounts_and_journals',
+                    opening_balance_source_year_id INTEGER REFERENCES fiscal_years(id),
+                    previous_year_offsets JSONB DEFAULT '[]',
+                    next_year_offsets JSONB DEFAULT '[]',
                     settings JSONB DEFAULT '{}',
                     custom_fields JSONB DEFAULT '{}',
                     created_by INTEGER,
@@ -70,6 +75,28 @@ def ensure_fiscal_tables(company_name: str):
                     updated_by INTEGER,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+
+            # Ensure new columns exist for legacy databases
+            cur.execute("""
+                ALTER TABLE fiscal_years
+                ADD COLUMN IF NOT EXISTS roll_forward_method VARCHAR(50) DEFAULT 'copy_previous_period'
+            """)
+            cur.execute("""
+                ALTER TABLE fiscal_years
+                ADD COLUMN IF NOT EXISTS roll_forward_copy_scope VARCHAR(50) DEFAULT 'amounts_and_journals'
+            """)
+            cur.execute("""
+                ALTER TABLE fiscal_years
+                ADD COLUMN IF NOT EXISTS opening_balance_source_year_id INTEGER REFERENCES fiscal_years(id)
+            """)
+            cur.execute("""
+                ALTER TABLE fiscal_years
+                ADD COLUMN IF NOT EXISTS previous_year_offsets JSONB DEFAULT '[]'
+            """)
+            cur.execute("""
+                ALTER TABLE fiscal_years
+                ADD COLUMN IF NOT EXISTS next_year_offsets JSONB DEFAULT '[]'
             """)
             
             # Create periods table
@@ -168,6 +195,11 @@ class FiscalYearCreate(BaseModel):
 class FiscalYearSettingsUpdate(BaseModel):
     settings: Dict[str, Any] = Field(default_factory=dict)
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
+    roll_forward_method: Optional[str] = Field(default=None)
+    roll_forward_copy_scope: Optional[str] = Field(default=None)
+    opening_balance_source_year_id: Optional[int] = Field(default=None)
+    previous_year_offsets: Optional[List[int]] = Field(default=None)
+    next_year_offsets: Optional[List[int]] = Field(default=None)
 
 # ===== ENDPOINTS =====
 
@@ -264,8 +296,10 @@ async def create_fiscal_year(
             insert_query = """
                 INSERT INTO fiscal_years (
                     year_code, year_name, start_date, end_date, status, description,
-                    is_consolidation_year, consolidation_method, settings
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    is_consolidation_year, consolidation_method, roll_forward_method,
+                    roll_forward_copy_scope, opening_balance_source_year_id,
+                    previous_year_offsets, next_year_offsets, settings
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
             """
             
@@ -278,6 +312,11 @@ async def create_fiscal_year(
                 fiscal_year_data.get('description'),
                 fiscal_year_data.get('is_consolidation_year', True),
                 fiscal_year_data.get('consolidation_method', 'full'),
+                fiscal_year_data.get('roll_forward_method', 'copy_previous_period'),
+                fiscal_year_data.get('roll_forward_copy_scope', 'amounts_and_journals'),
+                fiscal_year_data.get('opening_balance_source_year_id'),
+                json.dumps(fiscal_year_data.get('previous_year_offsets', [])),
+                json.dumps(fiscal_year_data.get('next_year_offsets', [])),
                 json.dumps(fiscal_year_data.get('settings', {}))
             ))
             
@@ -309,7 +348,14 @@ async def update_fiscal_year(
             # Update query
             update_query = """
                 UPDATE fiscal_years 
-                SET settings = %s, custom_fields = %s, updated_at = CURRENT_TIMESTAMP
+                SET settings = %s,
+                    custom_fields = %s,
+                    roll_forward_method = COALESCE(%s, roll_forward_method),
+                    roll_forward_copy_scope = COALESCE(%s, roll_forward_copy_scope),
+                    opening_balance_source_year_id = %s,
+                    previous_year_offsets = %s,
+                    next_year_offsets = %s,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
             """
@@ -317,6 +363,11 @@ async def update_fiscal_year(
             cur.execute(update_query, (
                 json.dumps(fiscal_year_data.settings),
                 json.dumps(fiscal_year_data.custom_fields),
+                fiscal_year_data.roll_forward_method,
+                fiscal_year_data.roll_forward_copy_scope,
+                fiscal_year_data.opening_balance_source_year_id,
+                json.dumps(fiscal_year_data.previous_year_offsets if fiscal_year_data.previous_year_offsets is not None else []),
+                json.dumps(fiscal_year_data.next_year_offsets if fiscal_year_data.next_year_offsets is not None else []),
                 fiscal_year_id
             ))
             

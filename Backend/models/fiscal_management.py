@@ -24,6 +24,20 @@ class FiscalYear(CompanyBase):
     # Consolidation settings
     is_consolidation_year = Column(Boolean, default=True)
     consolidation_method = Column(String(50), default="full")  # full, proportional, equity
+
+    # Roll-forward and comparison settings
+    roll_forward_method = Column(String(50), default="copy_previous_period")
+    roll_forward_copy_scope = Column(String(50), default="amounts_and_journals")
+    opening_balance_source_year_id = Column(Integer, ForeignKey("fiscal_years.id"), nullable=True)
+    previous_year_offsets = Column(JSONB, default=list)
+    next_year_offsets = Column(JSONB, default=list)
+
+    opening_balance_source_year = relationship(
+        "FiscalYear",
+        remote_side=[id],
+        backref="referencing_years",
+        foreign_keys=[opening_balance_source_year_id]
+    )
     
     # Metadata and settings
     settings = Column(JSONB, default='{}')  # JSON for flexible settings
