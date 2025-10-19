@@ -80,6 +80,12 @@ const Layout = ({ children }) => {
       description: 'Financial overview and insights'
     },
     { 
+      name: 'Fiscal Management', 
+      href: '/fiscal-management', 
+      icon: Calendar,
+      description: 'Fiscal year, period and scenario management'
+    },
+    { 
       name: 'Axes', 
       href: '/axes', 
       icon: BarChart3,
@@ -445,12 +451,6 @@ const Layout = ({ children }) => {
       href: '/business-tools',
       icon: Lightbulb,
       description: 'Advanced business analysis tools and frameworks'
-    },
-    { 
-      name: 'Fiscal Management', 
-      href: '/fiscal-management', 
-      icon: Calendar,
-      description: 'Fiscal year, period and scenario management'
     },
     { 
       name: 'Quantum Finance', 

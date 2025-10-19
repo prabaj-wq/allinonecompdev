@@ -16,7 +16,8 @@ import {
   ArrowUpDown,
   RefreshCw,
   Download,
-  Settings
+  Settings,
+  Copy
 } from 'lucide-react'
 
 const PeriodsTab = ({ year }) => {

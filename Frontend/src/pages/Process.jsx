@@ -6,7 +6,8 @@ import {
   Plus, Settings, Play, Pause, RotateCcw, ChevronRight, X,
   Building2, TrendingUp, Users, Repeat, Globe, Link, Target,
   DollarSign, Calendar, PieChart, Zap, AlertCircle, BarChart3,
-  FileSpreadsheet, BookOpen, Upload, Layers, Workflow, Loader2
+  FileSpreadsheet, BookOpen, Upload, Layers, Workflow, Loader2,
+  CheckCircle, Lock, Unlock
 } from 'lucide-react'
 
 // Node Library - Segregated by Entity-wise and Consolidation flows
@@ -220,8 +221,6 @@ const Process = () => {
   const [processForm, setProcessForm] = useState({
     name: '',
     description: '',
-    type: 'actuals',
-    fiscal_year: new Date().getFullYear(),
     reporting_currency: 'USD',
     settings: {}
   })
@@ -245,9 +244,13 @@ const Process = () => {
   // Fiscal Management State
   const [fiscalYears, setFiscalYears] = useState([])
   const [selectedYear, setSelectedYear] = useState(null)
-  const [selectedPeriod, setSelectedPeriod] = useState(null)
-  const [selectedScenario, setSelectedScenario] = useState('Actuals')
+  const [selectedPeriods, setSelectedPeriods] = useState([]) // Changed to multi-select
+  const [availablePeriods, setAvailablePeriods] = useState([])
+  const [scenarios, setScenarios] = useState([])
+  const [selectedScenario, setSelectedScenario] = useState(null)
   const [showFiscalSetup, setShowFiscalSetup] = useState(false)
+  const [showPeriodSelector, setShowPeriodSelector] = useState(false)
+  const [fiscalSettingsLocked, setFiscalSettingsLocked] = useState(false) // Lock fiscal settings once configured
   
   // Get unique categories from NODE_LIBRARY
   const categories = ['all', ...new Set(NODE_LIBRARY.map(node => node.category))]
@@ -341,11 +344,12 @@ const Process = () => {
     if (!selectedCompany) return
     
     try {
-      const response = await fetch(`/api/fiscal-years?company_name=${encodeURIComponent(selectedCompany)}`, {
+      const response = await fetch(`/api/fiscal-management/fiscal-years?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'GET',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany,
           ...getAuthHeaders()
         }
       })
@@ -353,16 +357,75 @@ const Process = () => {
       if (response.ok) {
         const data = await response.json()
         console.log('📅 Fetched fiscal years:', data)
-        setFiscalYears(data?.fiscal_years || data || [])
+        const years = data?.fiscal_years || data || []
+        setFiscalYears(years)
         
         // Auto-select first year if available
-        if (data?.fiscal_years?.length > 0 || data?.length > 0) {
-          const years = data?.fiscal_years || data
-          setSelectedYear(years[0].year || years[0].id)
+        if (years.length > 0) {
+          const firstYear = years[0]
+          setSelectedYear(firstYear.id)
+          // Fetch periods and scenarios for this year
+          fetchPeriodsForYear(firstYear.id)
+          fetchScenariosForYear(firstYear.id)
         }
       }
     } catch (error) {
       console.error('❌ Error fetching fiscal years:', error)
+    }
+  }
+
+  // Fetch periods for selected year
+  const fetchPeriodsForYear = async (yearId) => {
+    if (!selectedCompany || !yearId) return
+    
+    try {
+      const response = await fetch(`/api/fiscal-management/fiscal-years/${yearId}/periods`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany,
+          ...getAuthHeaders()
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📊 Fetched periods:', data)
+        setAvailablePeriods(data?.periods || [])
+      }
+    } catch (error) {
+      console.error('❌ Error fetching periods:', error)
+    }
+  }
+
+  // Fetch scenarios for selected year
+  const fetchScenariosForYear = async (yearId) => {
+    if (!selectedCompany || !yearId) return
+    
+    try {
+      const response = await fetch(`/api/fiscal-management/fiscal-years/${yearId}/scenarios`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany,
+          ...getAuthHeaders()
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('🎯 Fetched scenarios:', data)
+        const scenarioList = data?.scenarios || []
+        setScenarios(scenarioList)
+        // Auto-select first scenario
+        if (scenarioList.length > 0) {
+          setSelectedScenario(scenarioList[0].id)
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching scenarios:', error)
     }
   }
 
@@ -387,16 +450,21 @@ const Process = () => {
         if (config.nodes) setWorkflowNodes(config.nodes)
         if (config.flowMode) setFlowMode(config.flowMode)
         if (config.selectedEntities) setSelectedEntities(config.selectedEntities)
-        if (config.fiscalYear) setSelectedYear(config.fiscalYear)
-        if (config.period) setSelectedPeriod(config.period)
+        if (config.fiscalYear) {
+          setSelectedYear(config.fiscalYear)
+          fetchPeriodsForYear(config.fiscalYear)
+          fetchScenariosForYear(config.fiscalYear)
+        }
+        if (config.periods) setSelectedPeriods(config.periods)
         if (config.scenario) setSelectedScenario(config.scenario)
+        if (config.fiscalSettingsLocked !== undefined) setFiscalSettingsLocked(config.fiscalSettingsLocked)
       }
     } catch (error) {
       console.error('❌ Error loading process configuration:', error)
     }
   }
 
-  // Save process configuration
+  // Save process configuration (auto-save)
   const saveProcessConfiguration = async () => {
     if (!selectedProcess || !selectedCompany) return
     
@@ -405,8 +473,9 @@ const Process = () => {
       flowMode,
       selectedEntities,
       fiscalYear: selectedYear,
-      period: selectedPeriod,
-      scenario: selectedScenario
+      periods: selectedPeriods,
+      scenario: selectedScenario,
+      fiscalSettingsLocked
     }
     
     try {
@@ -442,10 +511,9 @@ const Process = () => {
       const processData = {
         name: processForm.name,
         description: processForm.description,
-        process_type: processForm.type,
-        fiscal_year: processForm.fiscal_year,
         reporting_currency: processForm.reporting_currency,
-        settings: processForm.settings
+        settings: processForm.settings,
+        status: 'active' // Set default status
       }
       
       let response
@@ -497,8 +565,6 @@ const Process = () => {
       setProcessForm({
         name: '',
         description: '',
-        type: 'actuals',
-        fiscal_year: new Date().getFullYear(),
         reporting_currency: 'USD',
         settings: {}
       })
@@ -650,6 +716,24 @@ const Process = () => {
     const node = workflowNodes.find(n => n.id === nodeId)
     if (!node) return
 
+    // Validation
+    if (flowMode === 'entity' && selectedEntities.length === 0) {
+      showNotification('Please select at least one entity', 'error')
+      return
+    }
+    if (!selectedYear) {
+      showNotification('Please select a fiscal year', 'error')
+      return
+    }
+    if (selectedPeriods.length === 0) {
+      showNotification('Please select at least one period', 'error')
+      return
+    }
+    if (!selectedScenario) {
+      showNotification('Please select a scenario', 'error')
+      return
+    }
+
     // Update status to running
     setWorkflowNodes(workflowNodes.map(n => 
       n.id === nodeId ? { ...n, status: 'running' } : n
@@ -661,6 +745,7 @@ const Process = () => {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany,
           ...getAuthHeaders()
         },
         body: JSON.stringify({
@@ -668,8 +753,9 @@ const Process = () => {
           nodeType: node.type,
           entities: selectedEntities,
           fiscalYear: selectedYear,
-          period: selectedPeriod,
-          scenario: selectedScenario
+          periods: selectedPeriods,
+          scenario: selectedScenario,
+          flowMode
         })
       })
 
@@ -678,6 +764,7 @@ const Process = () => {
           n.id === nodeId ? { ...n, status: 'completed' } : n
         ))
         showNotification(`${node.title} executed successfully`, 'success')
+        saveProcessConfiguration() // Auto-save after execution
       } else {
         throw new Error('Node execution failed')
       }
@@ -696,14 +783,30 @@ const Process = () => {
       return
     }
 
-    if (selectedEntities.length === 0 && flowMode === 'entity') {
+    // Validation
+    if (flowMode === 'entity' && selectedEntities.length === 0) {
       showNotification('Please select at least one entity', 'error')
       return
     }
+    if (!selectedYear) {
+      showNotification('Please select a fiscal year', 'error')
+      return
+    }
+    if (selectedPeriods.length === 0) {
+      showNotification('Please select at least one period', 'error')
+      return
+    }
+    if (!selectedScenario) {
+      showNotification('Please select a scenario', 'error')
+      return
+    }
 
-    showNotification('Starting simulation...', 'success')
+    showNotification('🚀 Starting simulation...', 'success')
 
-    // Sort nodes by dependencies
+    // Reset all nodes to pending
+    setWorkflowNodes(workflowNodes.map(n => ({ ...n, status: 'pending' })))
+
+    // Sort nodes by sequence
     const sortedNodes = [...workflowNodes].sort((a, b) => a.sequence - b.sequence)
 
     for (const node of sortedNodes) {
@@ -714,16 +817,20 @@ const Process = () => {
       })
 
       if (!dependenciesMet && node.dependencies.length > 0) {
-        showNotification(`Skipping ${node.title} - dependencies not met`, 'error')
+        showNotification(`⚠️ Skipping ${node.title} - dependencies not met`, 'error')
+        setWorkflowNodes(prev => prev.map(n => 
+          n.id === node.id ? { ...n, status: 'error' } : n
+        ))
         continue
       }
 
       await runNode(node.id)
-      // Small delay between nodes
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Small delay between nodes for better UX
+      await new Promise(resolve => setTimeout(resolve, 800))
     }
 
-    showNotification('Simulation completed', 'success')
+    showNotification('✅ Simulation completed successfully!', 'success')
+    saveProcessConfiguration() // Auto-save after simulation
   }
 
   // Render workflow view with advanced layout
@@ -899,50 +1006,184 @@ const Process = () => {
               {/* Year Selector */}
               <select
                 value={selectedYear || ''}
-                onChange={(e) => setSelectedYear(e.target.value)}
-                className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
+                onChange={(e) => {
+                  if (fiscalSettingsLocked) {
+                    showNotification('🔒 Fiscal settings are locked. Unlock to make changes.', 'error')
+                    return
+                  }
+                  const yearId = e.target.value
+                  setSelectedYear(yearId)
+                  fetchPeriodsForYear(yearId)
+                  fetchScenariosForYear(yearId)
+                  setSelectedPeriods([]) // Reset periods
+                  saveProcessConfiguration() // Auto-save
+                }}
+                disabled={fiscalSettingsLocked}
+                className={`px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg transition-all ${
+                  fiscalSettingsLocked 
+                    ? 'opacity-60 cursor-not-allowed' 
+                    : 'hover:border-blue-400'
+                }`}
               >
                 <option value="">Select Year</option>
                 {fiscalYears.map((fy) => (
-                  <option key={fy.id || fy.year} value={fy.year || fy.id}>
-                    {fy.year || fy.name}
+                  <option key={fy.id} value={fy.id}>
+                    {fy.year} - {fy.name}
                   </option>
                 ))}
               </select>
 
-              {/* Period Selector */}
-              <select
-                value={selectedPeriod || ''}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
-              >
-                <option value="">Select Period</option>
-                <option value="Q1">Q1</option>
-                <option value="Q2">Q2</option>
-                <option value="Q3">Q3</option>
-                <option value="Q4">Q4</option>
-                <option value="FY">Full Year</option>
-              </select>
+              {/* Period Multi-Selector */}
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    if (fiscalSettingsLocked) {
+                      showNotification('🔒 Fiscal settings are locked. Unlock to make changes.', 'error')
+                      return
+                    }
+                    setShowPeriodSelector(!showPeriodSelector)
+                  }}
+                  disabled={fiscalSettingsLocked}
+                  className={`px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg transition-all flex items-center gap-2 ${
+                    fiscalSettingsLocked
+                      ? 'opacity-60 cursor-not-allowed'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-400'
+                  }`}
+                >
+                  <Calendar className="h-4 w-4" />
+                  <span className="font-medium">
+                    {selectedPeriods.length === 0 
+                      ? 'Select Periods' 
+                      : `${selectedPeriods.length} Period${selectedPeriods.length === 1 ? '' : 's'}`}
+                  </span>
+                  <ChevronRight className={`h-4 w-4 transition-transform ${showPeriodSelector ? 'rotate-90' : ''}`} />
+                </button>
+
+                {/* Period Dropdown */}
+                {showPeriodSelector && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowPeriodSelector(false)} />
+                    <div className="absolute top-full left-0 mt-2 w-72 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 max-h-96 overflow-auto animate-in slide-in-from-top-2">
+                      <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <span className="font-medium text-sm">Select Periods</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedPeriods(availablePeriods.map(p => p.id))
+                              saveProcessConfiguration()
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedPeriods([])
+                              saveProcessConfiguration()
+                            }}
+                            className="text-xs text-gray-600 hover:text-gray-700"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-2">
+                        {availablePeriods.length === 0 ? (
+                          <div className="text-center py-4 text-sm text-gray-500">
+                            No periods available. Create periods in Fiscal Management.
+                          </div>
+                        ) : (
+                          availablePeriods.map((period) => (
+                            <label
+                              key={period.id}
+                              className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedPeriods.includes(period.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedPeriods([...selectedPeriods, period.id])
+                                  } else {
+                                    setSelectedPeriods(selectedPeriods.filter(id => id !== period.id))
+                                  }
+                                  saveProcessConfiguration()
+                                }}
+                                className="rounded"
+                              />
+                              <div className="flex-1">
+                                <span className="text-sm font-medium">{period.period_name}</span>
+                                <span className="text-xs text-gray-500 ml-2">({period.period_code})</span>
+                              </div>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Scenario Selector */}
               <select
-                value={selectedScenario}
-                onChange={(e) => setSelectedScenario(e.target.value)}
-                className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
+                value={selectedScenario || ''}
+                onChange={(e) => {
+                  if (fiscalSettingsLocked) {
+                    showNotification('🔒 Fiscal settings are locked. Unlock to make changes.', 'error')
+                    return
+                  }
+                  setSelectedScenario(e.target.value)
+                  saveProcessConfiguration() // Auto-save
+                }}
+                disabled={fiscalSettingsLocked}
+                className={`px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg transition-all ${
+                  fiscalSettingsLocked 
+                    ? 'opacity-60 cursor-not-allowed' 
+                    : 'hover:border-blue-400'
+                }`}
               >
-                <option value="Actuals">Actuals</option>
-                <option value="Budget">Budget</option>
-                <option value="Forecast">Forecast</option>
+                <option value="">Select Scenario</option>
+                {scenarios.map((scenario) => (
+                  <option key={scenario.id} value={scenario.id}>
+                    {scenario.scenario_name} ({scenario.scenario_type})
+                  </option>
+                ))}
               </select>
 
-              {/* Save Configuration Button */}
+              {/* Lock/Unlock Button */}
               <button
-                onClick={saveProcessConfiguration}
-                className="ml-auto px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center gap-2"
+                onClick={() => {
+                  if (!selectedYear || selectedPeriods.length === 0 || !selectedScenario) {
+                    showNotification('Please select year, periods, and scenario before locking', 'error')
+                    return
+                  }
+                  setFiscalSettingsLocked(!fiscalSettingsLocked)
+                  saveProcessConfiguration()
+                  showNotification(
+                    !fiscalSettingsLocked 
+                      ? '🔒 Fiscal settings locked. Only selected year, periods, and scenario will be available.' 
+                      : '🔓 Fiscal settings unlocked. You can now change selections.',
+                    'success'
+                  )
+                }}
+                className={`px-3 py-2 text-sm rounded-lg inline-flex items-center gap-2 transition-all ${
+                  fiscalSettingsLocked
+                    ? 'bg-amber-100 text-amber-800 border-2 border-amber-300 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700'
+                    : 'bg-green-100 text-green-800 border-2 border-green-300 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700'
+                }`}
+                title={fiscalSettingsLocked ? 'Unlock fiscal settings' : 'Lock fiscal settings'}
               >
-                <Zap className="h-4 w-4" />
-                Save Config
+                {fiscalSettingsLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                <span className="font-medium">
+                  {fiscalSettingsLocked ? 'Locked' : 'Unlocked'}
+                </span>
               </button>
+
+              {/* Auto-save indicator */}
+              <div className="ml-auto flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                Auto-saving
+              </div>
             </div>
           </div>
         </div>
@@ -953,14 +1194,17 @@ const Process = () => {
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Node Library Expandable Panel */}
             {showNodeLibrary && (
-              <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
+              <div className="bg-gradient-to-r from-white via-blue-50 to-white dark:from-gray-950 dark:via-blue-900/10 dark:to-gray-950 border-b border-gray-200 dark:border-gray-800 p-4 shadow-lg animate-in slide-in-from-top-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                    Node Library - {flowMode === 'entity' ? 'Entity-wise' : 'Consolidation'} ({availableNodes.length} nodes)
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <Workflow className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Node Library - {flowMode === 'entity' ? '🏢 Entity-wise' : '🔗 Consolidation'} ({availableNodes.length} nodes)
+                    </h3>
+                  </div>
                   <button
                     onClick={() => setShowNodeLibrary(false)}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                    className="p-1.5 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all hover:shadow-md"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -968,21 +1212,22 @@ const Process = () => {
                 {/* Horizontal Scrolling Node Library */}
                 <div className="overflow-x-auto">
                   <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
-                    {availableNodes.map((node) => {
+                    {availableNodes.map((node, idx) => {
                       const IconComponent = node.icon
                       const isAdded = workflowNodes.some(n => n.type === node.type)
                       return (
                         <div
                           key={node.type}
                           onClick={() => !isAdded && addNodeToWorkflow(node.type)}
-                          className={`flex-shrink-0 w-36 p-3 border-2 rounded-lg transition-all bg-white dark:bg-gray-900 ${
+                          style={{ animationDelay: `${idx * 50}ms` }}
+                          className={`flex-shrink-0 w-36 p-3 border-2 rounded-xl transition-all duration-300 bg-gradient-to-br transform animate-in fade-in slide-in-from-left-2 ${
                             isAdded
-                              ? 'border-green-300 dark:border-green-700 opacity-50 cursor-not-allowed'
-                              : 'border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer hover:shadow-md'
+                              ? 'from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-300 dark:border-green-700 opacity-70 cursor-not-allowed'
+                              : 'from-white to-gray-50 dark:from-gray-900 dark:to-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer hover:shadow-xl hover:scale-105'
                           }`}
                           title={node.description}
                         >
-                          <div className={`w-10 h-10 rounded-lg ${node.color} flex items-center justify-center mb-2`}>
+                          <div className={`w-10 h-10 rounded-xl ${node.color} flex items-center justify-center mb-2 shadow-md transform transition-transform ${!isAdded && 'group-hover:scale-110'}`}>
                             <IconComponent className="h-5 w-5 text-white" />
                           </div>
                           <p className="text-xs font-medium text-gray-900 dark:text-white line-clamp-2 mb-1">
@@ -992,8 +1237,8 @@ const Process = () => {
                             {node.category}
                           </p>
                           {isAdded && (
-                            <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
-                              ✓ Added
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium flex items-center gap-1">
+                              <CheckCircle className="h-3 w-3" /> Added
                             </p>
                           )}
                         </div>
@@ -1039,10 +1284,12 @@ const Process = () => {
                               showNotification(`Opening ${node.title} module...`, 'success')
                               // You can add navigation logic here based on node type
                             }}
-                            className={`flex-shrink-0 w-64 bg-white dark:bg-gray-950 rounded-xl shadow-md border-2 transition-all cursor-pointer ${
+                            className={`flex-shrink-0 w-64 bg-gradient-to-br from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 rounded-xl shadow-lg border-2 transition-all duration-300 cursor-pointer transform hover:scale-105 hover:shadow-xl ${
                               isSelected 
-                                ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800' 
-                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                                ? 'border-blue-500 ring-4 ring-blue-200 dark:ring-blue-800 scale-105' 
+                                : 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600'
+                            } ${
+                              node.status === 'running' ? 'animate-pulse' : ''
                             }`}
                           >
                             <div className="p-4">
@@ -1258,12 +1505,12 @@ const Process = () => {
     return (
       <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
         {/* Header */}
-        <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
+        <div className="bg-gradient-to-r from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setCurrentView('workflow')}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                className="p-2 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all hover:shadow-md"
               >
                 <ChevronRight className="h-5 w-5 rotate-180" />
               </button>
@@ -1276,13 +1523,11 @@ const Process = () => {
                 </p>
               </div>
             </div>
-            <button
-              onClick={saveProcessConfiguration}
-              className="btn-primary text-sm inline-flex items-center gap-2"
-            >
-              <Zap className="h-4 w-4" />
-              Save Changes
-            </button>
+            {/* Auto-save indicator */}
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="font-medium">Auto-saving</span>
+            </div>
           </div>
         </div>
 
@@ -1399,7 +1644,8 @@ const Process = () => {
                               setWorkflowNodes(updated)
                               setSelectedNode({ ...selectedNode, title: e.target.value })
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                            onBlur={() => saveProcessConfiguration()} // Auto-save on blur
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800"
                           />
                         </div>
 
@@ -1416,8 +1662,9 @@ const Process = () => {
                               setWorkflowNodes(updated)
                               setSelectedNode({ ...selectedNode, description: e.target.value })
                             }}
+                            onBlur={() => saveProcessConfiguration()} // Auto-save on blur
                             rows={3}
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800"
                           />
                         </div>
                       </div>
@@ -1456,7 +1703,7 @@ const Process = () => {
                         Availability
                       </h3>
                       <div className="space-y-3">
-                        <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all">
                           <input
                             type="checkbox"
                             checked={selectedNode.config?.availableForEntity || false}
@@ -1471,6 +1718,7 @@ const Process = () => {
                                 ...selectedNode, 
                                 config: { ...selectedNode.config, availableForEntity: e.target.checked }
                               })
+                              saveProcessConfiguration() // Auto-save
                             }}
                             className="rounded"
                           />
@@ -1484,7 +1732,7 @@ const Process = () => {
                           </div>
                         </label>
 
-                        <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all">
                           <input
                             type="checkbox"
                             checked={selectedNode.config?.availableForConsolidation || false}
@@ -1499,6 +1747,7 @@ const Process = () => {
                                 ...selectedNode, 
                                 config: { ...selectedNode.config, availableForConsolidation: e.target.checked }
                               })
+                              saveProcessConfiguration() // Auto-save
                             }}
                             className="rounded"
                           />
@@ -1702,8 +1951,6 @@ const Process = () => {
                   setProcessForm({ 
                     name: '', 
                     description: '',
-                    type: 'actuals',
-                    fiscal_year: new Date().getFullYear(),
                     reporting_currency: 'USD',
                     settings: {}
                   })
@@ -1734,31 +1981,24 @@ const Process = () => {
                   placeholder="Enter process description"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Type</label>
-                  <select
-                    value={processForm.type}
-                    onChange={(e) => setProcessForm({ ...processForm, type: e.target.value })}
-                    className="form-select"
-                  >
-                    <option value="actuals">Actuals</option>
-                    <option value="budget">Budget</option>
-                    <option value="forecast">Forecast</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Fiscal Year</label>
-                  <select
-                    value={processForm.fiscal_year}
-                    onChange={(e) => setProcessForm({ ...processForm, fiscal_year: parseInt(e.target.value) })}
-                    className="form-select"
-                  >
-                    {[2023, 2024, 2025, 2026].map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="label">Reporting Currency</label>
+                <select
+                  value={processForm.reporting_currency}
+                  onChange={(e) => setProcessForm({ ...processForm, reporting_currency: e.target.value })}
+                  className="form-select"
+                >
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="EUR">EUR - Euro</option>
+                  <option value="GBP">GBP - British Pound</option>
+                  <option value="INR">INR - Indian Rupee</option>
+                  <option value="JPY">JPY - Japanese Yen</option>
+                </select>
+              </div>
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  💡 <strong>Note:</strong> Fiscal year, periods, and scenarios will be configured inside the process settings after creation.
+                </p>
               </div>
               <div className="flex gap-3 pt-4">
                 <button
