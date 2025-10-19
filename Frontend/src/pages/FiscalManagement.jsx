@@ -377,7 +377,10 @@ const FiscalManagement = () => {
                 type="text"
                 placeholder="e.g., FY2024"
                 value={formData.year_code}
-                onChange={(e) => setFormData({...formData, year_code: e.target.value})}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setFormData(prev => ({...prev, year_code: value}))
+                }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
@@ -390,7 +393,10 @@ const FiscalManagement = () => {
                 type="text"
                 placeholder="e.g., Fiscal Year 2024"
                 value={formData.year_name}
-                onChange={(e) => setFormData({...formData, year_name: e.target.value})}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setFormData(prev => ({...prev, year_name: value}))
+                }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
@@ -405,7 +411,10 @@ const FiscalManagement = () => {
               <input
                 type="date"
                 value={formData.start_date}
-                onChange={(e) => setFormData({...formData, start_date: e.target.value})}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setFormData(prev => ({...prev, start_date: value}))
+                }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
@@ -417,7 +426,10 @@ const FiscalManagement = () => {
               <input
                 type="date"
                 value={formData.end_date}
-                onChange={(e) => setFormData({...formData, end_date: e.target.value})}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setFormData(prev => ({...prev, end_date: value}))
+                }}
                 required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
@@ -432,7 +444,10 @@ const FiscalManagement = () => {
               rows={3}
               placeholder="Optional description for this fiscal year..."
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              onChange={(e) => {
+                const value = e.target.value
+                setFormData(prev => ({...prev, description: value}))
+              }}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
             />
           </div>
