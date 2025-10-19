@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
-import { useAuth } from '../contexts/AuthContext'
+import { useAuth } from '../hooks/useAuth'
 import {
   Plus, Settings, Play, Pause, RotateCcw, ChevronRight, X,
   Building2, TrendingUp, Users, Repeat, Globe, Link, Target,
