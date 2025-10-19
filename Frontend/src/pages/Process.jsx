@@ -353,11 +353,103 @@ const Process = () => {
     ]
   }
 
-  const getFallbackFiscalYears = () => {
+  const getFallbackWorkflowNodes = () => {
     return [
-      { id: 'fy-2024', year: 2024, name: 'Fiscal Year 2024', status: 'active', start_date: '2024-01-01', end_date: '2024-12-31' },
-      { id: 'fy-2023', year: 2023, name: 'Fiscal Year 2023', status: 'closed', start_date: '2023-01-01', end_date: '2023-12-31' },
-      { id: 'fy-2025', year: 2025, name: 'Fiscal Year 2025', status: 'planning', start_date: '2025-01-01', end_date: '2025-12-31' }
+      {
+        id: 'node-1',
+        type: 'data_input',
+        title: 'Data Input',
+        description: 'Import and validate financial data from various sources',
+        icon: 'Upload',
+        color: 'bg-blue-500',
+        category: 'Entity',
+        flowType: 'entity',
+        dependencies: [],
+        status: 'pending',
+        config: {
+          enabled: true,
+          availableForEntity: true,
+          availableForConsolidation: false,
+          restrictions: {}
+        },
+        sequence: 0
+      },
+      {
+        id: 'node-2',
+        type: 'journal_entry',
+        title: 'Journal Entries',
+        description: 'Create and manage journal entries',
+        icon: 'BookOpen',
+        color: 'bg-blue-600',
+        category: 'Entity',
+        flowType: 'entity',
+        dependencies: ['data_input'],
+        status: 'pending',
+        config: {
+          enabled: true,
+          availableForEntity: true,
+          availableForConsolidation: false,
+          restrictions: {}
+        },
+        sequence: 1
+      },
+      {
+        id: 'node-3',
+        type: 'profit_loss',
+        title: 'Profit & Loss',
+        description: 'Calculate comprehensive P&L statements',
+        icon: 'TrendingUp',
+        color: 'bg-green-500',
+        category: 'Entity',
+        flowType: 'entity',
+        dependencies: ['journal_entry'],
+        status: 'pending',
+        config: {
+          enabled: true,
+          availableForEntity: true,
+          availableForConsolidation: false,
+          restrictions: {}
+        },
+        sequence: 2
+      },
+      {
+        id: 'node-4',
+        type: 'validation',
+        title: 'Validation',
+        description: 'Validate balances and completeness checks',
+        icon: 'AlertCircle',
+        color: 'bg-red-600',
+        category: 'Entity',
+        flowType: 'both',
+        dependencies: [],
+        status: 'pending',
+        config: {
+          enabled: true,
+          availableForEntity: true,
+          availableForConsolidation: true,
+          restrictions: {}
+        },
+        sequence: 3
+      },
+      {
+        id: 'node-5',
+        type: 'reports',
+        title: 'Reports',
+        description: 'Generate financial reports and statements',
+        icon: 'FileSpreadsheet',
+        color: 'bg-gray-500',
+        category: 'Entity',
+        flowType: 'both',
+        dependencies: [],
+        status: 'pending',
+        config: {
+          enabled: true,
+          availableForEntity: true,
+          availableForConsolidation: true,
+          restrictions: {}
+        },
+        sequence: 4
+      }
     ]
   }
 
