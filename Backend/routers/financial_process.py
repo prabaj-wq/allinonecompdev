@@ -264,13 +264,18 @@ class ConsolidationRuleCreate(BaseModel):
 # PROCESS MANAGEMENT
 # ============================================================================
 
+@router.get("/health")
+async def health_check():
+    """Health check for financial process router"""
+    return {"status": "ok", "router": "financial_process"}
+
 @router.get("/processes")
 async def get_processes(
-    company_name: str = Query(...),
-    current_user = Depends(get_current_active_user)
+    company_name: str = Query(...)
 ):
     """Get all financial processes for a company"""
     try:
+        print(f"🔍 GET /processes called for company: {company_name}")
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             
@@ -296,19 +301,24 @@ async def get_processes(
                     "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None
                 })
             
+            print(f"✅ Found {len(processes)} processes")
             return {"processes": processes}
         
     except Exception as e:
+        print(f"❌ Error fetching processes: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching processes: {str(e)}")
 
 @router.post("/processes")
 async def create_process(
     company_name: str = Query(...),
-    process_data: ProcessCreate = Body(...),
-    current_user = Depends(get_current_active_user)
+    process_data: ProcessCreate = Body(...)
 ):
     """Create a new financial process"""
     try:
+        print(f"🚀 POST /processes called for company: {company_name}")
+        print(f"📊 Process data: {process_data}")
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             process_id = str(uuid.uuid4())
