@@ -9,233 +9,200 @@ import {
   FileSpreadsheet, BookOpen, Upload, Layers, Workflow, Loader2
 } from 'lucide-react'
 
-// Extended Node Library with 26+ Financial Process Nodes
+// Node Library - Segregated by Entity-wise and Consolidation flows
 const NODE_LIBRARY = [
-  // Data Input & Import
+  // ==================== ENTITY-WISE NODES ====================
   {
     type: 'data_input',
     title: 'Data Input',
     description: 'Import and validate financial data from various sources',
     icon: Upload,
-    category: 'Input',
-    color: 'bg-blue-500'
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-blue-500',
+    dependencies: []
   },
   {
-    type: 'data_import',
-    title: 'Data Import',
-    description: 'Import from Excel, CSV, ERP systems',
-    icon: Upload,
-    category: 'Input',
-    color: 'bg-cyan-600'
-  },
-  // Core Financial Calculations
-  {
-    type: 'profit_loss',
-    title: 'P&L Calculation',
-    description: 'Calculate comprehensive P&L statements with detailed breakdowns',
-    icon: TrendingUp,
-    category: 'Calculation',
-    color: 'bg-green-500'
+    type: 'journal_entry',
+    title: 'Journal Entries',
+    description: 'Create and manage journal entries',
+    icon: BookOpen,
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-blue-600',
+    dependencies: ['data_input']
   },
   {
-    type: 'balance_sheet',
-    title: 'Balance Sheet',
-    description: 'Compile and classify balance sheet items',
-    icon: BarChart3,
-    category: 'Calculation',
-    color: 'bg-green-600'
+    type: 'roll_forward',
+    title: 'Roll Forward',
+    description: 'Roll forward balances to next period',
+    icon: Repeat,
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-purple-600',
+    dependencies: []
   },
-  {
-    type: 'cash_flow',
-    title: 'Cash Flow Statement',
-    description: 'Generate cash flow statements (indirect/direct method)',
-    icon: DollarSign,
-    category: 'Calculation',
-    color: 'bg-emerald-500'
-  },
-  // Consolidation Features
-  {
-    type: 'nci_allocation',
-    title: 'NCI Handling',
-    description: 'Non-Controlling Interest allocations and calculations',
-    icon: Users,
-    category: 'Consolidation',
-    color: 'bg-purple-500'
-  },
-  {
-    type: 'intercompany_elimination',
-    title: 'IC Eliminations',
-    description: 'Eliminate intercompany transactions and balances',
-    icon: Link,
-    category: 'Consolidation',
-    color: 'bg-red-500'
-  },
-  {
-    type: 'goodwill_impairment',
-    title: 'Goodwill Test',
-    description: 'Goodwill impairment testing and fair value adjustments',
-    icon: Target,
-    category: 'Consolidation',
-    color: 'bg-indigo-500'
-  },
-  {
-    type: 'consolidation_output',
-    title: 'Consolidation Output',
-    description: 'Generate consolidated statements',
-    icon: Layers,
-    category: 'Consolidation',
-    color: 'bg-violet-600'
-  },
-  // Foreign Currency & Translation
   {
     type: 'fx_translation',
     title: 'FX Translation',
     description: 'Foreign exchange translation and currency conversion',
     icon: Globe,
-    category: 'FX',
-    color: 'bg-cyan-500'
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-cyan-500',
+    dependencies: ['journal_entry']
   },
-  {
-    type: 'fx_revaluation',
-    title: 'FX Revaluation',
-    description: 'Revalue foreign currency balances',
-    icon: Repeat,
-    category: 'FX',
-    color: 'bg-sky-500'
-  },
-  // Tax Calculations
   {
     type: 'deferred_tax',
     title: 'Deferred Tax',
     description: 'Calculate deferred tax assets and liabilities',
     icon: DollarSign,
-    category: 'Tax',
-    color: 'bg-yellow-500'
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-yellow-500',
+    dependencies: ['profit_loss']
   },
   {
-    type: 'current_tax',
-    title: 'Current Tax',
-    description: 'Calculate current period tax provision',
-    icon: Calendar,
-    category: 'Tax',
-    color: 'bg-amber-500'
+    type: 'goodwill',
+    title: 'Goodwill',
+    description: 'Goodwill impairment testing and adjustments',
+    icon: Target,
+    category: 'Entity',
+    flowType: 'both',
+    color: 'bg-indigo-500',
+    dependencies: []
   },
-  // Equity & Earnings
+  {
+    type: 'profit_loss',
+    title: 'Profit & Loss',
+    description: 'Calculate comprehensive P&L statements',
+    icon: TrendingUp,
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-green-500',
+    dependencies: ['journal_entry', 'fx_translation']
+  },
   {
     type: 'retained_earnings',
     title: 'Retained Earnings',
     description: 'Roll forward retained earnings',
     icon: Repeat,
-    category: 'Equity',
-    color: 'bg-orange-500'
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-orange-500',
+    dependencies: ['profit_loss']
   },
   {
     type: 'eps_calculation',
     title: 'EPS Calculation',
-    description: 'Calculate basic and diluted EPS',
+    description: 'Calculate basic and diluted earnings per share',
     icon: PieChart,
-    category: 'Equity',
-    color: 'bg-pink-500'
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-pink-500',
+    dependencies: ['profit_loss']
   },
-  {
-    type: 'equity_reconciliation',
-    title: 'Equity Reconciliation',
-    description: 'Reconcile changes in equity',
-    icon: BarChart3,
-    category: 'Equity',
-    color: 'bg-rose-500'
-  },
-  // Journal Entries
-  {
-    type: 'journal_entry',
-    title: 'Journal Entry',
-    description: 'Create manual journal entries',
-    icon: BookOpen,
-    category: 'Journals',
-    color: 'bg-blue-600'
-  },
-  {
-    type: 'auto_journals',
-    title: 'Auto Journals',
-    description: 'Generate automatic adjustment journals',
-    icon: Zap,
-    category: 'Journals',
-    color: 'bg-yellow-600'
-  },
-  // Opening & Closing
   {
     type: 'opening_balance',
-    title: 'Opening Balance',
-    description: 'Set opening balances from prior period',
+    title: 'Opening Balance Adjustments',
+    description: 'Set and adjust opening balances from prior period',
     icon: Calendar,
-    category: 'Period',
-    color: 'bg-gray-600'
+    category: 'Entity',
+    flowType: 'entity',
+    color: 'bg-gray-600',
+    dependencies: []
   },
-  {
-    type: 'closing_balance',
-    title: 'Closing Balance',
-    description: 'Calculate and post closing balances',
-    icon: Calendar,
-    category: 'Period',
-    color: 'bg-slate-600'
-  },
-  {
-    type: 'rollforward',
-    title: 'Roll Forward',
-    description: 'Roll forward balances to next period',
-    icon: ChevronRight,
-    category: 'Period',
-    color: 'bg-stone-600'
-  },
-  // Validation & Reporting
   {
     type: 'validation',
     title: 'Validation',
     description: 'Validate balances and completeness checks',
     icon: AlertCircle,
-    category: 'Validation',
-    color: 'bg-red-600'
-  },
-  {
-    type: 'reconciliation',
-    title: 'Reconciliation',
-    description: 'Reconcile accounts and balances',
-    icon: Settings,
-    category: 'Validation',
-    color: 'bg-orange-600'
-  },
-  {
-    type: 'report_generation',
-    title: 'Report Generation',
-    description: 'Generate financial reports and statements',
-    icon: FileSpreadsheet,
-    category: 'Output',
-    color: 'bg-gray-500'
-  },
-  // Advanced Features
-  {
-    type: 'allocation',
-    title: 'Allocation',
-    description: 'Allocate costs and revenues across entities',
-    icon: PieChart,
-    category: 'Advanced',
-    color: 'bg-purple-600'
-  },
-  {
-    type: 'reclassification',
-    title: 'Reclassification',
-    description: 'Reclassify accounts and transactions',
-    icon: Repeat,
-    category: 'Advanced',
-    color: 'bg-indigo-600'
+    category: 'Entity',
+    flowType: 'both',
+    color: 'bg-red-600',
+    dependencies: []
   },
   {
     type: 'custom_calculation',
-    title: 'Custom Calculation',
-    description: 'Execute custom business logic',
+    title: 'Custom Calculation Logic',
+    description: 'Execute custom business calculation logic',
     icon: Settings,
-    category: 'Advanced',
-    color: 'bg-slate-500'
+    category: 'Entity',
+    flowType: 'both',
+    color: 'bg-slate-500',
+    dependencies: []
+  },
+  {
+    type: 'reports',
+    title: 'Reports',
+    description: 'Generate financial reports and statements',
+    icon: FileSpreadsheet,
+    category: 'Entity',
+    flowType: 'both',
+    color: 'bg-gray-500',
+    dependencies: []
+  },
+  {
+    type: 'compare_scenarios',
+    title: 'Compare Scenarios',
+    description: 'Compare actuals vs budget vs forecast',
+    icon: BarChart3,
+    category: 'Entity',
+    flowType: 'both',
+    color: 'bg-purple-500',
+    dependencies: []
+  },
+  
+  // ==================== CONSOLIDATION NODES ====================
+  {
+    type: 'entity_data_load',
+    title: 'Entity Data Load',
+    description: 'Load data from all entities for consolidation',
+    icon: Upload,
+    category: 'Consolidation',
+    flowType: 'consolidation',
+    color: 'bg-blue-500',
+    dependencies: []
+  },
+  {
+    type: 'intercompany_elimination',
+    title: 'Intercompany Elimination',
+    description: 'Eliminate intercompany transactions and balances',
+    icon: Link,
+    category: 'Consolidation',
+    flowType: 'consolidation',
+    color: 'bg-red-500',
+    dependencies: ['entity_data_load']
+  },
+  {
+    type: 'nci_allocation',
+    title: 'NCI (Non-Controlling Interest)',
+    description: 'Calculate and allocate non-controlling interest',
+    icon: Users,
+    category: 'Consolidation',
+    flowType: 'consolidation',
+    color: 'bg-purple-500',
+    dependencies: ['intercompany_elimination']
+  },
+  {
+    type: 'consolidation_output',
+    title: 'Consolidation Output',
+    description: 'Generate consolidated financial statements',
+    icon: Layers,
+    category: 'Consolidation',
+    flowType: 'consolidation',
+    color: 'bg-violet-600',
+    dependencies: ['nci_allocation', 'goodwill']
+  },
+  {
+    type: 'consolidated_reports',
+    title: 'Consolidated Reports',
+    description: 'Generate group-level consolidated reports',
+    icon: FileSpreadsheet,
+    category: 'Consolidation',
+    flowType: 'consolidation',
+    color: 'bg-indigo-600',
+    dependencies: ['consolidation_output']
   }
 ]
 
@@ -267,8 +234,30 @@ const Process = () => {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false)
   const [nodeFilter, setNodeFilter] = useState('all') // Category filter
   
+  // Flow Mode State
+  const [flowMode, setFlowMode] = useState('entity') // 'entity' or 'consolidation'
+  
+  // Entity Selection State
+  const [availableEntities, setAvailableEntities] = useState([])
+  const [selectedEntities, setSelectedEntities] = useState([])
+  const [showEntitySelector, setShowEntitySelector] = useState(false)
+  
+  // Fiscal Management State
+  const [fiscalYears, setFiscalYears] = useState([])
+  const [selectedYear, setSelectedYear] = useState(null)
+  const [selectedPeriod, setSelectedPeriod] = useState(null)
+  const [selectedScenario, setSelectedScenario] = useState('Actuals')
+  const [showFiscalSetup, setShowFiscalSetup] = useState(false)
+  
   // Get unique categories from NODE_LIBRARY
   const categories = ['all', ...new Set(NODE_LIBRARY.map(node => node.category))]
+  
+  // Get filtered nodes based on flow mode
+  const getAvailableNodes = () => {
+    return NODE_LIBRARY.filter(node => 
+      node.flowType === flowMode || node.flowType === 'both'
+    )
+  }
 
   // Utility Functions
   const showNotification = (message, type = 'success') => {
@@ -318,8 +307,127 @@ const Process = () => {
   useEffect(() => {
     if (selectedCompany && getAuthHeaders) {
       fetchProcesses()
+      fetchEntities()
+      fetchFiscalYears()
     }
   }, [selectedCompany, getAuthHeaders])
+
+  // Fetch entities from AxesEntity
+  const fetchEntities = async () => {
+    if (!selectedCompany) return
+    
+    try {
+      const response = await fetch(`/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📊 Fetched entities:', data)
+        setAvailableEntities(data || [])
+      }
+    } catch (error) {
+      console.error('❌ Error fetching entities:', error)
+    }
+  }
+
+  // Fetch fiscal years
+  const fetchFiscalYears = async () => {
+    if (!selectedCompany) return
+    
+    try {
+      const response = await fetch(`/api/fiscal-years?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📅 Fetched fiscal years:', data)
+        setFiscalYears(data?.fiscal_years || data || [])
+        
+        // Auto-select first year if available
+        if (data?.fiscal_years?.length > 0 || data?.length > 0) {
+          const years = data?.fiscal_years || data
+          setSelectedYear(years[0].year || years[0].id)
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching fiscal years:', error)
+    }
+  }
+
+  // Load process configuration (nodes, settings, etc.)
+  const loadProcessConfiguration = async (processId) => {
+    if (!selectedCompany || !processId) return
+    
+    try {
+      const response = await fetch(`/api/financial-process/processes/${processId}/configuration?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        }
+      })
+      
+      if (response.ok) {
+        const config = await response.json()
+        console.log('⚙️ Loaded process configuration:', config)
+        
+        if (config.nodes) setWorkflowNodes(config.nodes)
+        if (config.flowMode) setFlowMode(config.flowMode)
+        if (config.selectedEntities) setSelectedEntities(config.selectedEntities)
+        if (config.fiscalYear) setSelectedYear(config.fiscalYear)
+        if (config.period) setSelectedPeriod(config.period)
+        if (config.scenario) setSelectedScenario(config.scenario)
+      }
+    } catch (error) {
+      console.error('❌ Error loading process configuration:', error)
+    }
+  }
+
+  // Save process configuration
+  const saveProcessConfiguration = async () => {
+    if (!selectedProcess || !selectedCompany) return
+    
+    const config = {
+      nodes: workflowNodes,
+      flowMode,
+      selectedEntities,
+      fiscalYear: selectedYear,
+      period: selectedPeriod,
+      scenario: selectedScenario
+    }
+    
+    try {
+      const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/configuration?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(config)
+      })
+      
+      if (response.ok) {
+        showNotification('Configuration saved successfully', 'success')
+      }
+    } catch (error) {
+      console.error('❌ Error saving configuration:', error)
+      showNotification('Failed to save configuration', 'error')
+    }
+  }
 
   // Save Process
   const saveProcess = async () => {
@@ -467,11 +575,13 @@ const Process = () => {
               </div>
               <div className="flex gap-2 pt-2">
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     console.log('🔧 Opening workflow for process:', process)
                     setSelectedProcess(process)
                     setCurrentView('workflow')
                     showNotification(`Opening ${process.name} workflow`, 'success')
+                    // Load process configuration
+                    await loadProcessConfiguration(process.id)
                   }}
                   className="btn-primary text-sm flex-1"
                 >
@@ -507,14 +617,22 @@ const Process = () => {
       icon: nodeTemplate.icon,
       color: nodeTemplate.color,
       category: nodeTemplate.category,
+      flowType: nodeTemplate.flowType,
+      dependencies: nodeTemplate.dependencies || [],
       status: 'pending', // pending, running, completed, error
-      config: {},
+      config: {
+        enabled: true,
+        availableForEntity: true,
+        availableForConsolidation: nodeTemplate.flowType === 'consolidation' || nodeTemplate.flowType === 'both',
+        restrictions: {}
+      },
       sequence: workflowNodes.length
     }
     
     setWorkflowNodes([...workflowNodes, newNode])
     showNotification(`Added ${nodeTemplate.title} to workflow`, 'success')
     setShowNodeLibrary(false)
+    saveProcessConfiguration() // Auto-save
   }
 
   // Remove node from workflow
@@ -524,65 +642,306 @@ const Process = () => {
       setSelectedNode(null)
     }
     showNotification('Node removed from workflow', 'success')
+    saveProcessConfiguration() // Auto-save
+  }
+
+  // Run individual node
+  const runNode = async (nodeId) => {
+    const node = workflowNodes.find(n => n.id === nodeId)
+    if (!node) return
+
+    // Update status to running
+    setWorkflowNodes(workflowNodes.map(n => 
+      n.id === nodeId ? { ...n, status: 'running' } : n
+    ))
+
+    try {
+      const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/execute-node`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          nodeId,
+          nodeType: node.type,
+          entities: selectedEntities,
+          fiscalYear: selectedYear,
+          period: selectedPeriod,
+          scenario: selectedScenario
+        })
+      })
+
+      if (response.ok) {
+        setWorkflowNodes(workflowNodes.map(n => 
+          n.id === nodeId ? { ...n, status: 'completed' } : n
+        ))
+        showNotification(`${node.title} executed successfully`, 'success')
+      } else {
+        throw new Error('Node execution failed')
+      }
+    } catch (error) {
+      setWorkflowNodes(workflowNodes.map(n => 
+        n.id === nodeId ? { ...n, status: 'error' } : n
+      ))
+      showNotification(`${node.title} execution failed`, 'error')
+    }
+  }
+
+  // Run simulation (all nodes sequentially)
+  const runSimulation = async () => {
+    if (workflowNodes.length === 0) {
+      showNotification('No nodes to execute', 'error')
+      return
+    }
+
+    if (selectedEntities.length === 0 && flowMode === 'entity') {
+      showNotification('Please select at least one entity', 'error')
+      return
+    }
+
+    showNotification('Starting simulation...', 'success')
+
+    // Sort nodes by dependencies
+    const sortedNodes = [...workflowNodes].sort((a, b) => a.sequence - b.sequence)
+
+    for (const node of sortedNodes) {
+      // Check if dependencies are met
+      const dependenciesMet = node.dependencies.every(depType => {
+        const depNode = workflowNodes.find(n => n.type === depType)
+        return depNode && depNode.status === 'completed'
+      })
+
+      if (!dependenciesMet && node.dependencies.length > 0) {
+        showNotification(`Skipping ${node.title} - dependencies not met`, 'error')
+        continue
+      }
+
+      await runNode(node.id)
+      // Small delay between nodes
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+
+    showNotification('Simulation completed', 'success')
   }
 
   // Render workflow view with advanced layout
   const renderWorkflowView = () => {
-    const filteredNodes = nodeFilter === 'all' 
-      ? NODE_LIBRARY 
-      : NODE_LIBRARY.filter(n => n.category === nodeFilter)
+    const availableNodes = getAvailableNodes()
 
     return (
       <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
-        {/* Top Toolbar */}
-        <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
-          <div className="flex items-center justify-between">
-            {/* Left Side - Navigation & Process Info */}
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => {
-                  setCurrentView('overview')
-                  setSelectedProcess(null)
-                  setWorkflowNodes([])
-                  setSelectedNode(null)
-                }}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                title="Back to processes"
-              >
-                <ChevronRight className="h-5 w-5 rotate-180" />
-              </button>
-              <div>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-                  {selectedProcess?.name}
-                </h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {selectedProcess?.description || 'Financial Process Workflow'}
-                </p>
+        {/* Top Toolbar - Enhanced */}
+        <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shadow-sm">
+          {/* First Row - Navigation and Controls */}
+          <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between">
+              {/* Left Side - Navigation & Process Info */}
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => {
+                    setCurrentView('overview')
+                    setSelectedProcess(null)
+                    setWorkflowNodes([])
+                    setSelectedNode(null)
+                  }}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  title="Back to processes"
+                >
+                  <ChevronRight className="h-5 w-5 rotate-180" />
+                </button>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                    {selectedProcess?.name}
+                  </h1>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {selectedProcess?.description || 'Financial Process Workflow'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right Side - Action Buttons */}
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setShowNodeLibrary(!showNodeLibrary)}
+                  className="btn-secondary inline-flex items-center gap-2 text-sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Node
+                </button>
+                <button 
+                  onClick={() => setCurrentView('settings')}
+                  className="btn-secondary inline-flex items-center gap-2 text-sm"
+                >
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </button>
+                <button 
+                  onClick={runSimulation}
+                  disabled={workflowNodes.length === 0}
+                  className="btn-primary inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Play className="h-4 w-4" />
+                  Run Simulation
+                </button>
               </div>
             </div>
+          </div>
 
-            {/* Right Side - Action Buttons */}
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setShowNodeLibrary(!showNodeLibrary)}
-                className="btn-secondary inline-flex items-center gap-2 text-sm"
+          {/* Second Row - Selectors and Toggle */}
+          <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900/50">
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Flow Mode Toggle */}
+              <div className="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                <button
+                  onClick={() => {
+                    setFlowMode('entity')
+                    setWorkflowNodes([]) // Clear nodes when switching
+                    showNotification('Switched to Entity-wise mode', 'success')
+                  }}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    flowMode === 'entity'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Building2 className="h-4 w-4 inline mr-1" />
+                  Entity-wise
+                </button>
+                <button
+                  onClick={() => {
+                    setFlowMode('consolidation')
+                    setWorkflowNodes([]) // Clear nodes when switching
+                    showNotification('Switched to Consolidation mode', 'success')
+                  }}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    flowMode === 'consolidation'
+                      ? 'bg-purple-500 text-white'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Layers className="h-4 w-4 inline mr-1" />
+                  Consolidation
+                </button>
+              </div>
+
+              {/* Entity Selector */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowEntitySelector(!showEntitySelector)}
+                  className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
+                >
+                  <Users className="h-4 w-4" />
+                  <span className="font-medium">
+                    {selectedEntities.length === 0 
+                      ? 'Select Entities' 
+                      : `${selectedEntities.length} ${selectedEntities.length === 1 ? 'Entity' : 'Entities'}`}
+                  </span>
+                  <ChevronRight className={`h-4 w-4 transition-transform ${showEntitySelector ? 'rotate-90' : ''}`} />
+                </button>
+
+                {/* Entity Dropdown */}
+                {showEntitySelector && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowEntitySelector(false)} />
+                    <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 max-h-96 overflow-auto">
+                      <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <span className="font-medium text-sm">Select Entities</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setSelectedEntities(availableEntities.map(e => e.code || e.id))}
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            onClick={() => setSelectedEntities([])}
+                            className="text-xs text-gray-600 hover:text-gray-700"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-2">
+                        {availableEntities.length === 0 ? (
+                          <div className="text-center py-4 text-sm text-gray-500">
+                            No entities available
+                          </div>
+                        ) : (
+                          availableEntities.map((entity) => (
+                            <label
+                              key={entity.id || entity.code}
+                              className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedEntities.includes(entity.code || entity.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedEntities([...selectedEntities, entity.code || entity.id])
+                                  } else {
+                                    setSelectedEntities(selectedEntities.filter(id => id !== (entity.code || entity.id)))
+                                  }
+                                }}
+                                className="rounded"
+                              />
+                              <span className="text-sm">{entity.name || entity.code}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Year Selector */}
+              <select
+                value={selectedYear || ''}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
               >
-                <Plus className="h-4 w-4" />
-                Add Node
-              </button>
-              <button 
-                onClick={() => setCurrentView('settings')}
-                className="btn-secondary inline-flex items-center gap-2 text-sm"
+                <option value="">Select Year</option>
+                {fiscalYears.map((fy) => (
+                  <option key={fy.id || fy.year} value={fy.year || fy.id}>
+                    {fy.year || fy.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Period Selector */}
+              <select
+                value={selectedPeriod || ''}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
               >
-                <Settings className="h-4 w-4" />
-                Settings
-              </button>
-              <button 
-                onClick={() => showNotification('Running simulation...', 'success')}
-                className="btn-primary inline-flex items-center gap-2 text-sm"
+                <option value="">Select Period</option>
+                <option value="Q1">Q1</option>
+                <option value="Q2">Q2</option>
+                <option value="Q3">Q3</option>
+                <option value="Q4">Q4</option>
+                <option value="FY">Full Year</option>
+              </select>
+
+              {/* Scenario Selector */}
+              <select
+                value={selectedScenario}
+                onChange={(e) => setSelectedScenario(e.target.value)}
+                className="px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg"
               >
-                <Play className="h-4 w-4" />
-                Run Simulation
+                <option value="Actuals">Actuals</option>
+                <option value="Budget">Budget</option>
+                <option value="Forecast">Forecast</option>
+              </select>
+
+              {/* Save Configuration Button */}
+              <button
+                onClick={saveProcessConfiguration}
+                className="ml-auto px-3 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg inline-flex items-center gap-2"
+              >
+                <Zap className="h-4 w-4" />
+                Save Config
               </button>
             </div>
           </div>
@@ -597,49 +956,46 @@ const Process = () => {
               <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                    Node Library ({filteredNodes.length} nodes)
+                    Node Library - {flowMode === 'entity' ? 'Entity-wise' : 'Consolidation'} ({availableNodes.length} nodes)
                   </h3>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={nodeFilter}
-                      onChange={(e) => setNodeFilter(e.target.value)}
-                      className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800"
-                    >
-                      {categories.map(cat => (
-                        <option key={cat} value={cat}>
-                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => setShowNodeLibrary(false)}
-                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setShowNodeLibrary(false)}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
                 {/* Horizontal Scrolling Node Library */}
                 <div className="overflow-x-auto">
                   <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
-                    {filteredNodes.map((node) => {
+                    {availableNodes.map((node) => {
                       const IconComponent = node.icon
+                      const isAdded = workflowNodes.some(n => n.type === node.type)
                       return (
                         <div
                           key={node.type}
-                          onClick={() => addNodeToWorkflow(node.type)}
-                          className="flex-shrink-0 w-32 p-3 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-all hover:shadow-md bg-white dark:bg-gray-900"
+                          onClick={() => !isAdded && addNodeToWorkflow(node.type)}
+                          className={`flex-shrink-0 w-36 p-3 border-2 rounded-lg transition-all bg-white dark:bg-gray-900 ${
+                            isAdded
+                              ? 'border-green-300 dark:border-green-700 opacity-50 cursor-not-allowed'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer hover:shadow-md'
+                          }`}
                           title={node.description}
                         >
                           <div className={`w-10 h-10 rounded-lg ${node.color} flex items-center justify-center mb-2`}>
                             <IconComponent className="h-5 w-5 text-white" />
                           </div>
-                          <p className="text-xs font-medium text-gray-900 dark:text-white line-clamp-2">
+                          <p className="text-xs font-medium text-gray-900 dark:text-white line-clamp-2 mb-1">
                             {node.title}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
                             {node.category}
                           </p>
+                          {isAdded && (
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
+                              ✓ Added
+                            </p>
+                          )}
                         </div>
                       )
                     })}
@@ -722,24 +1078,39 @@ const Process = () => {
                                 {node.description}
                               </p>
 
-                              {/* Node Status */}
-                              <div className="flex items-center justify-between">
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                                  node.status === 'completed' 
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                    : node.status === 'running'
-                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                                    : node.status === 'error'
-                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-                                }`}>
-                                  {node.status === 'completed' && '✓'}
-                                  {node.status === 'running' && <Loader2 className="h-3 w-3 animate-spin" />}
-                                  {node.status === 'error' && '!'}
-                                  {node.status === 'pending' && '⏱'}
-                                  <span className="ml-1">{node.status}</span>
-                                </span>
-                                <span className="text-xs text-gray-400">#{index + 1}</span>
+                              {/* Node Status & Actions */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                    node.status === 'completed' 
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                      : node.status === 'running'
+                                      ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                      : node.status === 'error'
+                                      ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                  }`}>
+                                    {node.status === 'completed' && '✓'}
+                                    {node.status === 'running' && <Loader2 className="h-3 w-3 animate-spin" />}
+                                    {node.status === 'error' && '!'}
+                                    {node.status === 'pending' && '⏱'}
+                                    <span className="ml-1">{node.status}</span>
+                                  </span>
+                                  <span className="text-xs text-gray-400">#{index + 1}</span>
+                                </div>
+                                
+                                {/* Run Button */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    runNode(node.id)
+                                  }}
+                                  disabled={node.status === 'running'}
+                                  className="w-full px-2 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-xs font-medium rounded flex items-center justify-center gap-1 transition-colors"
+                                >
+                                  <Play className="h-3 w-3" />
+                                  Run Node
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -882,6 +1253,384 @@ const Process = () => {
     )
   }
 
+  // Render Settings View
+  const renderSettingsView = () => {
+    return (
+      <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+        {/* Header */}
+        <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setCurrentView('workflow')}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <ChevronRight className="h-5 w-5 rotate-180" />
+              </button>
+              <div>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                  Process Settings - {selectedProcess?.name}
+                </h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Configure nodes, dependencies, and fiscal settings
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={saveProcessConfiguration}
+              className="btn-primary text-sm inline-flex items-center gap-2"
+            >
+              <Zap className="h-4 w-4" />
+              Save Changes
+            </button>
+          </div>
+        </div>
+
+        {/* Settings Content */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left Sidebar - Node List */}
+          <div className="w-80 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 overflow-y-auto">
+            <div className="p-4">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                Workflow Nodes ({workflowNodes.length})
+              </h3>
+              {workflowNodes.length === 0 ? (
+                <div className="text-center py-8 text-sm text-gray-500">
+                  No nodes in workflow
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {workflowNodes.map((node) => {
+                    const IconComponent = node.icon
+                    const isActive = selectedNode?.id === node.id
+                    return (
+                      <button
+                        key={node.id}
+                        onClick={() => setSelectedNode(node)}
+                        className={`w-full p-3 rounded-lg text-left transition-colors ${
+                          isActive
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
+                            : 'bg-gray-50 dark:bg-gray-800 border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg ${node.color} flex items-center justify-center flex-shrink-0`}>
+                            <IconComponent className="h-5 w-5 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              {node.title}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {node.category}
+                            </p>
+                          </div>
+                          {isActive && (
+                            <ChevronRight className="h-4 w-4 text-blue-600" />
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Fiscal Management Section */}
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                  Fiscal Management
+                </h3>
+                <button
+                  onClick={() => setShowFiscalSetup(!showFiscalSetup)}
+                  className="w-full p-3 bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-200 dark:border-purple-800 rounded-lg hover:border-purple-400 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">
+                      Setup Fiscal Year & Periods
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Panel - Configuration */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {selectedNode ? (
+              <div className="max-w-3xl mx-auto">
+                <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
+                  {/* Node Header */}
+                  <div className="flex items-center gap-4 mb-6">
+                    {selectedNode.icon && (
+                      <div className={`w-16 h-16 rounded-xl ${selectedNode.color} flex items-center justify-center`}>
+                        <selectedNode.icon className="h-8 w-8 text-white" />
+                      </div>
+                    )}
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                        {selectedNode.title}
+                      </h2>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {selectedNode.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Configuration Sections */}
+                  <div className="space-y-6">
+                    {/* Basic Settings */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                        Basic Settings
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Node Name
+                          </label>
+                          <input
+                            type="text"
+                            value={selectedNode.title}
+                            onChange={(e) => {
+                              const updated = workflowNodes.map(n => 
+                                n.id === selectedNode.id ? { ...n, title: e.target.value } : n
+                              )
+                              setWorkflowNodes(updated)
+                              setSelectedNode({ ...selectedNode, title: e.target.value })
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Description
+                          </label>
+                          <textarea
+                            value={selectedNode.description}
+                            onChange={(e) => {
+                              const updated = workflowNodes.map(n => 
+                                n.id === selectedNode.id ? { ...n, description: e.target.value } : n
+                              )
+                              setWorkflowNodes(updated)
+                              setSelectedNode({ ...selectedNode, description: e.target.value })
+                            }}
+                            rows={3}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Dependencies */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                        Dependencies
+                      </h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                        This node depends on:
+                      </p>
+                      {selectedNode.dependencies && selectedNode.dependencies.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedNode.dependencies.map((depType, idx) => {
+                            const depNode = NODE_LIBRARY.find(n => n.type === depType)
+                            return depNode ? (
+                              <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                <div className={`w-8 h-8 rounded ${depNode.color} flex items-center justify-center`}>
+                                  <depNode.icon className="h-4 w-4 text-white" />
+                                </div>
+                                <span className="text-sm text-gray-900 dark:text-white">{depNode.title}</span>
+                              </div>
+                            ) : null
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500">No dependencies</p>
+                      )}
+                    </div>
+
+                    {/* Availability Toggle */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                        Availability
+                      </h3>
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={selectedNode.config?.availableForEntity || false}
+                            onChange={(e) => {
+                              const updated = workflowNodes.map(n => 
+                                n.id === selectedNode.id 
+                                  ? { ...n, config: { ...n.config, availableForEntity: e.target.checked } } 
+                                  : n
+                              )
+                              setWorkflowNodes(updated)
+                              setSelectedNode({ 
+                                ...selectedNode, 
+                                config: { ...selectedNode.config, availableForEntity: e.target.checked }
+                              })
+                            }}
+                            className="rounded"
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              Available in Entity-wise Mode
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Enable this node for entity-level processing
+                            </p>
+                          </div>
+                        </label>
+
+                        <label className="flex items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={selectedNode.config?.availableForConsolidation || false}
+                            onChange={(e) => {
+                              const updated = workflowNodes.map(n => 
+                                n.id === selectedNode.id 
+                                  ? { ...n, config: { ...n.config, availableForConsolidation: e.target.checked } } 
+                                  : n
+                              )
+                              setWorkflowNodes(updated)
+                              setSelectedNode({ 
+                                ...selectedNode, 
+                                config: { ...selectedNode.config, availableForConsolidation: e.target.checked }
+                              })
+                            }}
+                            className="rounded"
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                              Available in Consolidation Mode
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Enable this node for consolidation processing
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Restrictions */}
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                        Restrictions & Rules
+                      </h3>
+                      <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Additional configuration options and business rules can be defined here based on the node type.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400">
+                <div className="text-center">
+                  <Settings className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                  <p className="text-lg font-medium mb-2">No Node Selected</p>
+                  <p className="text-sm">Select a node from the left sidebar to configure it</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Fiscal Setup Modal */}
+        {showFiscalSetup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-xl max-h-[80vh] overflow-auto">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-800">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Fiscal Year Setup
+                  </h3>
+                  <button
+                    onClick={() => setShowFiscalSetup(false)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Select Fiscal Year
+                    </label>
+                    <select
+                      value={selectedYear || ''}
+                      onChange={(e) => setSelectedYear(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Choose a year</option>
+                      {fiscalYears.map((fy) => (
+                        <option key={fy.id || fy.year} value={fy.year || fy.id}>
+                          {fy.year || fy.name} - {fy.name || `FY ${fy.year}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Period
+                    </label>
+                    <select
+                      value={selectedPeriod || ''}
+                      onChange={(e) => setSelectedPeriod(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Period</option>
+                      <option value="Q1">Q1 (Jan-Mar)</option>
+                      <option value="Q2">Q2 (Apr-Jun)</option>
+                      <option value="Q3">Q3 (Jul-Sep)</option>
+                      <option value="Q4">Q4 (Oct-Dec)</option>
+                      <option value="FY">Full Year</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Scenario
+                    </label>
+                    <select
+                      value={selectedScenario}
+                      onChange={(e) => setSelectedScenario(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                    >
+                      <option value="Actuals">Actuals</option>
+                      <option value="Budget">Budget</option>
+                      <option value="Forecast">Forecast</option>
+                    </select>
+                  </div>
+
+                  <div className="pt-4">
+                    <button
+                      onClick={() => {
+                        saveProcessConfiguration()
+                        setShowFiscalSetup(false)
+                        showNotification('Fiscal settings updated', 'success')
+                      }}
+                      className="w-full btn-primary"
+                    >
+                      Apply Settings
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Show loading if company is not selected yet or auth is not ready
   if (!selectedCompany || !getAuthHeaders) {
     return (
@@ -899,6 +1648,10 @@ const Process = () => {
   // Render based on current view
   if (currentView === 'workflow' && selectedProcess) {
     return renderWorkflowView()
+  }
+
+  if (currentView === 'settings' && selectedProcess) {
+    return renderSettingsView()
   }
 
   return (
