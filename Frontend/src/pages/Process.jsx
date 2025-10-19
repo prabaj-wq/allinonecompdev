@@ -10,47 +10,6 @@ import {
   CheckCircle, Lock, Unlock
 } from 'lucide-react'
 
-// Add CSS animations
-const styles = `
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateX(-20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-  
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-`
-
-const styleSheet = document.createElement("style")
-styleSheet.textContent = styles
-if (!document.head.querySelector('style[data-process-animations]')) {
-  styleSheet.setAttribute('data-process-animations', 'true')
-  document.head.appendChild(styleSheet)
-}
-
 // Node Library - Segregated by Entity-wise and Consolidation flows
 const NODE_LIBRARY = [
   // ==================== ENTITY-WISE NODES ====================
@@ -421,11 +380,16 @@ const Process = () => {
         const data = await response.json()
         console.log('📅 Fetched fiscal years:', data)
         const years = data?.fiscal_years || data || []
-        setFiscalYears(years)
+        // Ensure we always set an array
+        setFiscalYears(Array.isArray(years) ? years : [])
         // Periods will be fetched by useEffect when fiscalYears changes
+      } else {
+        console.warn('Failed to fetch fiscal years')
+        setFiscalYears([])
       }
     } catch (error) {
       console.error('❌ Error fetching fiscal years:', error)
+      setFiscalYears([])
     }
   }
 
@@ -512,14 +476,16 @@ const Process = () => {
         const data = await response.json()
         console.log('🎯 Fetched scenarios:', data)
         const scenarioList = data?.scenarios || []
-        setScenarios(scenarioList)
-        // Auto-select first scenario
-        if (scenarioList.length > 0) {
+        setScenarios(Array.isArray(scenarioList) ? scenarioList : [])
+        if (Array.isArray(scenarioList) && scenarioList.length > 0) {
           setSelectedScenario(scenarioList[0].id)
         }
+      } else {
+        setScenarios([])
       }
     } catch (error) {
       console.error('❌ Error fetching scenarios:', error)
+      setScenarios([])
     }
   }
 
@@ -2010,11 +1976,18 @@ const Process = () => {
                     </label>
                     <select
                       value={selectedYear || ''}
-                      onChange={(e) => setSelectedYear(e.target.value)}
+                      onChange={(e) => {
+                        const yearId = e.target.value ? parseInt(e.target.value) : null
+                        setSelectedYear(yearId)
+                        if (yearId) {
+                          fetchPeriodsForYear(yearId)
+                          fetchScenariosForYear(yearId)
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
                     >
                       <option value="">Choose a year</option>
-                      {fiscalYears.map((fy) => (
+                      {Array.isArray(fiscalYears) && fiscalYears.map((fy) => (
                         <option key={fy.id} value={fy.id}>
                           {fy.year} - {fy.name}
                         </option>
@@ -2031,7 +2004,7 @@ const Process = () => {
                         <div>
                           <span className="text-gray-600 dark:text-gray-400">Fiscal Year: </span>
                           <span className="font-medium text-gray-900 dark:text-white">
-                            {selectedYear ? fiscalYears.find(fy => fy.id === selectedYear)?.year || 'N/A' : 'Not selected'}
+                            {selectedYear && Array.isArray(fiscalYears) ? fiscalYears.find(fy => fy.id === selectedYear)?.year || 'N/A' : 'Not selected'}
                           </span>
                         </div>
                         <div>
