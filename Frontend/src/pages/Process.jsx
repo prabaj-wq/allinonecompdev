@@ -10,6 +10,39 @@ import {
   CheckCircle, Lock, Unlock
 } from 'lucide-react'
 
+// Icon mapping for converting string names to components
+const ICON_MAP = {
+  Upload, FileSpreadsheet, BookOpen, DollarSign, Globe, Users,
+  Repeat, TrendingUp, Target, Link, PieChart, AlertCircle,
+  BarChart3, Layers, Zap, CheckCircle, Settings, Calendar,
+  Building2, Workflow, Plus, Play, Pause, RotateCcw, ChevronRight, X, Lock, Unlock
+}
+
+// Helper function to get icon component from string name
+const getIconComponent = (iconName) => {
+  if (typeof iconName === 'function') return iconName // Already a component
+  if (typeof iconName === 'string' && ICON_MAP[iconName]) return ICON_MAP[iconName]
+  return FileSpreadsheet // Default fallback icon
+}
+
+// Helper function to get icon name from component (for saving)
+const getIconName = (iconComponent) => {
+  if (typeof iconComponent === 'string') return iconComponent // Already a string
+  // Find the icon name by comparing the component
+  for (const [name, component] of Object.entries(ICON_MAP)) {
+    if (component === iconComponent) return name
+  }
+  return 'FileSpreadsheet' // Default fallback
+}
+
+// Helper to serialize nodes (convert icons to strings)
+const serializeNodes = (nodes) => {
+  return nodes.map(node => ({
+    ...node,
+    icon: getIconName(node.icon)
+  }))
+}
+
 // Node Library - Segregated by Entity-wise and Consolidation flows
 const NODE_LIBRARY = [
   // ==================== ENTITY-WISE NODES ====================
@@ -562,10 +595,11 @@ const Process = () => {
     const currentEntityNodes = flowMode === 'entity' ? workflowNodes : entityWorkflowNodes
     const currentConsolidationNodes = flowMode === 'consolidation' ? workflowNodes : consolidationWorkflowNodes
     
+    // Serialize nodes (convert icons to strings) before saving
     const config = {
-      nodes: workflowNodes, // Current active nodes
-      entityWorkflowNodes: currentEntityNodes,
-      consolidationWorkflowNodes: currentConsolidationNodes,
+      nodes: serializeNodes(workflowNodes), // Current active nodes
+      entityWorkflowNodes: serializeNodes(currentEntityNodes),
+      consolidationWorkflowNodes: serializeNodes(currentConsolidationNodes),
       flowMode,
       selectedEntities,
       fiscalYear: selectedYear,
@@ -1333,7 +1367,7 @@ const Process = () => {
                 <div className="overflow-x-auto">
                   <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
                     {availableNodes.map((node, idx) => {
-                      const IconComponent = node.icon
+                      const IconComponent = getIconComponent(node.icon)
                       const isAdded = workflowNodes.some(n => n.type === node.type)
                       return (
                         <div
@@ -1393,7 +1427,7 @@ const Process = () => {
                   {/* Horizontal Node Flow */}
                   <div className="flex items-center gap-4">
                     {workflowNodes.map((node, index) => {
-                      const IconComponent = node.icon
+                      const IconComponent = getIconComponent(node.icon)
                       const isSelected = selectedNode?.id === node.id
                       
                       return (
