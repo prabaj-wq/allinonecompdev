@@ -9,8 +9,9 @@ import {
   FileSpreadsheet, BookOpen, Upload, Layers, Workflow, Loader2
 } from 'lucide-react'
 
-// Node Library
+// Extended Node Library with 26+ Financial Process Nodes
 const NODE_LIBRARY = [
+  // Data Input & Import
   {
     type: 'data_input',
     title: 'Data Input',
@@ -20,60 +21,188 @@ const NODE_LIBRARY = [
     color: 'bg-blue-500'
   },
   {
+    type: 'data_import',
+    title: 'Data Import',
+    description: 'Import from Excel, CSV, ERP systems',
+    icon: Upload,
+    category: 'Input',
+    color: 'bg-cyan-600'
+  },
+  // Core Financial Calculations
+  {
     type: 'profit_loss',
-    title: 'Profit & Loss Calculation',
+    title: 'P&L Calculation',
     description: 'Calculate comprehensive P&L statements with detailed breakdowns',
     icon: TrendingUp,
     category: 'Calculation',
     color: 'bg-green-500'
   },
   {
+    type: 'balance_sheet',
+    title: 'Balance Sheet',
+    description: 'Compile and classify balance sheet items',
+    icon: BarChart3,
+    category: 'Calculation',
+    color: 'bg-green-600'
+  },
+  {
+    type: 'cash_flow',
+    title: 'Cash Flow Statement',
+    description: 'Generate cash flow statements (indirect/direct method)',
+    icon: DollarSign,
+    category: 'Calculation',
+    color: 'bg-emerald-500'
+  },
+  // Consolidation Features
+  {
     type: 'nci_allocation',
     title: 'NCI Handling',
-    description: 'Manage Non-Controlling Interest allocations and calculations',
+    description: 'Non-Controlling Interest allocations and calculations',
     icon: Users,
-    category: 'Processing',
+    category: 'Consolidation',
     color: 'bg-purple-500'
   },
   {
-    type: 'retained_earnings',
-    title: 'Retained Earnings Rollforward',
-    description: 'Calculate retained earnings movements and rollforward',
-    icon: Repeat,
-    category: 'Processing',
-    color: 'bg-orange-500'
+    type: 'intercompany_elimination',
+    title: 'IC Eliminations',
+    description: 'Eliminate intercompany transactions and balances',
+    icon: Link,
+    category: 'Consolidation',
+    color: 'bg-red-500'
   },
+  {
+    type: 'goodwill_impairment',
+    title: 'Goodwill Test',
+    description: 'Goodwill impairment testing and fair value adjustments',
+    icon: Target,
+    category: 'Consolidation',
+    color: 'bg-indigo-500'
+  },
+  {
+    type: 'consolidation_output',
+    title: 'Consolidation Output',
+    description: 'Generate consolidated statements',
+    icon: Layers,
+    category: 'Consolidation',
+    color: 'bg-violet-600'
+  },
+  // Foreign Currency & Translation
   {
     type: 'fx_translation',
     title: 'FX Translation',
     description: 'Foreign exchange translation and currency conversion',
     icon: Globe,
-    category: 'Processing',
+    category: 'FX',
     color: 'bg-cyan-500'
   },
   {
-    type: 'intercompany_elimination',
-    title: 'Intercompany Eliminations',
-    description: 'Eliminate intercompany transactions and balances',
-    icon: Link,
-    category: 'Processing',
-    color: 'bg-red-500'
+    type: 'fx_revaluation',
+    title: 'FX Revaluation',
+    description: 'Revalue foreign currency balances',
+    icon: Repeat,
+    category: 'FX',
+    color: 'bg-sky-500'
   },
-  {
-    type: 'goodwill_impairment',
-    title: 'Goodwill & Fair Value',
-    description: 'Goodwill impairment testing and fair value adjustments',
-    icon: Target,
-    category: 'Processing',
-    color: 'bg-indigo-500'
-  },
+  // Tax Calculations
   {
     type: 'deferred_tax',
-    title: 'Deferred Taxes',
+    title: 'Deferred Tax',
     description: 'Calculate deferred tax assets and liabilities',
     icon: DollarSign,
-    category: 'Processing',
+    category: 'Tax',
     color: 'bg-yellow-500'
+  },
+  {
+    type: 'current_tax',
+    title: 'Current Tax',
+    description: 'Calculate current period tax provision',
+    icon: Calendar,
+    category: 'Tax',
+    color: 'bg-amber-500'
+  },
+  // Equity & Earnings
+  {
+    type: 'retained_earnings',
+    title: 'Retained Earnings',
+    description: 'Roll forward retained earnings',
+    icon: Repeat,
+    category: 'Equity',
+    color: 'bg-orange-500'
+  },
+  {
+    type: 'eps_calculation',
+    title: 'EPS Calculation',
+    description: 'Calculate basic and diluted EPS',
+    icon: PieChart,
+    category: 'Equity',
+    color: 'bg-pink-500'
+  },
+  {
+    type: 'equity_reconciliation',
+    title: 'Equity Reconciliation',
+    description: 'Reconcile changes in equity',
+    icon: BarChart3,
+    category: 'Equity',
+    color: 'bg-rose-500'
+  },
+  // Journal Entries
+  {
+    type: 'journal_entry',
+    title: 'Journal Entry',
+    description: 'Create manual journal entries',
+    icon: BookOpen,
+    category: 'Journals',
+    color: 'bg-blue-600'
+  },
+  {
+    type: 'auto_journals',
+    title: 'Auto Journals',
+    description: 'Generate automatic adjustment journals',
+    icon: Zap,
+    category: 'Journals',
+    color: 'bg-yellow-600'
+  },
+  // Opening & Closing
+  {
+    type: 'opening_balance',
+    title: 'Opening Balance',
+    description: 'Set opening balances from prior period',
+    icon: Calendar,
+    category: 'Period',
+    color: 'bg-gray-600'
+  },
+  {
+    type: 'closing_balance',
+    title: 'Closing Balance',
+    description: 'Calculate and post closing balances',
+    icon: Calendar,
+    category: 'Period',
+    color: 'bg-slate-600'
+  },
+  {
+    type: 'rollforward',
+    title: 'Roll Forward',
+    description: 'Roll forward balances to next period',
+    icon: ChevronRight,
+    category: 'Period',
+    color: 'bg-stone-600'
+  },
+  // Validation & Reporting
+  {
+    type: 'validation',
+    title: 'Validation',
+    description: 'Validate balances and completeness checks',
+    icon: AlertCircle,
+    category: 'Validation',
+    color: 'bg-red-600'
+  },
+  {
+    type: 'reconciliation',
+    title: 'Reconciliation',
+    description: 'Reconcile accounts and balances',
+    icon: Settings,
+    category: 'Validation',
+    color: 'bg-orange-600'
   },
   {
     type: 'report_generation',
@@ -82,6 +211,31 @@ const NODE_LIBRARY = [
     icon: FileSpreadsheet,
     category: 'Output',
     color: 'bg-gray-500'
+  },
+  // Advanced Features
+  {
+    type: 'allocation',
+    title: 'Allocation',
+    description: 'Allocate costs and revenues across entities',
+    icon: PieChart,
+    category: 'Advanced',
+    color: 'bg-purple-600'
+  },
+  {
+    type: 'reclassification',
+    title: 'Reclassification',
+    description: 'Reclassify accounts and transactions',
+    icon: Repeat,
+    category: 'Advanced',
+    color: 'bg-indigo-600'
+  },
+  {
+    type: 'custom_calculation',
+    title: 'Custom Calculation',
+    description: 'Execute custom business logic',
+    icon: Settings,
+    category: 'Advanced',
+    color: 'bg-slate-500'
   }
 ]
 
@@ -91,7 +245,7 @@ const Process = () => {
   const navigate = useNavigate()
 
   // Main State
-  const [currentView, setCurrentView] = useState('overview')
+  const [currentView, setCurrentView] = useState('overview') // 'overview', 'workflow', 'settings'
   const [processes, setProcesses] = useState([])
   const [loading, setLoading] = useState(false)
   const [processDrawerOpen, setProcessDrawerOpen] = useState(false)
@@ -106,6 +260,15 @@ const Process = () => {
   })
   const [editingProcess, setEditingProcess] = useState(null)
   const [notification, setNotification] = useState(null)
+  
+  // Workflow State
+  const [workflowNodes, setWorkflowNodes] = useState([])
+  const [selectedNode, setSelectedNode] = useState(null)
+  const [showNodeLibrary, setShowNodeLibrary] = useState(false)
+  const [nodeFilter, setNodeFilter] = useState('all') // Category filter
+  
+  // Get unique categories from NODE_LIBRARY
+  const categories = ['all', ...new Set(NODE_LIBRARY.map(node => node.category))]
 
   // Utility Functions
   const showNotification = (message, type = 'success') => {
@@ -331,91 +494,393 @@ const Process = () => {
     </div>
   )
 
-  // Render workflow view
-  const renderWorkflowView = () => (
-    <div className="space-y-6">
-      {/* Workflow Header */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => {
-                setCurrentView('overview')
-                setSelectedProcess(null)
-              }}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-            >
-              <ChevronRight className="h-5 w-5 rotate-180" />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {selectedProcess?.name} - Workflow
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Design and manage your financial process workflow
-              </p>
+  // Add node to workflow
+  const addNodeToWorkflow = (nodeType) => {
+    const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
+    if (!nodeTemplate) return
+    
+    const newNode = {
+      id: `node-${Date.now()}`,
+      type: nodeType,
+      title: nodeTemplate.title,
+      description: nodeTemplate.description,
+      icon: nodeTemplate.icon,
+      color: nodeTemplate.color,
+      category: nodeTemplate.category,
+      status: 'pending', // pending, running, completed, error
+      config: {},
+      sequence: workflowNodes.length
+    }
+    
+    setWorkflowNodes([...workflowNodes, newNode])
+    showNotification(`Added ${nodeTemplate.title} to workflow`, 'success')
+    setShowNodeLibrary(false)
+  }
+
+  // Remove node from workflow
+  const removeNodeFromWorkflow = (nodeId) => {
+    setWorkflowNodes(workflowNodes.filter(n => n.id !== nodeId))
+    if (selectedNode?.id === nodeId) {
+      setSelectedNode(null)
+    }
+    showNotification('Node removed from workflow', 'success')
+  }
+
+  // Render workflow view with advanced layout
+  const renderWorkflowView = () => {
+    const filteredNodes = nodeFilter === 'all' 
+      ? NODE_LIBRARY 
+      : NODE_LIBRARY.filter(n => n.category === nodeFilter)
+
+    return (
+      <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
+        {/* Top Toolbar */}
+        <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
+          <div className="flex items-center justify-between">
+            {/* Left Side - Navigation & Process Info */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  setCurrentView('overview')
+                  setSelectedProcess(null)
+                  setWorkflowNodes([])
+                  setSelectedNode(null)
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                title="Back to processes"
+              >
+                <ChevronRight className="h-5 w-5 rotate-180" />
+              </button>
+              <div>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                  {selectedProcess?.name}
+                </h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {selectedProcess?.description || 'Financial Process Workflow'}
+                </p>
+              </div>
+            </div>
+
+            {/* Right Side - Action Buttons */}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowNodeLibrary(!showNodeLibrary)}
+                className="btn-secondary inline-flex items-center gap-2 text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Add Node
+              </button>
+              <button 
+                onClick={() => setCurrentView('settings')}
+                className="btn-secondary inline-flex items-center gap-2 text-sm"
+              >
+                <Settings className="h-4 w-4" />
+                Settings
+              </button>
+              <button 
+                onClick={() => showNotification('Running simulation...', 'success')}
+                className="btn-primary inline-flex items-center gap-2 text-sm"
+              >
+                <Play className="h-4 w-4" />
+                Run Simulation
+              </button>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button className="btn-secondary inline-flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Settings
-            </button>
-            <button className="btn-primary inline-flex items-center gap-2">
-              <Play className="h-4 w-4" />
-              Run Process
-            </button>
-          </div>
         </div>
-      </section>
 
-      {/* Workflow Canvas */}
-      <section className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
-        <div className="p-6 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Process Workflow</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            Drag and drop nodes to build your financial process workflow
-          </p>
-        </div>
-        
-        <div className="p-6">
-          {/* Node Library */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Node Library</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {NODE_LIBRARY.map((node) => {
-                const IconComponent = node.icon
-                return (
-                  <div
-                    key={node.type}
-                    className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-600 cursor-pointer transition-colors"
-                    title={node.description}
-                  >
-                    <div className={`w-8 h-8 rounded-lg ${node.color} flex items-center justify-center mb-2`}>
-                      <IconComponent className="h-4 w-4 text-white" />
-                    </div>
-                    <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
-                      {node.title}
-                    </p>
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left Panel - Workflow Canvas */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Node Library Expandable Panel */}
+            {showNodeLibrary && (
+              <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Node Library ({filteredNodes.length} nodes)
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={nodeFilter}
+                      onChange={(e) => setNodeFilter(e.target.value)}
+                      className="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800"
+                    >
+                      {categories.map(cat => (
+                        <option key={cat} value={cat}>
+                          {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setShowNodeLibrary(false)}
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                )
-              })}
+                </div>
+                {/* Horizontal Scrolling Node Library */}
+                <div className="overflow-x-auto">
+                  <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
+                    {filteredNodes.map((node) => {
+                      const IconComponent = node.icon
+                      return (
+                        <div
+                          key={node.type}
+                          onClick={() => addNodeToWorkflow(node.type)}
+                          className="flex-shrink-0 w-32 p-3 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer transition-all hover:shadow-md bg-white dark:bg-gray-900"
+                          title={node.description}
+                        >
+                          <div className={`w-10 h-10 rounded-lg ${node.color} flex items-center justify-center mb-2`}>
+                            <IconComponent className="h-5 w-5 text-white" />
+                          </div>
+                          <p className="text-xs font-medium text-gray-900 dark:text-white line-clamp-2">
+                            {node.title}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {node.category}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Workflow Nodes - Horizontal Scroll */}
+            <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+              {workflowNodes.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center text-gray-400 dark:text-gray-500">
+                    <Workflow className="h-16 w-16 mx-auto mb-4 opacity-50" />
+                    <h3 className="text-lg font-medium mb-2">No Nodes in Workflow</h3>
+                    <p className="text-sm mb-4">Click "Add Node" to start building your process</p>
+                    <button
+                      onClick={() => setShowNodeLibrary(true)}
+                      className="btn-primary inline-flex items-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Your First Node
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="min-w-max">
+                  {/* Horizontal Node Flow */}
+                  <div className="flex items-center gap-4">
+                    {workflowNodes.map((node, index) => {
+                      const IconComponent = node.icon
+                      const isSelected = selectedNode?.id === node.id
+                      
+                      return (
+                        <React.Fragment key={node.id}>
+                          {/* Node Card */}
+                          <div
+                            onClick={() => setSelectedNode(node)}
+                            onDoubleClick={() => {
+                              // Navigate to relevant module
+                              showNotification(`Opening ${node.title} module...`, 'success')
+                              // You can add navigation logic here based on node type
+                            }}
+                            className={`flex-shrink-0 w-64 bg-white dark:bg-gray-950 rounded-xl shadow-md border-2 transition-all cursor-pointer ${
+                              isSelected 
+                                ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800' 
+                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                            }`}
+                          >
+                            <div className="p-4">
+                              {/* Node Header */}
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-12 h-12 rounded-lg ${node.color} flex items-center justify-center flex-shrink-0`}>
+                                    <IconComponent className="h-6 w-6 text-white" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="font-semibold text-sm text-gray-900 dark:text-white truncate">
+                                      {node.title}
+                                    </h4>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {node.category}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    removeNodeFromWorkflow(node.id)
+                                  }}
+                                  className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-gray-400 hover:text-red-600"
+                                  title="Remove node"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+
+                              {/* Node Description */}
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
+                                {node.description}
+                              </p>
+
+                              {/* Node Status */}
+                              <div className="flex items-center justify-between">
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                                  node.status === 'completed' 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                    : node.status === 'running'
+                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+                                    : node.status === 'error'
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                }`}>
+                                  {node.status === 'completed' && '✓'}
+                                  {node.status === 'running' && <Loader2 className="h-3 w-3 animate-spin" />}
+                                  {node.status === 'error' && '!'}
+                                  {node.status === 'pending' && '⏱'}
+                                  <span className="ml-1">{node.status}</span>
+                                </span>
+                                <span className="text-xs text-gray-400">#{index + 1}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Arrow Connector */}
+                          {index < workflowNodes.length - 1 && (
+                            <ChevronRight className="h-8 w-8 text-gray-400 dark:text-gray-600 flex-shrink-0" />
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Canvas Area */}
-          <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 min-h-96 bg-gray-50 dark:bg-gray-900/50">
-            <div className="text-center text-gray-500 dark:text-gray-400">
-              <Workflow className="h-12 w-12 mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">Workflow Canvas</h3>
-              <p className="text-sm">Drag nodes from the library above to start building your workflow</p>
-              <p className="text-xs mt-2">Full canvas functionality coming soon...</p>
+          {/* Right Panel - Node Settings (when node is selected) */}
+          {selectedNode && (
+            <div className="w-80 bg-white dark:bg-gray-950 border-l border-gray-200 dark:border-gray-800 overflow-y-auto">
+              <div className="p-4">
+                {/* Settings Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Node Settings
+                  </h3>
+                  <button
+                    onClick={() => setSelectedNode(null)}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Node Info */}
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    {selectedNode.icon && (
+                      <div className={`w-12 h-12 rounded-lg ${selectedNode.color} flex items-center justify-center`}>
+                        <selectedNode.icon className="h-6 w-6 text-white" />
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="font-semibold text-gray-900 dark:text-white">
+                        {selectedNode.title}
+                      </h4>
+                      <p className="text-xs text-gray-500">{selectedNode.category}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {selectedNode.description}
+                  </p>
+                </div>
+
+                {/* Configuration Options */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Node Name
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedNode.title}
+                      onChange={(e) => {
+                        const updated = workflowNodes.map(n => 
+                          n.id === selectedNode.id ? { ...n, title: e.target.value } : n
+                        )
+                        setWorkflowNodes(updated)
+                        setSelectedNode({ ...selectedNode, title: e.target.value })
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Status
+                    </label>
+                    <select
+                      value={selectedNode.status}
+                      onChange={(e) => {
+                        const updated = workflowNodes.map(n => 
+                          n.id === selectedNode.id ? { ...n, status: e.target.value } : n
+                        )
+                        setWorkflowNodes(updated)
+                        setSelectedNode({ ...selectedNode, status: e.target.value })
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="running">Running</option>
+                      <option value="completed">Completed</option>
+                      <option value="error">Error</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={selectedNode.description}
+                      onChange={(e) => {
+                        const updated = workflowNodes.map(n => 
+                          n.id === selectedNode.id ? { ...n, description: e.target.value } : n
+                        )
+                        setWorkflowNodes(updated)
+                        setSelectedNode({ ...selectedNode, description: e.target.value })
+                      }}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    />
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="pt-4 space-y-2">
+                    <button
+                      onClick={() => showNotification(`Running ${selectedNode.title}...`, 'success')}
+                      className="w-full btn-primary text-sm inline-flex items-center justify-center gap-2"
+                    >
+                      <Play className="h-4 w-4" />
+                      Run This Node
+                    </button>
+                    <button
+                      onClick={() => {
+                        showNotification(`Opening ${selectedNode.title} configuration...`, 'success')
+                      }}
+                      className="w-full btn-secondary text-sm inline-flex items-center justify-center gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Configure
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
-      </section>
-    </div>
-  )
+      </div>
+    )
+  }
 
   // Show loading if company is not selected yet or auth is not ready
   if (!selectedCompany || !getAuthHeaders) {
