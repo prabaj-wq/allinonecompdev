@@ -310,7 +310,13 @@ const Process = () => {
     })
   }
 
-// Fallback data functions for development/testing when backend is unavailable
+  // Utility Functions
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 5000)
+  }
+
+  // Fallback data functions for development/testing when backend is unavailable
   const getFallbackProcesses = () => {
     return [
       {
