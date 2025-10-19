@@ -229,6 +229,8 @@ const Process = () => {
   
   // Workflow State
   const [workflowNodes, setWorkflowNodes] = useState([])
+  const [entityWorkflowNodes, setEntityWorkflowNodes] = useState([]) // Separate for entity mode
+  const [consolidationWorkflowNodes, setConsolidationWorkflowNodes] = useState([]) // Separate for consolidation mode
   const [selectedNode, setSelectedNode] = useState(null)
   const [showNodeLibrary, setShowNodeLibrary] = useState(false)
   const [nodeFilter, setNodeFilter] = useState('all') // Category filter
@@ -315,6 +317,13 @@ const Process = () => {
     }
   }, [selectedCompany, getAuthHeaders])
 
+  // Fetch all periods when fiscal years are loaded
+  useEffect(() => {
+    if (fiscalYears.length > 0) {
+      fetchAllPeriods()
+    }
+  }, [fiscalYears])
+
   // Fetch entities from AxesEntity
   const fetchEntities = async () => {
     if (!selectedCompany) return
@@ -359,22 +368,53 @@ const Process = () => {
         console.log('📅 Fetched fiscal years:', data)
         const years = data?.fiscal_years || data || []
         setFiscalYears(years)
-        
-        // Auto-select first year if available
-        if (years.length > 0) {
-          const firstYear = years[0]
-          setSelectedYear(firstYear.id)
-          // Fetch periods and scenarios for this year
-          fetchPeriodsForYear(firstYear.id)
-          fetchScenariosForYear(firstYear.id)
-        }
+        // Periods will be fetched by useEffect when fiscalYears changes
       }
     } catch (error) {
       console.error('❌ Error fetching fiscal years:', error)
     }
   }
 
-  // Fetch periods for selected year
+  // Fetch all periods from all fiscal years
+  const fetchAllPeriods = async () => {
+    if (!selectedCompany || fiscalYears.length === 0) return
+    
+    try {
+      // Fetch periods from all fiscal years
+      const allPeriodsPromises = fiscalYears.map(async (fy) => {
+        const response = await fetch(`/api/fiscal-management/fiscal-years/${fy.id}/periods`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Company-Database': selectedCompany,
+            ...getAuthHeaders()
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          // Add fiscal year info to each period
+          return (data?.periods || []).map(period => ({
+            ...period,
+            fiscalYear: fy,
+            fiscalYearId: fy.id,
+            fiscalYearName: `${fy.year} - ${fy.name}`
+          }))
+        }
+        return []
+      })
+      
+      const periodsArrays = await Promise.all(allPeriodsPromises)
+      const allPeriods = periodsArrays.flat()
+      console.log('📊 Fetched all periods:', allPeriods)
+      setAvailablePeriods(allPeriods)
+    } catch (error) {
+      console.error('❌ Error fetching periods:', error)
+    }
+  }
+  
+  // Fetch periods for selected year (keep for backward compatibility)
   const fetchPeriodsForYear = async (yearId) => {
     if (!selectedCompany || !yearId) return
     
@@ -447,8 +487,22 @@ const Process = () => {
         const config = await response.json()
         console.log('⚙️ Loaded process configuration:', config)
         
-        if (config.nodes) setWorkflowNodes(config.nodes)
-        if (config.flowMode) setFlowMode(config.flowMode)
+        // Load both workflows
+        if (config.entityWorkflowNodes) setEntityWorkflowNodes(config.entityWorkflowNodes)
+        if (config.consolidationWorkflowNodes) setConsolidationWorkflowNodes(config.consolidationWorkflowNodes)
+        
+        // Set current workflow based on mode
+        if (config.flowMode) {
+          setFlowMode(config.flowMode)
+          if (config.flowMode === 'entity' && config.entityWorkflowNodes) {
+            setWorkflowNodes(config.entityWorkflowNodes)
+          } else if (config.flowMode === 'consolidation' && config.consolidationWorkflowNodes) {
+            setWorkflowNodes(config.consolidationWorkflowNodes)
+          } else if (config.nodes) {
+            setWorkflowNodes(config.nodes) // Fallback for old config
+          }
+        }
+        
         if (config.selectedEntities) setSelectedEntities(config.selectedEntities)
         if (config.fiscalYear) {
           setSelectedYear(config.fiscalYear)
@@ -468,8 +522,14 @@ const Process = () => {
   const saveProcessConfiguration = async () => {
     if (!selectedProcess || !selectedCompany) return
     
+    // Save current workflow to appropriate mode before saving
+    const currentEntityNodes = flowMode === 'entity' ? workflowNodes : entityWorkflowNodes
+    const currentConsolidationNodes = flowMode === 'consolidation' ? workflowNodes : consolidationWorkflowNodes
+    
     const config = {
-      nodes: workflowNodes,
+      nodes: workflowNodes, // Current active nodes
+      entityWorkflowNodes: currentEntityNodes,
+      consolidationWorkflowNodes: currentConsolidationNodes,
       flowMode,
       selectedEntities,
       fiscalYear: selectedYear,
@@ -721,10 +781,6 @@ const Process = () => {
       showNotification('Please select at least one entity', 'error')
       return
     }
-    if (!selectedYear) {
-      showNotification('Please select a fiscal year', 'error')
-      return
-    }
     if (selectedPeriods.length === 0) {
       showNotification('Please select at least one period', 'error')
       return
@@ -786,10 +842,6 @@ const Process = () => {
     // Validation
     if (flowMode === 'entity' && selectedEntities.length === 0) {
       showNotification('Please select at least one entity', 'error')
-      return
-    }
-    if (!selectedYear) {
-      showNotification('Please select a fiscal year', 'error')
       return
     }
     if (selectedPeriods.length === 0) {
@@ -903,9 +955,15 @@ const Process = () => {
               <div className="flex items-center gap-2 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                 <button
                   onClick={() => {
+                    // Save current workflow before switching
+                    if (flowMode === 'consolidation') {
+                      setConsolidationWorkflowNodes(workflowNodes)
+                    }
+                    // Load entity workflow
                     setFlowMode('entity')
-                    setWorkflowNodes([]) // Clear nodes when switching
+                    setWorkflowNodes(entityWorkflowNodes)
                     showNotification('Switched to Entity-wise mode', 'success')
+                    saveProcessConfiguration()
                   }}
                   className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                     flowMode === 'entity'
@@ -918,9 +976,15 @@ const Process = () => {
                 </button>
                 <button
                   onClick={() => {
+                    // Save current workflow before switching
+                    if (flowMode === 'entity') {
+                      setEntityWorkflowNodes(workflowNodes)
+                    }
+                    // Load consolidation workflow
                     setFlowMode('consolidation')
-                    setWorkflowNodes([]) // Clear nodes when switching
+                    setWorkflowNodes(consolidationWorkflowNodes)
                     showNotification('Switched to Consolidation mode', 'success')
+                    saveProcessConfiguration()
                   }}
                   className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                     flowMode === 'consolidation'
@@ -1003,37 +1067,7 @@ const Process = () => {
                 )}
               </div>
 
-              {/* Year Selector */}
-              <select
-                value={selectedYear || ''}
-                onChange={(e) => {
-                  if (fiscalSettingsLocked) {
-                    showNotification('🔒 Fiscal settings are locked. Unlock to make changes.', 'error')
-                    return
-                  }
-                  const yearId = e.target.value
-                  setSelectedYear(yearId)
-                  fetchPeriodsForYear(yearId)
-                  fetchScenariosForYear(yearId)
-                  setSelectedPeriods([]) // Reset periods
-                  saveProcessConfiguration() // Auto-save
-                }}
-                disabled={fiscalSettingsLocked}
-                className={`px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg transition-all ${
-                  fiscalSettingsLocked 
-                    ? 'opacity-60 cursor-not-allowed' 
-                    : 'hover:border-blue-400'
-                }`}
-              >
-                <option value="">Select Year</option>
-                {fiscalYears.map((fy) => (
-                  <option key={fy.id} value={fy.id}>
-                    {fy.year} - {fy.name}
-                  </option>
-                ))}
-              </select>
-
-              {/* Period Multi-Selector */}
+              {/* Period Multi-Selector - Now includes year info */}
               <div className="relative">
                 <button
                   onClick={() => {
@@ -1102,18 +1136,40 @@ const Process = () => {
                                 type="checkbox"
                                 checked={selectedPeriods.includes(period.id)}
                                 onChange={(e) => {
+                                  let newSelectedPeriods
                                   if (e.target.checked) {
-                                    setSelectedPeriods([...selectedPeriods, period.id])
+                                    newSelectedPeriods = [...selectedPeriods, period.id]
                                   } else {
-                                    setSelectedPeriods(selectedPeriods.filter(id => id !== period.id))
+                                    newSelectedPeriods = selectedPeriods.filter(id => id !== period.id)
                                   }
+                                  setSelectedPeriods(newSelectedPeriods)
+                                  
+                                  // Auto-determine fiscal year from selected periods
+                                  if (newSelectedPeriods.length > 0) {
+                                    const firstPeriod = availablePeriods.find(p => p.id === newSelectedPeriods[0])
+                                    if (firstPeriod && firstPeriod.fiscalYearId) {
+                                      setSelectedYear(firstPeriod.fiscalYearId)
+                                      // Fetch scenarios for this year
+                                      fetchScenariosForYear(firstPeriod.fiscalYearId)
+                                    }
+                                  }
+                                  
                                   saveProcessConfiguration()
                                 }}
                                 className="rounded"
                               />
                               <div className="flex-1">
-                                <span className="text-sm font-medium">{period.period_name}</span>
-                                <span className="text-xs text-gray-500 ml-2">({period.period_code})</span>
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium">{period.period_name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-500">({period.period_code})</span>
+                                    {period.fiscalYearName && (
+                                      <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                        {period.fiscalYearName}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             </label>
                           ))
@@ -1153,15 +1209,15 @@ const Process = () => {
               {/* Lock/Unlock Button */}
               <button
                 onClick={() => {
-                  if (!selectedYear || selectedPeriods.length === 0 || !selectedScenario) {
-                    showNotification('Please select year, periods, and scenario before locking', 'error')
+                  if (selectedPeriods.length === 0 || !selectedScenario) {
+                    showNotification('Please select periods and scenario before locking', 'error')
                     return
                   }
                   setFiscalSettingsLocked(!fiscalSettingsLocked)
                   saveProcessConfiguration()
                   showNotification(
                     !fiscalSettingsLocked 
-                      ? '🔒 Fiscal settings locked. Only selected year, periods, and scenario will be available.' 
+                      ? '🔒 Fiscal settings locked. Only selected periods and scenario will be available.' 
                       : '🔓 Fiscal settings unlocked. You can now change selections.',
                     'success'
                   )
@@ -1537,48 +1593,74 @@ const Process = () => {
           <div className="w-80 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 overflow-y-auto">
             <div className="p-4">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                Workflow Nodes ({workflowNodes.length})
+                All Available Nodes ({NODE_LIBRARY.length})
               </h3>
-              {workflowNodes.length === 0 ? (
-                <div className="text-center py-8 text-sm text-gray-500">
-                  No nodes in workflow
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {workflowNodes.map((node) => {
-                    const IconComponent = node.icon
-                    const isActive = selectedNode?.id === node.id
-                    return (
-                      <button
-                        key={node.id}
-                        onClick={() => setSelectedNode(node)}
-                        className={`w-full p-3 rounded-lg text-left transition-colors ${
-                          isActive
-                            ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
-                            : 'bg-gray-50 dark:bg-gray-800 border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg ${node.color} flex items-center justify-center flex-shrink-0`}>
-                            <IconComponent className="h-5 w-5 text-white" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                              {node.title}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {node.category}
-                            </p>
-                          </div>
-                          {isActive && (
-                            <ChevronRight className="h-4 w-4 text-blue-600" />
-                          )}
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Select any node to configure. Green badge = Added to workflow
+              </p>
+              <div className="space-y-2">
+                {NODE_LIBRARY.map((nodeTemplate) => {
+                  const IconComponent = nodeTemplate.icon
+                  // Find if this node type is added to workflow
+                  const workflowNode = workflowNodes.find(n => n.type === nodeTemplate.type)
+                  const isInWorkflow = !!workflowNode
+                  const isActive = selectedNode?.type === nodeTemplate.type || selectedNode?.id === workflowNode?.id
+                  
+                  return (
+                    <button
+                      key={nodeTemplate.type}
+                      onClick={() => {
+                        // If node is in workflow, select the workflow instance
+                        // Otherwise, create a temporary node for configuration
+                        if (workflowNode) {
+                          setSelectedNode(workflowNode)
+                        } else {
+                          setSelectedNode({
+                            ...nodeTemplate,
+                            id: `temp-${nodeTemplate.type}`,
+                            status: 'pending',
+                            config: {
+                              enabled: true,
+                              availableForEntity: nodeTemplate.flowType === 'entity' || nodeTemplate.flowType === 'both',
+                              availableForConsolidation: nodeTemplate.flowType === 'consolidation' || nodeTemplate.flowType === 'both',
+                              restrictions: {}
+                            }
+                          })
+                        }
+                      }}
+                      className={`w-full p-3 rounded-lg text-left transition-colors ${
+                        isActive
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-500'
+                          : 'bg-gray-50 dark:bg-gray-800 border-2 border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg ${nodeTemplate.color} flex items-center justify-center flex-shrink-0`}>
+                          <IconComponent className="h-5 w-5 text-white" />
                         </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              {nodeTemplate.title}
+                            </p>
+                            {isInWorkflow && (
+                              <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded">
+                                ✓
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {nodeTemplate.category}
+                          </p>
+                        </div>
+                        {isActive && (
+                          <ChevronRight className="h-4 w-4 text-blue-600" />
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
 
               {/* Fiscal Management Section */}
               <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
