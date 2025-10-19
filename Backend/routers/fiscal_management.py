@@ -171,6 +171,19 @@ def ensure_fiscal_tables(company_name: str):
             except Exception as e:
                 print(f"Note: Could not add custom_field_definitions column: {e}")
             
+            # Add reference scenario columns for previous/next scenario references
+            try:
+                cur.execute("""
+                    ALTER TABLE scenarios 
+                    ADD COLUMN IF NOT EXISTS previous_scenario_offsets JSONB DEFAULT '[]'
+                """)
+                cur.execute("""
+                    ALTER TABLE scenarios 
+                    ADD COLUMN IF NOT EXISTS next_scenario_offsets JSONB DEFAULT '[]'
+                """)
+            except Exception as e:
+                print(f"Note: Could not add scenario reference columns: {e}")
+            
             conn.commit()
             return True
     except Exception as e:
@@ -791,7 +804,9 @@ async def update_scenario(
                 SET scenario_code = %s, scenario_name = %s, scenario_type = %s, 
                     description = %s, status = %s, version_number = %s, is_baseline = %s, 
                     allow_overrides = %s, auto_calculate = %s, consolidation_method = %s,
-                    custom_field_definitions = %s, updated_at = CURRENT_TIMESTAMP
+                    custom_field_definitions = %s, settings = %s,
+                    previous_scenario_offsets = %s, next_scenario_offsets = %s,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *
             """
@@ -808,6 +823,9 @@ async def update_scenario(
                 scenario_data.get('auto_calculate', True),
                 scenario_data.get('consolidation_method', 'full'),
                 json.dumps(scenario_data.get('custom_field_definitions', [])),
+                json.dumps(scenario_data.get('settings', {})),
+                json.dumps(scenario_data.get('previous_scenario_offsets', [])),
+                json.dumps(scenario_data.get('next_scenario_offsets', [])),
                 scenario_id
             ))
             

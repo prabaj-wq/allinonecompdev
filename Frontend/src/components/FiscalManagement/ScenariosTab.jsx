@@ -326,6 +326,7 @@ const ScenarioDetailsView = ({ scenario, year, onBack, onUpdate }) => {
   const tabs = [
     { id: 'overview', name: 'Overview', icon: Eye },
     { id: 'custom-fields', name: 'Custom Fields', icon: Settings },
+    { id: 'settings', name: 'Settings', icon: Settings },
     { id: 'data', name: 'Scenario Data', icon: Layers }
   ]
 
@@ -387,6 +388,9 @@ const ScenarioDetailsView = ({ scenario, year, onBack, onUpdate }) => {
         {activeTab === 'custom-fields' && (
           <ScenarioCustomFieldsTab scenario={scenario} year={year} />
         )}
+        {activeTab === 'settings' && (
+          <ScenarioSettingsTab scenario={scenario} year={year} onUpdate={onUpdate} />
+        )}
         {activeTab === 'data' && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
             <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Scenario Data</h4>
@@ -398,8 +402,224 @@ const ScenarioDetailsView = ({ scenario, year, onBack, onUpdate }) => {
   )
 }
 
+// Scenario Settings Tab Component
+const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
+  const { selectedCompany } = useCompany()
+  const [settings, setSettings] = useState(scenario.settings || {})
+  const [allScenarios, setAllScenarios] = useState([])
+  const [previousOffsets, setPreviousOffsets] = useState(Array.isArray(scenario.previous_scenario_offsets) ? scenario.previous_scenario_offsets : [])
+  const [nextOffsets, setNextOffsets] = useState(Array.isArray(scenario.next_scenario_offsets) ? scenario.next_scenario_offsets : [])
+  const [selectedRefScenarioId, setSelectedRefScenarioId] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // Fetch all scenarios for reference
+  useEffect(() => {
+    const fetchAllScenarios = async () => {
+      if (!selectedCompany || !year.id) return
+      try {
+        const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
+          headers: { 'X-Company-Database': selectedCompany }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setAllScenarios(data.scenarios || [])
+        }
+      } catch (error) {
+        console.error('Error fetching scenarios:', error)
+      }
+    }
+    fetchAllScenarios()
+  }, [selectedCompany, year.id])
+
+  const handleSettingChange = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const getScenarioOrder = () => {
+    return [...allScenarios].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  }
+
+  const computeOffsetForScenario = (targetScenarioId) => {
+    const ordered = getScenarioOrder()
+    const currentIndex = ordered.findIndex((s) => s.id === scenario.id)
+    const targetIndex = ordered.findIndex((s) => s.id === Number(targetScenarioId))
+    if (currentIndex === -1 || targetIndex === -1) return 0
+    return targetIndex - currentIndex
+  }
+
+  const addReferenceByScenario = () => {
+    if (!selectedRefScenarioId) return
+    const offset = computeOffsetForScenario(selectedRefScenarioId)
+    if (offset === 0) return
+    if (offset < 0) {
+      const val = Math.abs(offset)
+      if (!previousOffsets.includes(val)) setPreviousOffsets([...previousOffsets, val].sort((a,b)=>a-b))
+    } else {
+      if (!nextOffsets.includes(offset)) setNextOffsets([...nextOffsets, offset].sort((a,b)=>a-b))
+    }
+    setSelectedRefScenarioId('')
+  }
+
+  const removeOffset = (direction, value) => {
+    if (direction === 'previous') setPreviousOffsets(previousOffsets.filter(v => v !== value))
+    else setNextOffsets(nextOffsets.filter(v => v !== value))
+  }
+
+  const handleSaveSettings = async () => {
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/fiscal-management/scenarios/${scenario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Company-Database': selectedCompany
+        },
+        body: JSON.stringify({
+          ...scenario,
+          settings: settings,
+          previous_scenario_offsets: previousOffsets,
+          next_scenario_offsets: nextOffsets
+        })
+      })
+      if (response.ok) {
+        window.showToast?.('Settings saved successfully!', 'success')
+        onUpdate()
+      } else {
+        const error = await response.json()
+        window.showToast?.(error.error || 'Failed to save settings', 'error')
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error)
+      window.showToast?.('Failed to save settings', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Scenario Settings</h3>
+      
+      <div className="space-y-6">
+        {/* Reference Scenarios */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="text-md font-medium text-gray-900 dark:text-white">Reference Scenarios</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Link this scenario to previous/next scenarios for comparison</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.reference_scenarios_enabled || false}
+                onChange={(e) => handleSettingChange('reference_scenarios_enabled', e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {settings.reference_scenarios_enabled && (
+            <div className="mt-4 space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Direction</label>
+                  <select
+                    value={settings.reference_scenarios_mode || 'previous'}
+                    onChange={(e) => handleSettingChange('reference_scenarios_mode', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  >
+                    <option value="previous">Previous</option>
+                    <option value="next">Next</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Scenario</label>
+                  <select
+                    value={selectedRefScenarioId}
+                    onChange={(e) => setSelectedRefScenarioId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  >
+                    <option value="">Choose a scenario</option>
+                    {getScenarioOrder().filter(s => s.id !== scenario.id).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.scenario_name} ({s.scenario_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={addReferenceByScenario}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                  >
+                    Add Reference
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Previous Scenarios (Offsets)</h5>
+                  <div className="flex flex-wrap gap-2">
+                    {previousOffsets.length === 0 && (
+                      <span className="text-sm text-gray-500 dark:text-gray-400">None</span>
+                    )}
+                    {previousOffsets.sort((a,b)=>a-b).map((off) => (
+                      <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                        -{off}
+                        <button onClick={() => removeOffset('previous', off)} className="text-gray-500 hover:text-red-500">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Next Scenarios (Offsets)</h5>
+                  <div className="flex flex-wrap gap-2">
+                    {nextOffsets.length === 0 && (
+                      <span className="text-sm text-gray-500 dark:text-gray-400">None</span>
+                    )}
+                    {nextOffsets.sort((a,b)=>a-b).map((off) => (
+                      <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                        +{off}
+                        <button onClick={() => removeOffset('next', off)} className="text-gray-500 hover:text-red-500">&times;</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Save Button */}
+        <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
+          <button
+            onClick={handleSaveSettings}
+            disabled={saving}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+          >
+            {saving ? (
+              <>
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <Settings className="h-4 w-4" />
+                <span>Save Settings</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Scenario Overview Tab Component
-const ScenarioOverviewTab = ({ scenario, year }) => {
+const ScenarioOverviewTab = ({ scenario, year}) => {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
       <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Scenario Overview</h4>
