@@ -1166,23 +1166,23 @@ async def get_entity_elements(
             query = """
                 SELECT 
                     e.id,
-                    e.entity_code as code,
-                    e.entity_name as name,
-                    e.entity_code,
-                    e.entity_name,
+                    e.code,
+                    e.name,
+                    e.code as entity_code,
+                    e.name as entity_name,
                     h.hierarchy_name,
                     h.id as hierarchy_id
                 FROM axes_entities e
                 LEFT JOIN hierarchies h ON e.hierarchy_id = h.id
-                WHERE e.is_active = true
+                WHERE e.company_id = %s
             """
-            params = []
+            params = [company_name]
             
             if hierarchy_id:
                 query += " AND e.hierarchy_id = %s"
                 params.append(hierarchy_id)
             
-            query += " ORDER BY e.entity_code"
+            query += " ORDER BY e.code"
             
             cur.execute(query, params)
             entities = cur.fetchall()
