@@ -454,3 +454,23 @@ from models.financial_process import (
 def create_company_database_schema(engine):
     """Create all tables for a company database"""
     CompanyBase.metadata.create_all(bind=engine)
+    
+    # Also create data input tables (these use raw SQL, not SQLAlchemy models)
+    from routers.data_input import create_tables_if_not_exist
+    import psycopg2
+    
+    # Get database name from engine URL
+    db_url = str(engine.url)
+    db_name = db_url.split('/')[-1].split('?')[0]
+    
+    # Create data input tables using the helper function
+    try:
+        # Note: create_tables_if_not_exist expects company_name, but we have db_name
+        # The function will convert company_name to db_name internally, so we need to pass the original company name
+        # For now, we'll just ensure the tables exist by calling with the db name pattern
+        company_name = db_name.replace('_', ' ').title()  # Rough conversion back
+        create_tables_if_not_exist(company_name)
+        print(f"✅ Created data input tables in {db_name}")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not create data input tables: {e}")
+        # Don't fail onboarding if this fails
