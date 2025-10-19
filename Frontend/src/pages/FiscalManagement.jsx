@@ -349,149 +349,15 @@ const FiscalManagement = () => {
     }
   }
 
-  const CreateFiscalYearModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            {editingYear ? 'Edit Fiscal Year' : 'Create New Fiscal Year'}
-          </h2>
-          <button
-            onClick={() => {
-              setShowCreateModal(false);
-              setEditingYear(null);
-            }}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <XCircle className="h-6 w-6" />
-          </button>
-        </div>
+  const handleFieldChange = (field) => (event) => {
+    const value = event.target.value
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }
 
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Year Code
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., FY2024"
-                value={formData.year_code}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setFormData(prev => ({...prev, year_code: value}))
-                }}
-                required
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Year Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., Fiscal Year 2024"
-                value={formData.year_name}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setFormData(prev => ({...prev, year_name: value}))
-                }}
-                required
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={formData.start_date}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setFormData(prev => ({...prev, start_date: value}))
-                }}
-                required
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                End Date
-              </label>
-              <input
-                type="date"
-                value={formData.end_date}
-                onChange={(e) => {
-                  const value = e.target.value
-                  setFormData(prev => ({...prev, end_date: value}))
-                }}
-                required
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Description
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Optional description for this fiscal year..."
-              value={formData.description}
-              onChange={(e) => {
-                const value = e.target.value
-                setFormData(prev => ({...prev, description: value}))
-              }}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-            />
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.is_consolidation_year}
-                onChange={(e) => setFormData({...formData, is_consolidation_year: e.target.checked})}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-300">Enable Consolidation</span>
-            </label>
-            <select 
-              value={formData.consolidation_method}
-              onChange={(e) => setFormData({...formData, consolidation_method: e.target.value})}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-            >
-              <option value="full">Full Consolidation</option>
-              <option value="proportional">Proportional Consolidation</option>
-              <option value="equity">Equity Method</option>
-            </select>
-          </div>
-
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-600">
-            <button
-              type="button"
-              onClick={() => setShowCreateModal(false)}
-              className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              {editingYear ? 'Update Fiscal Year' : 'Create Fiscal Year'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
+  const handleCheckboxChange = (field) => (event) => {
+    const checked = event.target.checked
+    setFormData((prev) => ({ ...prev, [field]: checked }))
+  }
 
   if (selectedYear) {
     return <FiscalYearDetails year={selectedYear} onBack={() => setSelectedYear(null)} />
@@ -610,7 +476,137 @@ const FiscalManagement = () => {
       </div>
 
       {/* Create Modal */}
-      {showCreateModal && <CreateFiscalYearModal />}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                {editingYear ? 'Edit Fiscal Year' : 'Create New Fiscal Year'}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowCreateModal(false)
+                  setEditingYear(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Year Code
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g., FY2024"
+                    value={formData.year_code}
+                    onChange={handleFieldChange('year_code')}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Year Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Fiscal Year 2024"
+                    value={formData.year_name}
+                    onChange={handleFieldChange('year_name')}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.start_date}
+                    onChange={handleFieldChange('start_date')}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.end_date}
+                    onChange={handleFieldChange('end_date')}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Optional description for this fiscal year..."
+                  value={formData.description}
+                  onChange={handleFieldChange('description')}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_consolidation_year}
+                    onChange={handleCheckboxChange('is_consolidation_year')}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Enable Consolidation</span>
+                </label>
+                <select
+                  value={formData.consolidation_method}
+                  onChange={handleFieldChange('consolidation_method')}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="full">Full Consolidation</option>
+                  <option value="equity">Equity Method</option>
+                  <option value="proportional">Proportional Consolidation</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false)
+                    setEditingYear(null)
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  {editingYear ? 'Update Fiscal Year' : 'Create Fiscal Year'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
