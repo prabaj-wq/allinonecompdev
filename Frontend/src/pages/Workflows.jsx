@@ -89,7 +89,7 @@ const Workflows = () => {
       id: 2,
       name: 'Quarterly Audit Process',
       description: 'Quarterly internal audit workflow',
-      status: 'draft',
+      status: 'active',
       progress: 0,
       participants: 12,
       dueDate: '2025-03-31',
@@ -364,7 +364,7 @@ const Workflows = () => {
       type: workflowType,
       assigned_to: assignedTo,
       due_date: dueDate,
-      status: 'draft',
+      status: 'active',
       progress: 0,
       participants: 1,
       steps: workflowCanvas.map((block, index) => ({

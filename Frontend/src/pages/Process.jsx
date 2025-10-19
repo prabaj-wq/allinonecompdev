@@ -43,6 +43,15 @@ const serializeNodes = (nodes) => {
   }))
 }
 
+// Helper to deserialize nodes (convert icon strings back to components)
+const deserializeNodes = (nodes) => {
+  if (!Array.isArray(nodes)) return []
+  return nodes.map(node => ({
+    ...node,
+    icon: getIconComponent(node.icon)
+  }))
+}
+
 // Node Library - Segregated by Entity-wise and Consolidation flows
 const NODE_LIBRARY = [
   // ==================== ENTITY-WISE NODES ====================
@@ -240,6 +249,275 @@ const NODE_LIBRARY = [
   }
 ]
 
+// Custom Fields Configuration Component for Data Input
+const DataInputCustomFieldsConfig = ({ processSettings, onUpdate }) => {
+  const [activeTab, setActiveTab] = useState('entity_amounts')
+  const [customFields, setCustomFields] = useState({
+    entity_amounts: processSettings?.data_input_custom_fields?.entity_amounts || [],
+    ic_amounts: processSettings?.data_input_custom_fields?.ic_amounts || [],
+    other_amounts: processSettings?.data_input_custom_fields?.other_amounts || []
+  })
+
+  const fieldTypes = [
+    { value: 'text', label: 'Text' },
+    { value: 'number', label: 'Number' },
+    { value: 'date', label: 'Date' },
+    { value: 'dropdown', label: 'Dropdown' },
+    { value: 'sql_query', label: 'SQL Query' },
+    { value: 'checkbox', label: 'Checkbox' }
+  ]
+
+  const addCustomField = (type) => {
+    const newField = {
+      id: `field_${Date.now()}`,
+      name: '',
+      label: '',
+      field_type: 'text',
+      required: false,
+      options: [],
+      sql_query: '',
+      default_value: ''
+    }
+    
+    const updated = {
+      ...customFields,
+      [type]: [...customFields[type], newField]
+    }
+    setCustomFields(updated)
+    onUpdate({ data_input_custom_fields: updated })
+  }
+
+  const updateField = (type, fieldId, updates) => {
+    const updated = {
+      ...customFields,
+      [type]: customFields[type].map(f => f.id === fieldId ? { ...f, ...updates } : f)
+    }
+    setCustomFields(updated)
+    // Don't auto-save on every keystroke
+  }
+
+  const saveCustomFields = () => {
+    onUpdate({ data_input_custom_fields: customFields })
+  }
+
+  const removeField = (type, fieldId) => {
+    const updated = {
+      ...customFields,
+      [type]: customFields[type].filter(f => f.id !== fieldId)
+    }
+    setCustomFields(updated)
+    onUpdate({ data_input_custom_fields: updated })
+  }
+
+  const tabs = [
+    { id: 'entity_amounts', label: 'Entity Amounts', icon: Building2 },
+    { id: 'ic_amounts', label: 'IC Amounts', icon: Link },
+    { id: 'other_amounts', label: 'Other Amounts', icon: DollarSign }
+  ]
+
+  return (
+    <div className="space-y-6">
+      {/* Tabs */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="flex space-x-4">
+          {tabs.map(tab => {
+            const Icon = tab.icon
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+                <span className="px-2 py-0.5 text-xs bg-gray-100 dark:bg-gray-800 rounded-full">
+                  {customFields[tab.id].length}
+                </span>
+              </button>
+            )
+          })}
+        </nav>
+      </div>
+
+      {/* Custom Fields List */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+            Custom Fields for {tabs.find(t => t.id === activeTab)?.label}
+          </h4>
+          <button
+            onClick={() => addCustomField(activeTab)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            Add Field
+          </button>
+        </div>
+
+        {customFields[activeTab].length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+            <FileSpreadsheet className="h-12 w-12 mx-auto text-gray-400 mb-3" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No custom fields defined yet</p>
+            <button
+              onClick={() => addCustomField(activeTab)}
+              className="mt-3 text-sm text-blue-600 hover:text-blue-700"
+            >
+              Add your first custom field
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {customFields[activeTab].map((field, index) => (
+              <div key={field.id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Field #{index + 1}</span>
+                  <button
+                    onClick={() => removeField(activeTab, field.id)}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Field Name (code)
+                    </label>
+                    <input
+                      type="text"
+                      value={field.name}
+                      onChange={(e) => updateField(activeTab, field.id, { name: e.target.value })}
+                      onBlur={saveCustomFields}
+                      placeholder="e.g., project_code"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Label (display)
+                    </label>
+                    <input
+                      type="text"
+                      value={field.label}
+                      onChange={(e) => updateField(activeTab, field.id, { label: e.target.value })}
+                      onBlur={saveCustomFields}
+                      placeholder="e.g., Project Code"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Field Type
+                    </label>
+                    <select
+                      value={field.field_type}
+                      onChange={(e) => {
+                        updateField(activeTab, field.id, { field_type: e.target.value })
+                        saveCustomFields()
+                      }}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900"
+                    >
+                      {fieldTypes.map(ft => (
+                        <option key={ft.value} value={ft.value}>{ft.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Default Value
+                    </label>
+                    <input
+                      type="text"
+                      value={field.default_value}
+                      onChange={(e) => updateField(activeTab, field.id, { default_value: e.target.value })}
+                      onBlur={saveCustomFields}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900"
+                    />
+                  </div>
+                </div>
+
+                {field.field_type === 'dropdown' && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Dropdown Options (comma-separated)
+                    </label>
+                    <input
+                      type="text"
+                      value={field.options_string || (field.options || []).join(', ')}
+                      onChange={(e) => updateField(activeTab, field.id, { 
+                        options_string: e.target.value
+                      })}
+                      onBlur={(e) => {
+                        // Convert string to array on blur
+                        const optionsArray = e.target.value.split(',').map(o => o.trim()).filter(o => o)
+                        updateField(activeTab, field.id, { 
+                          options: optionsArray,
+                          options_string: e.target.value
+                        })
+                        saveCustomFields()
+                      }}
+                      placeholder="Option 1, Option 2, Option 3"
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Type your options separated by commas, then click outside to save</p>
+                  </div>
+                )}
+
+                {field.field_type === 'sql_query' && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      SQL Query
+                    </label>
+                    <textarea
+                      value={field.sql_query}
+                      onChange={(e) => updateField(activeTab, field.id, { sql_query: e.target.value })}
+                      onBlur={saveCustomFields}
+                      placeholder="SELECT id, name FROM table"
+                      rows={2}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 font-mono"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Click outside to save</p>
+                  </div>
+                )}
+
+                <div className="mt-3 flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={field.required}
+                    onChange={(e) => {
+                      updateField(activeTab, field.id, { required: e.target.checked })
+                      saveCustomFields()
+                    }}
+                    className="rounded"
+                  />
+                  <label className="ml-2 text-xs text-gray-700 dark:text-gray-300">
+                    Required field
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+        <p className="text-sm text-blue-900 dark:text-blue-300">
+          <strong>Note:</strong> These custom fields will appear in the Data Input page when this process is selected.
+          Changes are saved automatically.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 const Process = () => {
   const { selectedCompany } = useCompany()
   const { getAuthHeaders } = useAuth()
@@ -254,7 +532,6 @@ const Process = () => {
   const [processForm, setProcessForm] = useState({
     name: '',
     description: '',
-    reporting_currency: 'USD',
     settings: {}
   })
   const [editingProcess, setEditingProcess] = useState(null)
@@ -286,6 +563,73 @@ const Process = () => {
   const [showFiscalSetup, setShowFiscalSetup] = useState(false)
   const [showPeriodSelector, setShowPeriodSelector] = useState(false)
   const [fiscalSettingsLocked, setFiscalSettingsLocked] = useState(false) // Lock fiscal settings once configured
+
+  // Save State
+  const [savingConfig, setSavingConfig] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState(null)
+
+  const markUnsavedChanges = useCallback(() => {
+    setHasUnsavedChanges(true)
+  }, [])
+
+  const getEntityIdentifier = useCallback((entity) => {
+    return entity?.code || entity?.entity_code || entity?.id || entity?.value || ''
+  }, [])
+
+  const getEntityName = useCallback((entity) => {
+    return entity?.name || entity?.entity_name || entity?.label || entity?.title || 'Unnamed Entity'
+  }, [])
+
+  const getEntityCode = useCallback((entity) => {
+    return entity?.code || entity?.entity_code || getEntityIdentifier(entity)
+  }, [getEntityIdentifier])
+
+  const renderSaveStatus = useCallback(() => {
+    if (hasUnsavedChanges) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-amber-600">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span>Unsaved changes</span>
+        </div>
+      )
+    }
+
+    if (lastSavedAt) {
+      const timestamp = new Date(lastSavedAt)
+      const formatted = Number.isNaN(timestamp.getTime())
+        ? 'Recently'
+        : timestamp.toLocaleTimeString()
+
+      return (
+        <div className="flex items-center gap-2 text-xs text-green-600">
+          <span className="w-2 h-2 rounded-full bg-green-500" />
+          <span>Saved {formatted}</span>
+        </div>
+      )
+    }
+
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-500">
+        <span className="w-2 h-2 rounded-full bg-gray-400" />
+        <span>No changes yet</span>
+      </div>
+    )
+  }, [hasUnsavedChanges, lastSavedAt])
+
+  const syncWorkflowNodes = useCallback((updatedNodes, { markDirty = true } = {}) => {
+    setWorkflowNodes(updatedNodes)
+
+    if (flowMode === 'entity') {
+      setEntityWorkflowNodes(updatedNodes)
+    } else if (flowMode === 'consolidation') {
+      setConsolidationWorkflowNodes(updatedNodes)
+    }
+
+    if (markDirty) {
+      markUnsavedChanges()
+    }
+  }, [flowMode, markUnsavedChanges])
   
   // Get unique categories from NODE_LIBRARY
   const categories = ['all', ...new Set(NODE_LIBRARY.map(node => node.category))]
@@ -393,16 +737,26 @@ const Process = () => {
       
       if (response.ok) {
         const data = await response.json()
-        console.log('📊 Fetched entities:', data)
-        setAvailableEntities(data || [])
+        console.log('📊 Fetched entities response:', data)
+        
+        // Handle different response formats
+        let entities = []
+        if (Array.isArray(data)) {
+          entities = data
+        } else if (data && Array.isArray(data.elements)) {
+          entities = data.elements
+        } else if (data && Array.isArray(data.entities)) {
+          entities = data.entities
+        }
+        
+        console.log('✅ Parsed entities:', entities)
+        setAvailableEntities(entities)
       } else {
         console.warn('⚠️ Entity API returned status:', response.status)
-        // Do not inject mock data
         setAvailableEntities([])
       }
     } catch (error) {
       console.error('❌ Error fetching entities:', error)
-      // Do not inject mock data
       setAvailableEntities([])
     }
   }
@@ -555,10 +909,10 @@ const Process = () => {
         const config = await response.json()
         console.log('⚙️ Loaded process configuration:', config)
         
-        // Safely load workflows with validation
-        const safeEntityNodes = Array.isArray(config.entityWorkflowNodes) ? config.entityWorkflowNodes : []
-        const safeConsolidationNodes = Array.isArray(config.consolidationWorkflowNodes) ? config.consolidationWorkflowNodes : []
-        const safeNodes = Array.isArray(config.nodes) ? config.nodes : []
+        // Safely load workflows with validation AND deserialize icons
+        const safeEntityNodes = deserializeNodes(config.entityWorkflowNodes || [])
+        const safeConsolidationNodes = deserializeNodes(config.consolidationWorkflowNodes || [])
+        const safeNodes = deserializeNodes(config.nodes || [])
         
         setEntityWorkflowNodes(safeEntityNodes)
         setConsolidationWorkflowNodes(safeConsolidationNodes)
@@ -574,6 +928,8 @@ const Process = () => {
         } else {
           setWorkflowNodes(safeNodes)
         }
+        
+        console.log('✅ Loaded nodes:', { entityNodes: safeEntityNodes.length, consolidationNodes: safeConsolidationNodes.length })
         
         // Safely set other config values
         if (Array.isArray(config.selectedEntities)) setSelectedEntities(config.selectedEntities)
@@ -614,7 +970,7 @@ const Process = () => {
     }
   }
 
-  // Save process configuration (auto-save)
+  // Save process configuration (manual save)
   const saveProcessConfiguration = async () => {
     if (!selectedProcess || !selectedCompany) return
     
@@ -674,7 +1030,6 @@ const Process = () => {
       const processData = {
         name: processForm.name,
         description: processForm.description,
-        reporting_currency: processForm.reporting_currency,
         settings: processForm.settings,
         status: 'active' // Set default status
       }
@@ -732,7 +1087,6 @@ const Process = () => {
       setProcessForm({
         name: '',
         description: '',
-        reporting_currency: 'USD',
         settings: {}
       })
     } catch (error) {
@@ -786,7 +1140,6 @@ const Process = () => {
                       description: process.description,
                       type: process.process_type || process.type || 'actuals',
                       fiscal_year: typeof process.fiscal_year === 'object' ? process.fiscal_year?.id || '' : process.fiscal_year,
-                      reporting_currency: process.reporting_currency,
                       settings: process.settings || {}
                     })
                     setProcessDrawerOpen(true)
@@ -801,7 +1154,6 @@ const Process = () => {
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                 <span>FY {typeof process.fiscal_year === 'object' ? JSON.stringify(process.fiscal_year) : (process.fiscal_year || 'N/A')}</span>
-                <span>{process.reporting_currency || 'N/A'}</span>
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 Created {new Date(process.created_at).toLocaleDateString()}
@@ -876,7 +1228,7 @@ const Process = () => {
     setShowNodeLibrary(false)
     
     // Auto-save with a small delay to ensure state is updated
-    setTimeout(() => saveProcessConfiguration(), 100)
+    // Manual save - removed auto-save
   }
 
   // Remove node from workflow
@@ -897,7 +1249,7 @@ const Process = () => {
     showNotification('Node removed from workflow', 'success')
     
     // Auto-save with a small delay to ensure state is updated
-    setTimeout(() => saveProcessConfiguration(), 100)
+    // Manual save - removed auto-save
   }
 
   // Run individual node
@@ -949,7 +1301,7 @@ const Process = () => {
           n.id === nodeId ? { ...n, status: 'completed' } : n
         ))
         showNotification(`${node.title} executed successfully`, 'success')
-        saveProcessConfiguration() // Auto-save after execution
+        // Manual save - removed auto-save after execution
       } else {
         throw new Error('Node execution failed')
       }
@@ -1011,7 +1363,7 @@ const Process = () => {
     }
 
     showNotification('✅ Simulation completed successfully!', 'success')
-    saveProcessConfiguration() // Auto-save after simulation
+    // Manual save - removed auto-save after simulation
   }
 
   // Render workflow view with advanced layout
@@ -1057,6 +1409,13 @@ const Process = () => {
                 >
                   <Plus className="h-4 w-4" />
                   Add Node
+                </button>
+                <button 
+                  onClick={saveProcessConfiguration}
+                  className="btn-success inline-flex items-center gap-2 text-sm"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Save
                 </button>
                 <button 
                   onClick={() => setCurrentView('settings')}
@@ -1169,26 +1528,39 @@ const Process = () => {
                             No entities available
                           </div>
                         ) : (
-                          availableEntities.map((entity) => (
-                            <label
-                              key={entity.id || entity.code}
-                              className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedEntities.includes(entity.code || entity.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedEntities([...selectedEntities, entity.code || entity.id])
-                                  } else {
-                                    setSelectedEntities(selectedEntities.filter(id => id !== (entity.code || entity.id)))
-                                  }
-                                }}
-                                className="rounded"
-                              />
-                              <span className="text-sm">{entity.name || entity.code}</span>
-                            </label>
-                          ))
+                          availableEntities.map((entity) => {
+                            const entityIdentifier = entity.code || entity.entity_code || entity.id
+                            const entityName = entity.name || entity.entity_name || entity.label || 'Unnamed Entity'
+                            const entityCode = entity.code || entity.entity_code || entityIdentifier
+
+                            return (
+                              <label
+                                key={entityIdentifier}
+                                className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedEntities.includes(entityIdentifier)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      if (!selectedEntities.includes(entityIdentifier)) {
+                                        setSelectedEntities([...selectedEntities, entityIdentifier])
+                                        markUnsavedChanges()
+                                      }
+                                    } else {
+                                      setSelectedEntities(selectedEntities.filter(id => id !== entityIdentifier))
+                                      markUnsavedChanges()
+                                    }
+                                  }}
+                                  className="rounded"
+                                />
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium text-gray-900 dark:text-white">{entityName}</span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">{entityCode}</span>
+                                </div>
+                              </label>
+                            )
+                          })
                         )}
                       </div>
                     </div>
@@ -1283,7 +1655,7 @@ const Process = () => {
                                     }
                                   }
                                   
-                                  saveProcessConfiguration()
+                                  // Manual save - removed auto-save
                                 }}
                                 className="rounded"
                               />
@@ -1824,6 +2196,7 @@ const Process = () => {
                   </div>
                 </button>
               </div>
+
             </div>
           </div>
 
@@ -2001,6 +2374,25 @@ const Process = () => {
                         </p>
                       </div>
                     </div>
+
+                    {/* Custom Fields Configuration - Only for Data Input Node */}
+                    {selectedNode.type === 'data_input' && (
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                          Data Input Custom Fields
+                        </h3>
+                        <DataInputCustomFieldsConfig 
+                          processSettings={processForm.settings}
+                          onUpdate={(settings) => {
+                            setProcessForm(prev => ({
+                              ...prev,
+                              settings: { ...prev.settings, ...settings }
+                            }))
+                            saveProcessConfiguration()
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2054,7 +2446,7 @@ const Process = () => {
                       <option value="">Choose a year</option>
                       {Array.isArray(fiscalYears) && fiscalYears.map((fy) => (
                         <option key={fy.id} value={fy.id}>
-                          {fy.year} - {fy.name}
+                          {fy.year_name || fy.year_code || 'Unnamed Year'}
                         </option>
                       ))}
                     </select>
@@ -2069,7 +2461,7 @@ const Process = () => {
                         <div>
                           <span className="text-gray-600 dark:text-gray-400">Fiscal Year: </span>
                           <span className="font-medium text-gray-900 dark:text-white">
-                            {selectedYear && Array.isArray(fiscalYears) ? fiscalYears.find(fy => fy.id === selectedYear)?.year || 'N/A' : 'Not selected'}
+                            {selectedYear && Array.isArray(fiscalYears) ? (fiscalYears.find(fy => fy.id === selectedYear)?.year_name || 'N/A') : 'Not selected'}
                           </span>
                         </div>
                         <div>
@@ -2184,7 +2576,6 @@ const Process = () => {
                   setProcessForm({ 
                     name: '', 
                     description: '',
-                    reporting_currency: 'USD',
                     settings: {}
                   })
                 }}
@@ -2213,20 +2604,6 @@ const Process = () => {
                   rows={3}
                   placeholder="Enter process description"
                 />
-              </div>
-              <div>
-                <label className="label">Reporting Currency</label>
-                <select
-                  value={processForm.reporting_currency}
-                  onChange={(e) => setProcessForm({ ...processForm, reporting_currency: e.target.value })}
-                  className="form-select"
-                >
-                  <option value="USD">USD - US Dollar</option>
-                  <option value="EUR">EUR - Euro</option>
-                  <option value="GBP">GBP - British Pound</option>
-                  <option value="INR">INR - Indian Rupee</option>
-                  <option value="JPY">JPY - Japanese Yen</option>
-                </select>
               </div>
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                 <p className="text-sm text-blue-800 dark:text-blue-300">

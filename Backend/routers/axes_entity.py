@@ -1150,6 +1150,52 @@ async def get_dropdown_values(
             detail=f"Failed to execute dropdown query: {str(e)}"
         )
 
+@router.get("/elements")
+async def get_entity_elements(
+    company_name: str = Query(...),
+    hierarchy_id: Optional[int] = Query(None)
+):
+    """Get entity elements for dropdowns - simplified format"""
+    try:
+        ensure_tables_exist(company_name)
+        
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get entities with hierarchy info
+            query = """
+                SELECT 
+                    e.id,
+                    e.entity_code as code,
+                    e.entity_name as name,
+                    e.entity_code,
+                    e.entity_name,
+                    h.hierarchy_name,
+                    h.id as hierarchy_id
+                FROM axes_entities e
+                LEFT JOIN hierarchies h ON e.hierarchy_id = h.id
+                WHERE e.is_active = true
+            """
+            params = []
+            
+            if hierarchy_id:
+                query += " AND e.hierarchy_id = %s"
+                params.append(hierarchy_id)
+            
+            query += " ORDER BY e.entity_code"
+            
+            cur.execute(query, params)
+            entities = cur.fetchall()
+            
+            return [dict(entity) for entity in entities]
+            
+    except Exception as e:
+        print(f"Error getting entity elements: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get entity elements: {str(e)}"
+        )
+
 @router.get("/entities")
 async def get_entities(
     company_name: str = Query(...),

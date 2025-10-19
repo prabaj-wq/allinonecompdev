@@ -47,7 +47,7 @@ export const workflowService = {
         id: 2,
         name: 'Quarterly Audit Process',
         description: 'Quarterly internal audit workflow',
-        status: 'draft',
+        status: 'active',
         progress: 0,
         participants: 12,
         dueDate: '2025-03-31',

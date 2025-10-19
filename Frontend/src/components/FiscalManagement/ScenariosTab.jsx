@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { useCompany } from '../../contexts/CompanyContext'
-import ScenarioCustomFieldsTab from './ScenarioCustomFieldsTab'
 import {
   Plus, Edit, Trash2, Copy, Eye, BarChart3, TrendingUp, Target, Layers,
   CheckCircle, XCircle, AlertCircle, Filter, RefreshCw, MoreVertical,
@@ -159,7 +158,6 @@ const ScenariosTab = ({ year }) => {
             className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white text-sm"
           >
             <option value="all">All Status</option>
-            <option value="draft">Draft</option>
             <option value="active">Active</option>
             <option value="locked">Locked</option>
             <option value="archived">Archived</option>
@@ -325,7 +323,6 @@ const ScenarioDetailsView = ({ scenario, year, onBack, onUpdate }) => {
 
   const tabs = [
     { id: 'overview', name: 'Overview', icon: Eye },
-    { id: 'custom-fields', name: 'Custom Fields', icon: Settings },
     { id: 'settings', name: 'Settings', icon: Settings },
     { id: 'data', name: 'Scenario Data', icon: Layers }
   ]
@@ -385,9 +382,6 @@ const ScenarioDetailsView = ({ scenario, year, onBack, onUpdate }) => {
         {activeTab === 'overview' && (
           <ScenarioOverviewTab scenario={scenario} year={year} />
         )}
-        {activeTab === 'custom-fields' && (
-          <ScenarioCustomFieldsTab scenario={scenario} year={year} />
-        )}
         {activeTab === 'settings' && (
           <ScenarioSettingsTab scenario={scenario} year={year} onUpdate={onUpdate} />
         )}
@@ -407,28 +401,40 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
   const { selectedCompany } = useCompany()
   const [settings, setSettings] = useState(scenario.settings || {})
   const [allScenarios, setAllScenarios] = useState([])
+  const [allFiscalYears, setAllFiscalYears] = useState([])
   const [previousOffsets, setPreviousOffsets] = useState(Array.isArray(scenario.previous_scenario_offsets) ? scenario.previous_scenario_offsets : [])
   const [nextOffsets, setNextOffsets] = useState(Array.isArray(scenario.next_scenario_offsets) ? scenario.next_scenario_offsets : [])
   const [selectedRefScenarioId, setSelectedRefScenarioId] = useState('')
+  const [selectedRefFiscalYearId, setSelectedRefFiscalYearId] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Fetch all scenarios for reference
+  // Fetch all scenarios and fiscal years for reference
   useEffect(() => {
-    const fetchAllScenarios = async () => {
+    const fetchReferenceData = async () => {
       if (!selectedCompany || !year.id) return
       try {
-        const response = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
+        // Fetch scenarios from current fiscal year
+        const scenariosResponse = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
           headers: { 'X-Company-Database': selectedCompany }
         })
-        if (response.ok) {
-          const data = await response.json()
-          setAllScenarios(data.scenarios || [])
+        if (scenariosResponse.ok) {
+          const scenariosData = await scenariosResponse.json()
+          setAllScenarios(scenariosData.scenarios || [])
+        }
+        
+        // Fetch all fiscal years for cross-year references
+        const fiscalYearsResponse = await fetch(`/api/fiscal-management/fiscal-years`, {
+          headers: { 'X-Company-Database': selectedCompany }
+        })
+        if (fiscalYearsResponse.ok) {
+          const fiscalYearsData = await fiscalYearsResponse.json()
+          setAllFiscalYears(fiscalYearsData.fiscal_years || [])
         }
       } catch (error) {
-        console.error('Error fetching scenarios:', error)
+        console.error('Error fetching reference data:', error)
       }
     }
-    fetchAllScenarios()
+    fetchReferenceData()
   }, [selectedCompany, year.id])
 
   const handleSettingChange = (key, value) => {
@@ -448,16 +454,32 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
   }
 
   const addReferenceByScenario = () => {
-    if (!selectedRefScenarioId) return
-    const offset = computeOffsetForScenario(selectedRefScenarioId)
+    if (!selectedRefScenarioId && !selectedRefFiscalYearId) return
+    
+    let offset = 0
+    if (selectedRefFiscalYearId) {
+      // Calculate fiscal year offset
+      const currentFYIndex = allFiscalYears.findIndex(fy => fy.id === year.id)
+      const targetFYIndex = allFiscalYears.findIndex(fy => fy.id === Number(selectedRefFiscalYearId))
+      if (currentFYIndex !== -1 && targetFYIndex !== -1) {
+        offset = targetFYIndex - currentFYIndex
+      }
+    } else if (selectedRefScenarioId) {
+      // Calculate scenario offset within same fiscal year
+      offset = computeOffsetForScenario(selectedRefScenarioId)
+    }
+    
     if (offset === 0) return
+    
     if (offset < 0) {
       const val = Math.abs(offset)
       if (!previousOffsets.includes(val)) setPreviousOffsets([...previousOffsets, val].sort((a,b)=>a-b))
     } else {
       if (!nextOffsets.includes(offset)) setNextOffsets([...nextOffsets, offset].sort((a,b)=>a-b))
     }
+    
     setSelectedRefScenarioId('')
+    setSelectedRefFiscalYearId('')
   }
 
   const removeOffset = (direction, value) => {
@@ -523,18 +545,22 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
             <div className="mt-4 space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Direction</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Fiscal Year</label>
                   <select
-                    value={settings.reference_scenarios_mode || 'previous'}
-                    onChange={(e) => handleSettingChange('reference_scenarios_mode', e.target.value)}
+                    value={selectedRefFiscalYearId}
+                    onChange={(e) => setSelectedRefFiscalYearId(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                   >
-                    <option value="previous">Previous</option>
-                    <option value="next">Next</option>
+                    <option value="">Select Fiscal Year</option>
+                    {allFiscalYears.filter(fy => fy.id !== year.id).map((fy) => (
+                      <option key={fy.id} value={fy.id}>
+                        {fy.year_name} ({fy.year_code})
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Scenario</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Scenario (Current Year)</label>
                   <select
                     value={selectedRefScenarioId}
                     onChange={(e) => setSelectedRefScenarioId(e.target.value)}
@@ -552,7 +578,8 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
                   <button
                     type="button"
                     onClick={addReferenceByScenario}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+                    disabled={!selectedRefFiscalYearId && !selectedRefScenarioId}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Add Reference
                   </button>
@@ -561,31 +588,39 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Previous Scenarios (Offsets)</h5>
+                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Previous Year References</h5>
                   <div className="flex flex-wrap gap-2">
                     {previousOffsets.length === 0 && (
                       <span className="text-sm text-gray-500 dark:text-gray-400">None</span>
                     )}
-                    {previousOffsets.sort((a,b)=>a-b).map((off) => (
-                      <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                        -{off}
-                        <button onClick={() => removeOffset('previous', off)} className="text-gray-500 hover:text-red-500">&times;</button>
-                      </span>
-                    ))}
+                    {previousOffsets.sort((a,b)=>a-b).map((off) => {
+                      const currentFYIndex = allFiscalYears.findIndex(fy => fy.id === year.id)
+                      const refFY = allFiscalYears[currentFYIndex - off]
+                      return (
+                        <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
+                          {refFY ? refFY.year_code : 'Unknown'}
+                          <button onClick={() => removeOffset('previous', off)} className="text-red-500 hover:text-red-700">&times;</button>
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
                 <div>
-                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Next Scenarios (Offsets)</h5>
+                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Future Year References</h5>
                   <div className="flex flex-wrap gap-2">
                     {nextOffsets.length === 0 && (
                       <span className="text-sm text-gray-500 dark:text-gray-400">None</span>
                     )}
-                    {nextOffsets.sort((a,b)=>a-b).map((off) => (
-                      <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                        +{off}
-                        <button onClick={() => removeOffset('next', off)} className="text-gray-500 hover:text-red-500">&times;</button>
-                      </span>
-                    ))}
+                    {nextOffsets.sort((a,b)=>a-b).map((off) => {
+                      const currentFYIndex = allFiscalYears.findIndex(fy => fy.id === year.id)
+                      const refFY = allFiscalYears[currentFYIndex + off]
+                      return (
+                        <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                          {refFY ? refFY.year_code : 'Unknown'}
+                          <button onClick={() => removeOffset('next', off)} className="text-green-500 hover:text-green-700">&times;</button>
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
               </div>
@@ -689,11 +724,21 @@ const CreateScenarioModal = ({ year, onClose, onSuccess, editScenario = null }) 
     scenario_type: editScenario?.scenario_type || 'budget',
     description: editScenario?.description || '',
     version_number: editScenario?.version_number || '1.0',
-    status: editScenario?.status || 'draft',
+    status: editScenario?.status || 'active',
     is_baseline: editScenario?.is_baseline || false,
     allow_overrides: editScenario?.allow_overrides || true,
     auto_calculate: editScenario?.auto_calculate || true,
     consolidation_method: editScenario?.consolidation_method || 'full'
+  })
+  
+  const [customFields, setCustomFields] = useState(editScenario?.custom_field_definitions || [])
+  const [showAddField, setShowAddField] = useState(false)
+  const [newField, setNewField] = useState({
+    name: '',
+    label: '',
+    type: 'text',
+    required: false,
+    default_value: ''
   })
 
   const handleSubmit = async (e) => {
@@ -712,7 +757,7 @@ const CreateScenarioModal = ({ year, onClose, onSuccess, editScenario = null }) 
         },
         body: JSON.stringify({
           ...formData,
-          custom_field_definitions: []
+          custom_field_definitions: customFields
         })
       })
 
@@ -810,6 +855,102 @@ const CreateScenarioModal = ({ year, onClose, onSuccess, editScenario = null }) 
               placeholder="Optional description for this scenario..."
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
             />
+          </div>
+          
+          {/* Custom Fields Section */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-white">Custom Fields</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddField(!showAddField)}
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                {showAddField ? 'Cancel' : '+ Add Field'}
+              </button>
+            </div>
+            
+            {showAddField && (
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-3 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Field Name</label>
+                    <input
+                      type="text"
+                      value={newField.name}
+                      onChange={(e) => setNewField({...newField, name: e.target.value})}
+                      placeholder="e.g., assumption_version"
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Display Label</label>
+                    <input
+                      type="text"
+                      value={newField.label}
+                      onChange={(e) => setNewField({...newField, label: e.target.value})}
+                      placeholder="e.g., Assumption Version"
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+                    <select
+                      value={newField.type}
+                      onChange={(e) => setNewField({...newField, type: e.target.value})}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                    >
+                      <option value="text">Text</option>
+                      <option value="number">Number</option>
+                      <option value="date">Date</option>
+                      <option value="boolean">Boolean</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Default Value</label>
+                    <input
+                      type="text"
+                      value={newField.default_value}
+                      onChange={(e) => setNewField({...newField, default_value: e.target.value})}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newField.name && newField.label) {
+                      setCustomFields([...customFields, {...newField, id: Date.now()}])
+                      setNewField({ name: '', label: '', type: 'text', required: false, default_value: '' })
+                      setShowAddField(false)
+                    }
+                  }}
+                  className="w-full px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                >
+                  Add Field
+                </button>
+              </div>
+            )}
+            
+            {customFields.length > 0 && (
+              <div className="space-y-2">
+                {customFields.map((field) => (
+                  <div key={field.id || field.name} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded px-3 py-2">
+                    <div>
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{field.label}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">({field.type})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomFields(customFields.filter(f => (f.id || f.name) !== (field.id || field.name)))}
+                      className="text-red-600 hover:text-red-800 dark:text-red-400"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-600">

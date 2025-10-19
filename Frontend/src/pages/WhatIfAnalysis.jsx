@@ -35,7 +35,7 @@ const WhatIfAnalysis = () => {
       id: 2,
       name: 'Optimistic Growth',
       description: 'High growth scenario with favorable market conditions',
-      status: 'draft',
+      status: 'active',
       lastModified: '2025-01-18',
       drivers: {
         revenueGrowth: 12.0,
@@ -54,7 +54,7 @@ const WhatIfAnalysis = () => {
       id: 3,
       name: 'Economic Downturn',
       description: 'Conservative scenario with economic challenges',
-      status: 'draft',
+      status: 'active',
       lastModified: '2025-01-15',
       drivers: {
         revenueGrowth: -2.0,
@@ -83,7 +83,7 @@ const WhatIfAnalysis = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-      case 'draft': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+      case 'pending': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
       case 'archived': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
     }

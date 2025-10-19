@@ -1021,6 +1021,55 @@ async def get_dropdown_values(
             detail=f"Failed to execute dropdown query: {str(e)}"
         )
 
+@router.get("/elements")
+async def get_account_elements(
+    company_name: str = Query(...),
+    hierarchy_id: Optional[int] = Query(None)
+):
+    """Get account elements for dropdowns - simplified format"""
+    try:
+        ensure_tables_exist(company_name)
+        
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Get accounts with hierarchy info
+            query = """
+                SELECT 
+                    a.id,
+                    a.account_code as code,
+                    a.account_name as name,
+                    a.account_code,
+                    a.account_name,
+                    a.account_type,
+                    a.statement,
+                    a.category,
+                    h.hierarchy_name,
+                    h.id as hierarchy_id
+                FROM account_axes a
+                LEFT JOIN hierarchies h ON a.hierarchy_id = h.id
+                WHERE a.is_active = true
+            """
+            params = []
+            
+            if hierarchy_id:
+                query += " AND a.hierarchy_id = %s"
+                params.append(hierarchy_id)
+            
+            query += " ORDER BY a.account_code"
+            
+            cur.execute(query, params)
+            accounts = cur.fetchall()
+            
+            return [dict(account) for account in accounts]
+            
+    except Exception as e:
+        print(f"Error getting account elements: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get account elements: {str(e)}"
+        )
+
 @router.get("/accounts")
 async def get_accounts(
     company_name: str = Query(...),

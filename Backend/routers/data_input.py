@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import pandas as pd
@@ -7,6 +8,7 @@ import json
 import psycopg2
 import psycopg2.extras
 import os
+import csv
 from contextlib import contextmanager
 from auth.dependencies import get_current_user
 
@@ -74,7 +76,7 @@ def get_company_connection(company_name: str):
     except Exception as e:
         if conn:
             conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise e
     finally:
         if conn:
             conn.close()
@@ -167,6 +169,26 @@ def create_tables_if_not_exist(company_name: str):
                 error_message TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_by VARCHAR(100),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create intercompany_data table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS intercompany_data (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                from_entity_id UUID REFERENCES entity_axes(id),
+                to_entity_id UUID REFERENCES entity_axes(id),
+                from_account_id UUID REFERENCES account_axes(id),
+                to_account_id UUID REFERENCES account_axes(id),
+                amount DECIMAL(15,2) NOT NULL,
+                currency_code VARCHAR(3) DEFAULT 'USD',
+                transaction_type VARCHAR(100),
+                custom_transaction_type VARCHAR(200),
+                transaction_date DATE,
+                description TEXT,
+                reference_id VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -382,7 +404,7 @@ async def upload_data(
         # Process and insert rows
         table_map = {
             'entity_amounts': 'entity_amounts',
-            'ic_amounts': 'ic_amounts',
+            'ic_amounts': 'intercompany_data',
             'other_amounts': 'other_amounts'
         }
         
@@ -396,7 +418,19 @@ async def upload_data(
             for _, row in df.iterrows():
                 try:
                     # Insert row (simplified - add proper column mapping based on card type)
-                    rows_inserted += 1
+                    if card_type == 'ic_amounts':
+                        cur.execute("""
+                            INSERT INTO intercompany_data (from_entity_id, to_entity_id, from_account_id, to_account_id, amount, currency_code, transaction_type, custom_transaction_type, transaction_date, description, reference_id, created_at, updated_at)
+                            VALUES (
+                                (SELECT id FROM entity_axes WHERE entity_code = %s LIMIT 1),
+                                (SELECT id FROM entity_axes WHERE entity_code = %s LIMIT 1),
+                                (SELECT id FROM account_axes WHERE account_code = %s LIMIT 1),
+                                (SELECT id FROM account_axes WHERE account_code = %s LIMIT 1),
+                                %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                            )
+                        """, (row.get('From Entity Code', ''), row.get('To Entity Code', ''), row.get('From Account Code', ''), row.get('To Account Code', ''), row.get('Amount', 0), row.get('Currency', 'USD'), row.get('Transaction Type', ''), row.get('Custom Transaction Type', ''), row.get('Transaction Date', ''), row.get('Description', ''), row.get('Reference ID', '')))
+                    else:
+                        rows_inserted += 1
                 except Exception as row_error:
                     print(f"Error inserting row: {row_error}")
                     continue
@@ -425,7 +459,7 @@ async def create_manual_entry(
 
             table_map = {
                 'entity_amounts': 'entity_amounts',
-                'ic_amounts': 'ic_amounts',
+                'ic_amounts': 'intercompany_data',
                 'other_amounts': 'other_amounts'
             }
             table_name = table_map.get(card_type)
@@ -461,20 +495,21 @@ async def create_manual_entry(
             elif card_type == 'ic_amounts':
                 from_entity_id = int(entry_data.get('from_entity_id'))
                 to_entity_id = int(entry_data.get('to_entity_id'))
-                account_id = int(entry_data.get('account_id'))
+                from_account_id = int(entry_data.get('from_account_id'))
+                to_account_id = int(entry_data.get('to_account_id'))
+                transaction_type = entry_data.get('transaction_type')
+                custom_transaction_type = entry_data.get('custom_transaction_type')
+                transaction_date = entry_data.get('transaction_date')
+                reference_id = entry_data.get('reference_id')
                 cur.execute(
                     """
-                    INSERT INTO ic_amounts (
-                        process_id, scenario_id, year_id, period_id,
-                        from_entity_id, to_entity_id, account_id,
-                        amount, currency, description, custom_fields, origin, created_by, created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO intercompany_data (
+                        from_entity_id, to_entity_id, from_account_id, to_account_id, amount, currency_code, transaction_type, custom_transaction_type, transaction_date, description, reference_id, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        process_id, scenario_id, year_id, period_id,
-                        from_entity_id, to_entity_id, account_id,
-                        amount, currency, description, json.dumps(entry_data.get('custom_fields') or {}),
-                        origin, username, now, now
+                        from_entity_id, to_entity_id, from_account_id, to_account_id, amount, currency,
+                        transaction_type, custom_transaction_type, transaction_date, description, reference_id, now, now
                     )
                 )
             elif card_type == 'other_amounts':
@@ -504,6 +539,137 @@ async def create_manual_entry(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Export Data Endpoint
+@router.get("/export/{card_type}")
+async def export_data(
+    card_type: str,
+    company_name: str = Query(...),
+    process_id: Optional[int] = Query(None),
+    scenario_id: Optional[int] = Query(None),
+    current_user: dict = Depends(get_current_user)
+):
+    """Export data as CSV for a specific card type"""
+    try:
+        create_tables_if_not_exist(company_name)
+        
+        table_map = {
+            'entity_amounts': 'entity_amounts',
+            'ic_amounts': 'intercompany_data',
+            'other_amounts': 'other_amounts'
+        }
+        
+        table_name = table_map.get(card_type)
+        if not table_name:
+            raise HTTPException(status_code=400, detail="Invalid card type")
+        
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Build query with optional filters
+            where_conditions = []
+            params = []
+            
+            if process_id is not None:
+                where_conditions.append("process_id = %s")
+                params.append(process_id)
+            
+            if scenario_id is not None:
+                where_conditions.append("scenario_id = %s")
+                params.append(scenario_id)
+            
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            if card_type == 'ic_amounts':
+                # For intercompany data, get entity and account codes
+                query = f"""
+                    SELECT 
+                        fe.entity_code as from_entity_code,
+                        fe.entity_name as from_entity_name,
+                        te.entity_code as to_entity_code,
+                        te.entity_name as to_entity_name,
+                        fa.account_code as from_account_code,
+                        fa.account_name as from_account_name,
+                        ta.account_code as to_account_code,
+                        ta.account_name as to_account_name,
+                        ic.amount,
+                        ic.currency_code,
+                        ic.transaction_type,
+                        ic.custom_transaction_type,
+                        ic.transaction_date,
+                        ic.description,
+                        ic.reference_id,
+                        ic.created_at
+                    FROM {table_name} ic
+                    LEFT JOIN entity_axes fe ON ic.from_entity_id = fe.id
+                    LEFT JOIN entity_axes te ON ic.to_entity_id = te.id
+                    LEFT JOIN account_axes fa ON ic.from_account_id = fa.id
+                    LEFT JOIN account_axes ta ON ic.to_account_id = ta.id
+                    {where_clause}
+                    ORDER BY ic.created_at DESC
+                """
+            else:
+                # For entity_amounts and other_amounts
+                query = f"""
+                    SELECT 
+                        e.entity_code,
+                        e.entity_name,
+                        a.account_code,
+                        a.account_name,
+                        t.amount,
+                        t.currency,
+                        t.description,
+                        t.created_at
+                    FROM {table_name} t
+                    LEFT JOIN entity_axes e ON t.entity_id = e.id
+                    LEFT JOIN account_axes a ON t.account_id = a.id
+                    {where_clause}
+                    ORDER BY t.created_at DESC
+                """
+            
+            cur.execute(query, params)
+            rows = cur.fetchall()
+        
+        if not rows:
+            # Return empty CSV with headers
+            if card_type == 'ic_amounts':
+                headers = ['From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name', 
+                          'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
+                          'Amount', 'Currency', 'Transaction Type', 'Custom Transaction Type', 
+                          'Transaction Date', 'Description', 'Reference ID', 'Created At']
+            else:
+                headers = ['Entity Code', 'Entity Name', 'Account Code', 'Account Name', 
+                          'Amount', 'Currency', 'Description', 'Created At']
+            
+            df = pd.DataFrame(columns=headers)
+        else:
+            # Convert to DataFrame
+            df = pd.DataFrame(rows)
+            
+            # Rename columns for better CSV headers
+            if card_type == 'ic_amounts':
+                df.columns = ['From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name', 
+                             'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
+                             'Amount', 'Currency', 'Transaction Type', 'Custom Transaction Type', 
+                             'Transaction Date', 'Description', 'Reference ID', 'Created At']
+            else:
+                df.columns = ['Entity Code', 'Entity Name', 'Account Code', 'Account Name', 
+                             'Amount', 'Currency', 'Description', 'Created At']
+        
+        # Create CSV
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_data = csv_buffer.getvalue()
+        
+        return StreamingResponse(
+            iter([csv_data]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={card_type}_export.csv"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Template Download Endpoint
 @router.get("/{card_type}/template")
 async def download_template(
@@ -515,9 +681,9 @@ async def download_template(
     try:
         # Create template based on card type
         templates = {
-            'entity_amounts': ['account_id', 'entity_id', 'period_id', 'amount', 'currency', 'description'],
-            'ic_amounts': ['account_id', 'from_entity_id', 'to_entity_id', 'period_id', 'amount', 'currency', 'description'],
-            'other_amounts': ['account_id', 'entity_id', 'period_id', 'amount', 'currency', 'description']
+            'entity_amounts': ['Entity Code', 'Account Code', 'Amount', 'Currency', 'Description'],
+            'ic_amounts': ['From Entity Code', 'To Entity Code', 'From Account Code', 'To Account Code', 'Amount', 'Currency', 'Transaction Type', 'Custom Transaction Type', 'Transaction Date', 'Description', 'Reference ID'],
+            'other_amounts': ['Entity Code', 'Account Code', 'Amount', 'Currency', 'Description']
         }
         
         headers = templates.get(card_type, [])
@@ -526,7 +692,6 @@ async def download_template(
         # Create CSV
         csv_data = df.to_csv(index=False)
         
-        from fastapi.responses import StreamingResponse
         return StreamingResponse(
             iter([csv_data]),
             media_type="text/csv",

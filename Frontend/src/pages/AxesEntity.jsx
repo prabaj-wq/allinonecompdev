@@ -42,7 +42,7 @@ const AxesEntity = () => {
   const [activeTab, setActiveTab] = useState('overview')
   const [viewMode, setViewMode] = useState('list') // list, tree, graph
   const [hierarchies, setHierarchies] = useState([])
-  const [accounts, setAccounts] = useState([])
+  const [entities, setEntities] = useState([])
   const [loading, setLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsType, setSettingsType] = useState(null) // 'hierarchies' or 'accounts'
@@ -137,20 +137,20 @@ const AxesEntity = () => {
           console.log('Entities with hierarchy_id:', entitiesWithHierarchy.filter(e => e.hierarchy_id))
           console.log('Sample entity:', entitiesWithHierarchy[0])
           setHierarchies(updatedHierarchies)
-          setAccounts(entitiesWithHierarchy)
+          setEntities(entitiesWithHierarchy)
         } else {
           console.warn('Failed to load entities, using mock data')
-          setAccounts([])
+          setEntities([])
         }
       } else {
         console.warn('Failed to load hierarchies, using mock data')
         setHierarchies([])
-        setAccounts([])
+        setEntities([])
       }
     } catch (error) {
       console.error('Error loading entity data:', error)
       setHierarchies([])
-      setAccounts([])
+      setEntities([])
     } finally {
       setLoading(false)
     }
@@ -842,7 +842,7 @@ const AxesEntity = () => {
       {/* Elements List */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
         <ElementsList 
-          items={accounts || []} 
+          items={entities || []} 
           type="element"
           hierarchies={hierarchies || []}
           onAddItem={handleAddElement}

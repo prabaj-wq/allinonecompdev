@@ -262,7 +262,7 @@ const RegulatoryReporting = () => {
 
   const tabs = [
     { id: 'catalog', label: 'Report Catalog', icon: FileText },
-    { id: 'drafts', label: 'Drafts', icon: Edit },
+    { id: 'pending', label: 'Pending', icon: Edit },
     { id: 'under-review', label: 'Under Review', icon: Clock },
     { id: 'filed', label: 'Filed', icon: Send },
     { id: 'calendar', label: 'Filing Calendar', icon: Calendar },

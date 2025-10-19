@@ -98,7 +98,7 @@ const FiscalManagement = () => {
       start_date: year.start_date || '',
       end_date: year.end_date || '',
       description: year.description || '',
-      status: year.status || 'draft',
+      status: year.status || 'active',
       is_consolidation_year: year.is_consolidation_year || true,
       consolidation_method: year.consolidation_method || 'full'
     });
@@ -279,7 +279,7 @@ const FiscalManagement = () => {
     start_date: '',
     end_date: '',
     description: '',
-    status: 'draft',
+    status: 'active',
     is_consolidation_year: true,
     consolidation_method: 'full'
   })
@@ -327,7 +327,7 @@ const FiscalManagement = () => {
           start_date: '',
           end_date: '',
           description: '',
-          status: 'draft',
+          status: 'active',
           is_consolidation_year: true,
           consolidation_method: 'full'
         })
@@ -421,7 +421,6 @@ const FiscalManagement = () => {
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
             >
               <option value="all">All Status</option>
-              <option value="draft">Draft</option>
               <option value="active">Active</option>
               <option value="locked">Locked</option>
               <option value="archived">Archived</option>
@@ -998,7 +997,18 @@ const SettingsTab = ({ year }) => {
             {settings.opening_balances_source === 'year' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Year</label>
-                <p className="text-sm text-gray-500 dark:text-gray-400">(Additional year selection would be implemented here)</p>
+                <select
+                  value={settings.opening_balances_year_id || ''}
+                  onChange={(e) => handleSettingChange('opening_balances_year_id', e.target.value || null)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">Select a fiscal year</option>
+                  {allYears.filter(y => y.id !== year.id).map(fy => (
+                    <option key={fy.id} value={fy.id}>
+                      {fy.year_name} ({fy.year_code})
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
           </div>
@@ -1017,6 +1027,7 @@ const SettingsTab = ({ year }) => {
             <option value="equity">Equity Method</option>
           </select>
         </div>
+        
         
         {/* Additional Settings */}
         <div className="space-y-4">

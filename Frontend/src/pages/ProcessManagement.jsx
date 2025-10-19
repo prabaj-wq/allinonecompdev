@@ -307,12 +307,12 @@ const ProcessManagement = () => {
                       </span>
                       <span
                         className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                          process.status === 'draft'
+                          process.status === 'pending'
                             ? 'bg-yellow-900 text-yellow-200'
                             : 'bg-green-900 text-green-200'
                         }`}
                       >
-                        {process.status || 'Draft'}
+                        {process.status || 'Active'}
                       </span>
                     </div>
                   </div>

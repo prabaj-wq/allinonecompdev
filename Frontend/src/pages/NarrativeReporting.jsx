@@ -86,7 +86,7 @@ const NarrativeReporting = () => {
 
     const sampleDocuments = [
       { id: 1, name: 'Annual Report 2024', type: 'annual', status: 'published', lastModified: '2024-12-15', collaborators: 5 },
-      { id: 2, name: 'Q3 2024 Report', type: 'quarterly', status: 'draft', lastModified: '2024-10-20', collaborators: 3 },
+      { id: 2, name: 'Q3 2024 Report', type: 'quarterly', status: 'active', lastModified: '2024-10-20', collaborators: 3 },
       { id: 3, name: 'Board Presentation Q4', type: 'board', status: 'review', lastModified: '2024-12-10', collaborators: 4 }
     ]
 
@@ -184,7 +184,7 @@ const NarrativeReporting = () => {
                     </div>
                     <span className={`px-2 py-1 text-xs rounded-full ${
                       doc.status === 'published' ? 'bg-green-100 text-green-800' :
-                      doc.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                      doc.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                       'bg-blue-100 text-blue-800'
                     }`}>
                       {doc.status}
@@ -324,12 +324,12 @@ const EmptyState = ({ onNewDocument, templates }) => {
 // Document Editor Component
 const DocumentEditor = ({ document, onClose }) => {
   const [sections, setSections] = useState([
-    { id: 1, title: 'Executive Summary', type: 'text', content: '', expanded: true, status: 'draft', assignedTo: null },
-    { id: 2, title: 'Financial Highlights', type: 'text', content: '', expanded: true, status: 'draft', assignedTo: null },
-    { id: 3, title: 'Management Discussion', type: 'text', content: '', expanded: true, status: 'draft', assignedTo: null },
-    { id: 4, title: 'Financial Statements', type: 'financial', content: '', expanded: true, status: 'draft', assignedTo: null },
-    { id: 5, title: 'Notes to Financial Statements', type: 'notes', content: '', expanded: true, status: 'draft', assignedTo: null },
-    { id: 6, title: 'ESG Disclosure', type: 'esg', content: '', expanded: true, status: 'draft', assignedTo: null }
+    { id: 1, title: 'Executive Summary', type: 'text', content: '', expanded: true, status: 'active', assignedTo: null },
+    { id: 2, title: 'Financial Highlights', type: 'text', content: '', expanded: true, status: 'active', assignedTo: null },
+    { id: 3, title: 'Management Discussion', type: 'text', content: '', expanded: true, status: 'active', assignedTo: null },
+    { id: 4, title: 'Financial Statements', type: 'financial', content: '', expanded: true, status: 'active', assignedTo: null },
+    { id: 5, title: 'Notes to Financial Statements', type: 'notes', content: '', expanded: true, status: 'active', assignedTo: null },
+    { id: 6, title: 'ESG Disclosure', type: 'esg', content: '', expanded: true, status: 'active', assignedTo: null }
   ])
   
   const [collaborators] = useState([
@@ -752,7 +752,7 @@ const DocumentCreationModal = ({ onClose, onDocumentCreated, templates }) => {
       id: Date.now(),
       name: documentName,
       type: documentType,
-      status: 'draft',
+      status: 'active',
       lastModified: new Date().toISOString().split('T')[0],
       collaborators: collaborators.length,
       template: selectedTemplate

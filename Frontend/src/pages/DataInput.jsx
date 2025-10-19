@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
 import { useAuth } from '../hooks/useAuth'
 import {
   ChevronLeft, Calendar, FileSpreadsheet, Building2, Plus,
-  Users, TrendingUp, Calculator, Upload, Download, Settings,
-  Edit, Trash2, CheckCircle, XCircle, AlertTriangle
+  Users, TrendingUp, Calculator, Upload, Download, Link,
+  Edit, Trash2, RefreshCw, DollarSign, X, Loader2
 } from 'lucide-react'
 
 const DataInput = () => {
@@ -17,39 +17,41 @@ const DataInput = () => {
   // Parse URL parameters from Process.jsx navigation
   const searchParams = new URLSearchParams(location.search)
   const processId = searchParams.get('processId')
-  const processName = searchParams.get('processName') || 'Process'
-  const scenarioId = searchParams.get('scenario')
-  const scenarioName = searchParams.get('scenarioName') || 'Not Set'
-  const yearId = searchParams.get('year')
-  const yearName = searchParams.get('yearName') || 'Not Set'
-  const entitiesParam = searchParams.get('entities') || ''
+  const processName = searchParams.get('processName') || 'Data Input'
 
   // State management
-  const [activeCard, setActiveCard] = useState('entity_amounts') // entity_amounts, ic_amounts, other_amounts
+  const [activeCard, setActiveCard] = useState('entity_amounts')
   const [showManualEntry, setShowManualEntry] = useState(false)
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [notification, setNotification] = useState(null)
+  
+  // Custom fields configuration from process
+  const [customFieldsConfig, setCustomFieldsConfig] = useState({
+    entity_amounts: [],
+    ic_amounts: [],
+    other_amounts: []
+  })
 
-  // Form state for manual entry
+  // Form state
   const [formData, setFormData] = useState({
     entity_id: '',
-    period_id: '',
     account_id: '',
     amount: '',
     currency_code: 'USD',
     description: '',
     transaction_date: '',
-    // IC Amounts specific fields
+    reference_id: '',
+    period_id: '',
     from_entity_id: '',
     to_entity_id: '',
     from_account_id: '',
     to_account_id: '',
-    fx_rate: '',
     transaction_type: '',
-    reference_id: '',
-    // Other Amounts specific fields
-    adjustment_type: ''
+    fx_rate: '1.0',
+    adjustment_type: '',
+    custom_transaction_type: ''
   })
 
   // Reference data
@@ -58,48 +60,70 @@ const DataInput = () => {
   const [periods, setPeriods] = useState([])
   const [scenarios, setScenarios] = useState([])
 
-  // Show notification helper
-  const showNotification = (message, type = 'success') => {
+  const showToast = (message, type = 'success') => {
+    // Use built-in notification system
     setNotification({ message, type })
-    setTimeout(() => setNotification(null), 5000)
+    setTimeout(() => setNotification(null), 4000)
   }
 
-  // Fetch reference data
+  // Fetch process configuration and custom fields
   useEffect(() => {
-    fetchReferenceData()
-    fetchEntries()
-  }, [selectedCompany, activeCard])
+    if (processId && selectedCompany) {
+      fetchProcessConfig()
+      fetchReferenceData()
+    }
+  }, [processId, selectedCompany])
+
+  useEffect(() => {
+    if (processId && selectedCompany) {
+      fetchEntries()
+    }
+  }, [processId, selectedCompany, activeCard])
+
+  const fetchProcessConfig = async () => {
+    try {
+      const response = await fetch(
+        `/api/financial-process/processes/${processId}/configuration?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+        }
+      )
+      if (response.ok) {
+        const config = await response.json()
+        const customFields = config.configuration?.settings?.data_input_custom_fields || {
+          entity_amounts: [],
+          ic_amounts: [],
+          other_amounts: []
+        }
+        setCustomFieldsConfig(customFields)
+        console.log('📋 Custom fields loaded:', customFields)
+      }
+    } catch (error) {
+      console.error('Error fetching process config:', error)
+    }
+  }
 
   const fetchReferenceData = async () => {
-    if (!selectedCompany) return
-
     try {
       // Fetch entities
-      const entitiesResponse = await fetch(`/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        }
-      })
-      if (entitiesResponse.ok) {
-        const entitiesData = await entitiesResponse.json()
-        setEntities(entitiesData || [])
+      const entitiesRes = await fetch(
+        `/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`,
+        { credentials: 'include', headers: { ...getAuthHeaders() } }
+      )
+      if (entitiesRes.ok) {
+        const data = await entitiesRes.json()
+        setEntities(Array.isArray(data) ? data : [])
       }
 
       // Fetch accounts
-      const accountsResponse = await fetch(`/api/axes-account/elements?company_name=${encodeURIComponent(selectedCompany)}`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        }
-      })
-      if (accountsResponse.ok) {
-        const accountsData = await accountsResponse.json()
-        setAccounts(accountsData || [])
+      const accountsRes = await fetch(
+        `/api/axes-account/elements?company_name=${encodeURIComponent(selectedCompany)}`,
+        { credentials: 'include', headers: { ...getAuthHeaders() } }
+      )
+      if (accountsRes.ok) {
+        const accountsData = await accountsRes.json()
+        setAccounts(Array.isArray(accountsData) ? accountsData : [])
       }
 
       // Fetch periods for the selected year
@@ -137,92 +161,95 @@ const DataInput = () => {
       }
     } catch (error) {
       console.error('Error fetching reference data:', error)
-      showNotification('Failed to load reference data', 'error')
     }
   }
 
   const fetchEntries = async () => {
-    if (!selectedCompany || !processId || !scenarioId) return
+    if (!selectedCompany || !processId) return
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/data-input/${activeCard}/entries?company_name=${encodeURIComponent(selectedCompany)}&process_id=${processId}&scenario_id=${scenarioId}`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
+      const response = await fetch(
+        `/api/financial-process/processes/${processId}/data-input/${activeCard}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
         }
-      })
+      )
 
       if (response.ok) {
         const data = await response.json()
-        setEntries(data || [])
+        setEntries(data.entries || [])
       }
     } catch (error) {
       console.error('Error fetching entries:', error)
-      showNotification('Failed to load entries', 'error')
+      showToast('Failed to load entries', 'error')
     } finally {
       setLoading(false)
     }
   }
 
   const saveEntry = async () => {
-    if (!selectedCompany || !processId || !scenarioId) {
-      showNotification('Missing required context data', 'error')
+    if (!selectedCompany || !processId) {
+      showToast('Missing required context data', 'error')
       return
     }
 
-    // Basic validation
-    if (activeCard === 'entity_amounts') {
-      if (!formData.entity_id || !formData.period_id || !formData.account_id || !formData.amount) {
-        showNotification('Please fill all required fields', 'error')
-        return
-      }
-    } else if (activeCard === 'ic_amounts') {
-      if (!formData.from_entity_id || !formData.to_entity_id || !formData.from_account_id || !formData.to_account_id || !formData.amount) {
-        showNotification('Please fill all required fields', 'error')
-        return
-      }
-    } else if (activeCard === 'other_amounts') {
-      if (!formData.period_id || !formData.account_id || !formData.amount || !formData.adjustment_type) {
-        showNotification('Please fill all required fields', 'error')
-        return
-      }
-    }
-
+    setSaving(true)
     try {
-      const entryData = {
-        process_id: parseInt(processId),
-        scenario_id: parseInt(scenarioId),
-        year_id: parseInt(yearId),
-        ...formData,
-        amount: parseFloat(formData.amount) || 0,
-        fx_rate: parseFloat(formData.fx_rate) || null
-      }
-
-      const response = await fetch(`/api/data-input/${activeCard}/manual-entry?company_name=${encodeURIComponent(selectedCompany)}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders()
-        },
-        body: JSON.stringify(entryData)
+      // Build entry data with custom fields
+      const customFields = {}
+      const customFieldDefs = customFieldsConfig[activeCard] || []
+      customFieldDefs.forEach(field => {
+        if (formData[field.name]) {
+          customFields[field.name] = formData[field.name]
+        }
       })
 
+      const entryData = {
+        entity_code: formData.entity_code || formData.entity_id,
+        period_code: formData.period_code || formData.period_id,
+        period_date: formData.transaction_date,
+        account_code: formData.account_code || formData.account_id,
+        amount: parseFloat(formData.amount) || 0,
+        currency: formData.currency_code || 'USD',
+        description: formData.description,
+        origin: 'web_input',
+        custom_fields: customFields
+      }
+
+      // Add type-specific fields
+      if (activeCard === 'ic_amounts') {
+        entryData.counterparty_entity_code = formData.to_entity_id
+        entryData.ic_reason = formData.transaction_type
+      } else if (activeCard === 'other_amounts') {
+        entryData.adjustment_type = formData.adjustment_type
+      }
+
+      const response = await fetch(
+        `/api/financial-process/processes/${processId}/data-input/${activeCard}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify(entryData)
+        }
+      )
+
       if (response.ok) {
-        showNotification('Entry saved successfully', 'success')
+        showToast('Entry saved successfully!', 'success')
         setShowManualEntry(false)
         resetForm()
-        fetchEntries() // Refresh the list
+        fetchEntries()
       } else {
-        const errorText = await response.text()
-        throw new Error(errorText || 'Failed to save entry')
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to save entry')
       }
     } catch (error) {
       console.error('Error saving entry:', error)
-      showNotification(error.message || 'Failed to save entry', 'error')
+      showToast(error.message || 'Failed to save entry', 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -242,8 +269,76 @@ const DataInput = () => {
       fx_rate: '',
       transaction_type: '',
       reference_id: '',
-      adjustment_type: ''
+      adjustment_type: '',
+      custom_transaction_type: ''
     })
+  }
+
+  const fileInputRef = useRef(null)
+
+  // Export functionality
+  const handleExport = async (cardType) => {
+    try {
+      const response = await fetch(`/api/data-input/export/${cardType}?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = url
+        a.download = `${cardType}_data_${new Date().toISOString().split('T')[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        showToast('Data exported successfully', 'success')
+      } else {
+        throw new Error('Export failed')
+      }
+    } catch (error) {
+      console.error('Export error:', error)
+      showToast('Export failed', 'error')
+    }
+  }
+
+  // Import functionality
+  const handleImport = async (event, cardType) => {
+    const file = event.target.files[0]
+    if (!file) return
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('card_type', cardType)
+    
+    try {
+      const response = await fetch(`/api/data-input/import?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        showToast(`Import completed: ${result.imported} records imported, ${result.updated} updated`, 'success')
+        // Refresh data here if needed
+      } else {
+        const error = await response.json()
+        throw new Error(error.detail || 'Import failed')
+      }
+    } catch (error) {
+      console.error('Import error:', error)
+      showToast(`Import failed: ${error.message}`, 'error')
+    } finally {
+      // Reset file input
+      event.target.value = ''
+    }
   }
 
   // Card configuration
@@ -303,9 +398,26 @@ const DataInput = () => {
               <Plus className="h-4 w-4" />
               Add Entry
             </button>
-            <button className="btn-secondary inline-flex items-center gap-2">
+            <button 
+              onClick={() => handleExport(activeCard)}
+              className="btn-secondary inline-flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => handleImport(e, activeCard)}
+              accept=".csv"
+              style={{ display: 'none' }}
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-secondary inline-flex items-center gap-2"
+            >
               <Upload className="h-4 w-4" />
-              Upload CSV
+              Import
             </button>
           </div>
         </div>
@@ -326,8 +438,8 @@ const DataInput = () => {
                 )}
                 {activeCard === 'ic_amounts' && (
                   <>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">From Entity</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">To Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Counterparty</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Amount</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
                   </>
@@ -477,7 +589,7 @@ const DataInput = () => {
                       <option value="">Select Entity</option>
                       {entities.map(entity => (
                         <option key={entity.id} value={entity.id}>
-                          {entity.name} ({entity.code})
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
                         </option>
                       ))}
                     </select>
@@ -485,20 +597,16 @@ const DataInput = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Period *
+                      Transaction Date *
                     </label>
-                    <select
-                      value={formData.period_id}
-                      onChange={(e) => setFormData({...formData, period_id: e.target.value})}
+                    <input
+                      type="date"
+                      value={formData.transaction_date}
+                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    >
-                      <option value="">Select Period</option>
-                      {periods.map(period => (
-                        <option key={period.id} value={period.id}>
-                          {period.period_name} ({period.period_code})
-                        </option>
-                      ))}
-                    </select>
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Year and period will be automatically calculated</p>
                   </div>
 
                   <div>
@@ -513,7 +621,7 @@ const DataInput = () => {
                       <option value="">Select Account</option>
                       {accounts.map(account => (
                         <option key={account.id} value={account.id}>
-                          {account.account_name} ({account.account_code})
+                          {account.account_code} - {account.account_name}
                         </option>
                       ))}
                     </select>
@@ -537,30 +645,17 @@ const DataInput = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Currency *
                     </label>
-                    <select
-                      value={formData.currency_code}
-                      onChange={(e) => setFormData({...formData, currency_code: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                      <option value="JPY">JPY</option>
-                      <option value="CAD">CAD</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Transaction Date
-                    </label>
                     <input
-                      type="date"
-                      value={formData.transaction_date}
-                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
+                      type="text"
+                      value={formData.currency_code || ''}
+                      onChange={(e) => setFormData({...formData, currency_code: e.target.value.toUpperCase()})}
+                      placeholder="USD, EUR, GBP, etc."
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      maxLength={3}
+                      required
                     />
                   </div>
+
                 </div>
 
                 <div>
@@ -583,7 +678,7 @@ const DataInput = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      From Entity *
+                      Entity *
                     </label>
                     <select
                       value={formData.from_entity_id}
@@ -593,7 +688,7 @@ const DataInput = () => {
                       <option value="">Select From Entity</option>
                       {entities.map(entity => (
                         <option key={entity.id} value={entity.id}>
-                          {entity.name} ({entity.code})
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
                         </option>
                       ))}
                     </select>
@@ -601,7 +696,7 @@ const DataInput = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      To Entity *
+                      Counterparty *
                     </label>
                     <select
                       value={formData.to_entity_id}
@@ -611,7 +706,7 @@ const DataInput = () => {
                       <option value="">Select To Entity</option>
                       {entities.map(entity => (
                         <option key={entity.id} value={entity.id}>
-                          {entity.name} ({entity.code})
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
                         </option>
                       ))}
                     </select>
@@ -619,7 +714,7 @@ const DataInput = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      From Account *
+                      Account *
                     </label>
                     <select
                       value={formData.from_account_id}
@@ -629,7 +724,7 @@ const DataInput = () => {
                       <option value="">Select From Account</option>
                       {accounts.map(account => (
                         <option key={account.id} value={account.id}>
-                          {account.account_name} ({account.account_code})
+                          {account.account_code} - {account.account_name}
                         </option>
                       ))}
                     </select>
@@ -637,7 +732,7 @@ const DataInput = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      To Account *
+                      Counterparty Account *
                     </label>
                     <select
                       value={formData.to_account_id}
@@ -647,7 +742,7 @@ const DataInput = () => {
                       <option value="">Select To Account</option>
                       {accounts.map(account => (
                         <option key={account.id} value={account.id}>
-                          {account.account_name} ({account.account_code})
+                          {account.account_code} - {account.account_name}
                         </option>
                       ))}
                     </select>
@@ -677,13 +772,40 @@ const DataInput = () => {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select Type</option>
-                      <option value="sale">Sale</option>
-                      <option value="purchase">Purchase</option>
-                      <option value="loan">Loan</option>
-                      <option value="service">Service</option>
-                      <option value="cost_allocation">Cost Allocation</option>
+                      <option value="sale_goods">Sale of goods or inventory</option>
+                      <option value="provision_services">Provision of services (shared services)</option>
+                      <option value="licences_royalties">Licences / Royalties / IP transfers</option>
+                      <option value="loans_advances">Loans / Advances / Finance charges</option>
+                      <option value="dividends">Dividends / Capital distributions</option>
+                      <option value="asset_transfers">Asset transfers (fixed assets, inter-company disposals)</option>
+                      <option value="cost_allocations">Cost allocations / cost recharges</option>
+                      <option value="clearing_settlement">Intercompany clearing/settlement of bank/cash flows</option>
+                      <option value="inventory_unrealised">Intercompany inventory transfers with unrealised profit</option>
+                      <option value="investment_equity">Inter-entity investment or equity transactions</option>
+                      <option value="service_reimbursement">Service fee reimbursement / cost sharing</option>
+                      <option value="lease_rental">Intercompany lease / rental transactions</option>
+                      <option value="upstream_downstream">Upstream/downstream asset or equity flows</option>
+                      <option value="lateral">Lateral transactions</option>
+                      <option value="other">Other</option>
                     </select>
                   </div>
+                  
+                  {/* Show custom field when 'Other' is selected */}
+                  {formData.transaction_type === 'other' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Specify Transaction Type *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.custom_transaction_type || ''}
+                        onChange={(e) => setFormData({...formData, custom_transaction_type: e.target.value})}
+                        placeholder="Enter custom transaction type"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -691,64 +813,42 @@ const DataInput = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Currency
                     </label>
-                    <select
-                      value={formData.currency_code}
-                      onChange={(e) => setFormData({...formData, currency_code: e.target.value})}
+                    <input
+                      type="text"
+                      value={formData.currency_code || ''}
+                      onChange={(e) => setFormData({...formData, currency_code: e.target.value.toUpperCase()})}
+                      placeholder="USD, EUR, GBP, etc."
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                      <option value="JPY">JPY</option>
-                    </select>
+                      maxLength={3}
+                    />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      FX Rate
+                      Transaction Date *
                     </label>
                     <input
-                      type="number"
-                      step="0.000001"
-                      value={formData.fx_rate}
-                      onChange={(e) => setFormData({...formData, fx_rate: e.target.value})}
-                      placeholder="1.0"
+                      type="date"
+                      value={formData.transaction_date}
+                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      required
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Reference ID
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.reference_id}
-                      onChange={(e) => setFormData({...formData, reference_id: e.target.value})}
-                      placeholder="Invoice or reference number"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Period
-                    </label>
-                    <select
-                      value={formData.period_id}
-                      onChange={(e) => setFormData({...formData, period_id: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    >
-                      <option value="">Select Period</option>
-                      {periods.map(period => (
-                        <option key={period.id} value={period.id}>
-                          {period.period_name} ({period.period_code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Reference ID
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.reference_id}
+                    onChange={(e) => setFormData({...formData, reference_id: e.target.value})}
+                    placeholder="Invoice or reference number"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Year and period will be automatically calculated from transaction date</p>
                 </div>
 
                 <div>
@@ -781,7 +881,7 @@ const DataInput = () => {
                       <option value="">Select Entity (or leave blank for Global)</option>
                       {entities.map(entity => (
                         <option key={entity.id} value={entity.id}>
-                          {entity.name} ({entity.code})
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
                         </option>
                       ))}
                     </select>
@@ -789,20 +889,16 @@ const DataInput = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Period *
+                      Transaction Date *
                     </label>
-                    <select
-                      value={formData.period_id}
-                      onChange={(e) => setFormData({...formData, period_id: e.target.value})}
+                    <input
+                      type="date"
+                      value={formData.transaction_date}
+                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    >
-                      <option value="">Select Period</option>
-                      {periods.map(period => (
-                        <option key={period.id} value={period.id}>
-                          {period.period_name} ({period.period_code})
-                        </option>
-                      ))}
-                    </select>
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Year and period will be automatically calculated</p>
                   </div>
 
                   <div>
@@ -817,7 +913,7 @@ const DataInput = () => {
                       <option value="">Select Account</option>
                       {accounts.map(account => (
                         <option key={account.id} value={account.id}>
-                          {account.account_name} ({account.account_code})
+                          {account.account_code} - {account.account_name}
                         </option>
                       ))}
                     </select>
@@ -858,16 +954,14 @@ const DataInput = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Currency
                     </label>
-                    <select
-                      value={formData.currency_code}
-                      onChange={(e) => setFormData({...formData, currency_code: e.target.value})}
+                    <input
+                      type="text"
+                      value={formData.currency_code || ''}
+                      onChange={(e) => setFormData({...formData, currency_code: e.target.value.toUpperCase()})}
+                      placeholder="USD, EUR, GBP, etc."
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
-                    >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                      <option value="JPY">JPY</option>
-                    </select>
+                      maxLength={3}
+                    />
                   </div>
                 </div>
 
@@ -925,18 +1019,15 @@ const DataInput = () => {
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  Data Input - {processName}
+                  {processName}
                 </h1>
                 <div className="flex items-center gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
                   <span className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />{yearName}
+                    <Building2 className="h-4 w-4" />
+                    {selectedCompany || 'No Company'}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <FileSpreadsheet className="h-4 w-4" />{scenarioName}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Building2 className="h-4 w-4" />{selectedCompany || 'No Company'}
-                  </span>
+                  <span className="text-gray-400">•</span>
+                  <span>Process Data Input</span>
                 </div>
               </div>
             </div>

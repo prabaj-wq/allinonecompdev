@@ -186,6 +186,86 @@ def ensure_financial_tables(conn):
         ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()
     """)
 
+    # Create entity_amounts table for data input
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS entity_amounts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            entity_code VARCHAR(100) NOT NULL,
+            period_code VARCHAR(50) NOT NULL,
+            period_date DATE,
+            account_code VARCHAR(100) NOT NULL,
+            amount DECIMAL(18, 2) NOT NULL,
+            currency VARCHAR(3) DEFAULT 'USD',
+            scenario_code VARCHAR(100),
+            description TEXT,
+            origin VARCHAR(50) DEFAULT 'web_input',
+            custom_fields JSONB DEFAULT '{}',
+            created_by VARCHAR(100),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # Create ic_amounts table (Intercompany amounts with counterparty)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ic_amounts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            entity_code VARCHAR(100) NOT NULL,
+            counterparty_entity_code VARCHAR(100) NOT NULL,
+            period_code VARCHAR(50) NOT NULL,
+            period_date DATE,
+            account_code VARCHAR(100) NOT NULL,
+            amount DECIMAL(18, 2) NOT NULL,
+            currency VARCHAR(3) DEFAULT 'USD',
+            scenario_code VARCHAR(100),
+            description TEXT,
+            ic_reason VARCHAR(200),
+            origin VARCHAR(50) DEFAULT 'web_input',
+            custom_fields JSONB DEFAULT '{}',
+            created_by VARCHAR(100),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # Create other_amounts table (Manual adjustments, reclassifications)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS other_amounts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            entity_code VARCHAR(100),
+            period_code VARCHAR(50) NOT NULL,
+            period_date DATE,
+            account_code VARCHAR(100) NOT NULL,
+            amount DECIMAL(18, 2) NOT NULL,
+            currency VARCHAR(3) DEFAULT 'USD',
+            scenario_code VARCHAR(100),
+            description TEXT,
+            adjustment_type VARCHAR(100),
+            origin VARCHAR(50) DEFAULT 'web_input',
+            custom_fields JSONB DEFAULT '{}',
+            created_by VARCHAR(100),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # Add indexes for better query performance
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_entity_amounts_process 
+        ON entity_amounts(process_id, entity_code, period_code)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_ic_amounts_process 
+        ON ic_amounts(process_id, entity_code, counterparty_entity_code, period_code)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_other_amounts_process 
+        ON other_amounts(process_id, period_code)
+    """)
+
     conn.commit()
 
 def ensure_tables_via_sqlalchemy(company_name: str):
@@ -1217,6 +1297,138 @@ async def get_execution_history(
         raise HTTPException(status_code=500, detail=f"Error fetching execution history: {str(e)}")
 
 # ============================================================================
+# ============================================================================
+# DATA INPUT MANAGEMENT
+# ============================================================================
+
+@router.post("/processes/{process_id}/data-input/{data_type}")
+async def create_data_input(
+    process_id: str,
+    data_type: str,  # 'entity_amounts', 'ic_amounts', or 'other_amounts'
+    data: dict = Body(...),
+    company_name: str = Query(...)
+):
+    """Create a new data input entry (entity amounts, IC amounts, or other amounts)"""
+    try:
+        print(f"💾 Creating {data_type} entry for process {process_id}")
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            entry_id = str(uuid.uuid4())
+            
+            if data_type == 'entity_amounts':
+                cur.execute("""
+                    INSERT INTO entity_amounts 
+                    (id, process_id, entity_code, period_code, period_date, account_code, 
+                     amount, currency, scenario_code, description, origin, custom_fields, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *
+                """, (
+                    entry_id, process_id, data.get('entity_code'), data.get('period_code'),
+                    data.get('period_date'), data.get('account_code'), data.get('amount'),
+                    data.get('currency', 'USD'), data.get('scenario_code'), data.get('description'),
+                    data.get('origin', 'web_input'), json.dumps(data.get('custom_fields', {})),
+                    data.get('created_by')
+                ))
+            
+            elif data_type == 'ic_amounts':
+                cur.execute("""
+                    INSERT INTO ic_amounts 
+                    (id, process_id, entity_code, counterparty_entity_code, period_code, period_date, 
+                     account_code, amount, currency, scenario_code, description, ic_reason, origin, custom_fields, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *
+                """, (
+                    entry_id, process_id, data.get('entity_code'), data.get('counterparty_entity_code'),
+                    data.get('period_code'), data.get('period_date'), data.get('account_code'),
+                    data.get('amount'), data.get('currency', 'USD'), data.get('scenario_code'),
+                    data.get('description'), data.get('ic_reason'), data.get('origin', 'web_input'),
+                    json.dumps(data.get('custom_fields', {})), data.get('created_by')
+                ))
+            
+            elif data_type == 'other_amounts':
+                cur.execute("""
+                    INSERT INTO other_amounts 
+                    (id, process_id, entity_code, period_code, period_date, account_code, 
+                     amount, currency, scenario_code, description, adjustment_type, origin, custom_fields, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING *
+                """, (
+                    entry_id, process_id, data.get('entity_code'), data.get('period_code'),
+                    data.get('period_date'), data.get('account_code'), data.get('amount'),
+                    data.get('currency', 'USD'), data.get('scenario_code'), data.get('description'),
+                    data.get('adjustment_type'), data.get('origin', 'web_input'),
+                    json.dumps(data.get('custom_fields', {})), data.get('created_by')
+                ))
+            else:
+                raise HTTPException(status_code=400, detail=f"Invalid data_type: {data_type}")
+            
+            result = cur.fetchone()
+            conn.commit()
+            print(f"✅ Created {data_type} entry: {result['id']}")
+            return result
+            
+    except Exception as e:
+        print(f"❌ Error creating {data_type}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error creating data input: {str(e)}")
+
+@router.get("/processes/{process_id}/data-input/{data_type}")
+async def get_data_input(
+    process_id: str,
+    data_type: str,
+    company_name: str = Query(...)
+):
+    """Get all data input entries for a specific type"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            table_name = data_type  # entity_amounts, ic_amounts, or other_amounts
+            cur.execute(f"""
+                SELECT * FROM {table_name}
+                WHERE process_id = %s
+                ORDER BY created_at DESC
+            """, (process_id,))
+            
+            entries = cur.fetchall()
+            return {"entries": entries}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching data input: {str(e)}")
+
+@router.delete("/processes/{process_id}/data-input/{data_type}/{entry_id}")
+async def delete_data_input(
+    process_id: str,
+    data_type: str,
+    entry_id: str,
+    company_name: str = Query(...)
+):
+    """Delete a data input entry"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor()
+            
+            table_name = data_type
+            cur.execute(f"""
+                DELETE FROM {table_name}
+                WHERE id = %s AND process_id = %s
+                RETURNING id
+            """, (entry_id, process_id))
+            
+            result = cur.fetchone()
+            conn.commit()
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            
+            return {"message": "Entry deleted successfully"}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting entry: {str(e)}")
+
+# ============================================================================
 # PROCESS CONFIGURATION MANAGEMENT
 # ============================================================================
 
@@ -1267,11 +1479,12 @@ async def get_process_configuration(
 async def save_process_configuration(
     process_id: str,
     configuration: dict = Body(...),
-    company_name: str = Query(...),
-    current_user = Depends(get_current_active_user)
+    company_name: str = Query(...)
 ):
     """Save process configuration including workflow nodes, settings, and fiscal parameters"""
     try:
+        print(f"💾 PUT /processes/{process_id}/configuration called")
+        print(f"📊 Configuration data: {json.dumps(configuration, indent=2)}")
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             
