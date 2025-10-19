@@ -1,101 +1,180 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, JSON, ForeignKey, Text
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import pandas as pd
 import io
 import json
-from ..database import get_company_db_engine
-from ..auth.dependencies import get_current_user
+import psycopg2
+import psycopg2.extras
+import os
+from contextlib import contextmanager
+from auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/data-input", tags=["data-input"])
-Base = declarative_base()
 
-# Database Models for Data Input
-class DataInputCustomField(Base):
-    __tablename__ = "data_input_custom_fields"
+# Database configuration
+def get_db_config():
+    """Get database configuration from environment variables"""
+    return {
+        'host': os.getenv('POSTGRES_HOST', 'postgres'),
+        'port': int(os.getenv('POSTGRES_PORT', 5432)),
+        'user': os.getenv('POSTGRES_USER', 'root'),
+        'password': os.getenv('POSTGRES_PASSWORD', 'root@123')
+    }
+
+def get_company_db_name(company_name: str) -> str:
+    """Convert company name to database name"""
+    return company_name.lower().replace(' ', '_').replace('-', '_')
+
+@contextmanager
+def get_company_connection(company_name: str):
+    """Get database connection for specific company"""
+    db_config = get_db_config()
+    company_db_name = get_company_db_name(company_name)
     
-    id = Column(Integer, primary_key=True, index=True)
-    card_type = Column(String(50), nullable=False)  # entity_amounts, ic_amounts, other_amounts
-    field_name = Column(String(100), nullable=False)
-    field_type = Column(String(20), nullable=False)  # text, number, date, dropdown, checkbox
-    is_required = Column(Boolean, default=False)
-    options = Column(Text, nullable=True)  # For dropdown options
-    created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(String(100))
+    conn = None
+    try:
+        # First, connect to postgres database to check/create company database
+        conn = psycopg2.connect(
+            host=db_config['host'],
+            port=db_config['port'],
+            user=db_config['user'],
+            password=db_config['password'],
+            database='postgres'
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        # Check if database exists
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (company_db_name,))
+        exists = cur.fetchone()
+        
+        if not exists:
+            cur.execute(f'CREATE DATABASE "{company_db_name}"')
+        
+        cur.close()
+        conn.close()
+        
+        # Connect to company database
+        conn = psycopg2.connect(
+            host=db_config['host'],
+            port=db_config['port'],
+            user=db_config['user'],
+            password=db_config['password'],
+            database=company_db_name
+        )
+        
+        yield conn
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
 
-class EntityAmount(Base):
-    __tablename__ = "entity_amounts"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    process_id = Column(Integer, nullable=False, index=True)
-    scenario_id = Column(Integer, nullable=False, index=True)
-    year_id = Column(Integer, nullable=False, index=True)
-    period_id = Column(Integer, nullable=False, index=True)
-    entity_id = Column(Integer, nullable=False, index=True)
-    account_id = Column(Integer, nullable=False, index=True)
-    amount = Column(Float, nullable=False)
-    currency = Column(String(10), default='USD')
-    description = Column(Text, nullable=True)
-    custom_fields = Column(JSON, nullable=True)
-    origin = Column(String(100), nullable=False)  # manual_input, csv_upload, excel_upload
-    upload_version = Column(Integer, default=1)
-    status = Column(String(20), default='pending')  # pending, validated, error
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(String(100))
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class ICAmount(Base):
-    __tablename__ = "ic_amounts"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    process_id = Column(Integer, nullable=False, index=True)
-    scenario_id = Column(Integer, nullable=False, index=True)
-    year_id = Column(Integer, nullable=False, index=True)
-    period_id = Column(Integer, nullable=False, index=True)
-    from_entity_id = Column(Integer, nullable=False, index=True)
-    to_entity_id = Column(Integer, nullable=False, index=True)
-    account_id = Column(Integer, nullable=False, index=True)
-    amount = Column(Float, nullable=False)
-    currency = Column(String(10), default='USD')
-    description = Column(Text, nullable=True)
-    custom_fields = Column(JSON, nullable=True)
-    origin = Column(String(100), nullable=False)
-    upload_version = Column(Integer, default=1)
-    status = Column(String(20), default='pending')
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(String(100))
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class OtherAmount(Base):
-    __tablename__ = "other_amounts"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    process_id = Column(Integer, nullable=False, index=True)
-    scenario_id = Column(Integer, nullable=False, index=True)
-    year_id = Column(Integer, nullable=False, index=True)
-    period_id = Column(Integer, nullable=False, index=True)
-    entity_id = Column(Integer, nullable=True, index=True)
-    account_id = Column(Integer, nullable=True, index=True)
-    amount = Column(Float, nullable=False)
-    currency = Column(String(10), default='USD')
-    description = Column(Text, nullable=True)
-    custom_fields = Column(JSON, nullable=True)
-    origin = Column(String(100), nullable=False)
-    upload_version = Column(Integer, default=1)
-    status = Column(String(20), default='pending')
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(String(100))
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-def create_tables_if_not_exist(engine):
+def create_tables_if_not_exist(company_name: str):
     """Create tables in the company database if they don't exist"""
-    Base.metadata.create_all(bind=engine)
+    with get_company_connection(company_name) as conn:
+        cur = conn.cursor()
+        
+        # Create custom fields table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS data_input_custom_fields (
+                id SERIAL PRIMARY KEY,
+                card_type VARCHAR(50) NOT NULL,
+                field_name VARCHAR(100) NOT NULL,
+                field_type VARCHAR(20) NOT NULL,
+                is_required BOOLEAN DEFAULT FALSE,
+                options TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100)
+            )
+        """)
+        
+        # Create entity_amounts table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS entity_amounts (
+                id SERIAL PRIMARY KEY,
+                process_id INTEGER NOT NULL,
+                scenario_id INTEGER NOT NULL,
+                year_id INTEGER NOT NULL,
+                period_id INTEGER NOT NULL,
+                entity_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                amount FLOAT NOT NULL,
+                currency VARCHAR(10) DEFAULT 'USD',
+                description TEXT,
+                custom_fields JSONB,
+                origin VARCHAR(100) NOT NULL,
+                upload_version INTEGER DEFAULT 1,
+                status VARCHAR(20) DEFAULT 'pending',
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create ic_amounts table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS ic_amounts (
+                id SERIAL PRIMARY KEY,
+                process_id INTEGER NOT NULL,
+                scenario_id INTEGER NOT NULL,
+                year_id INTEGER NOT NULL,
+                period_id INTEGER NOT NULL,
+                from_entity_id INTEGER NOT NULL,
+                to_entity_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                amount FLOAT NOT NULL,
+                currency VARCHAR(10) DEFAULT 'USD',
+                description TEXT,
+                custom_fields JSONB,
+                origin VARCHAR(100) NOT NULL,
+                upload_version INTEGER DEFAULT 1,
+                status VARCHAR(20) DEFAULT 'pending',
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create other_amounts table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS other_amounts (
+                id SERIAL PRIMARY KEY,
+                process_id INTEGER NOT NULL,
+                scenario_id INTEGER NOT NULL,
+                year_id INTEGER NOT NULL,
+                period_id INTEGER NOT NULL,
+                entity_id INTEGER,
+                account_id INTEGER,
+                amount FLOAT NOT NULL,
+                currency VARCHAR(10) DEFAULT 'USD',
+                description TEXT,
+                custom_fields JSONB,
+                origin VARCHAR(100) NOT NULL,
+                upload_version INTEGER DEFAULT 1,
+                status VARCHAR(20) DEFAULT 'pending',
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create indexes
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_entity_amounts_process ON entity_amounts(process_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_entity_amounts_scenario ON entity_amounts(scenario_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ic_amounts_process ON ic_amounts(process_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ic_amounts_scenario ON ic_amounts(scenario_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_other_amounts_process ON other_amounts(process_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_other_amounts_scenario ON other_amounts(scenario_id)")
+        
+        conn.commit()
 
 # Custom Fields Endpoints
 @router.get("/custom-fields/{card_type}")
@@ -106,14 +185,15 @@ async def get_custom_fields(
 ):
     """Get custom fields for a specific card type"""
     try:
-        engine = get_company_db_engine(company_name)
-        create_tables_if_not_exist(engine)
+        create_tables_if_not_exist(company_name)
         
-        with engine.connect() as conn:
-            result = conn.execute(
-                f"SELECT * FROM data_input_custom_fields WHERE card_type = '{card_type}' ORDER BY created_at"
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(
+                "SELECT * FROM data_input_custom_fields WHERE card_type = %s ORDER BY created_at",
+                (card_type,)
             )
-            fields = [dict(row._mapping) for row in result]
+            fields = cur.fetchall()
             
         return {"fields": fields}
     except Exception as e:
@@ -128,16 +208,17 @@ async def create_custom_field(
 ):
     """Create a new custom field"""
     try:
-        engine = get_company_db_engine(company_name)
-        create_tables_if_not_exist(engine)
+        create_tables_if_not_exist(company_name)
         
-        with engine.connect() as conn:
-            conn.execute(
-                f"""INSERT INTO data_input_custom_fields 
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """INSERT INTO data_input_custom_fields 
                 (card_type, field_name, field_type, is_required, options, created_by, created_at)
-                VALUES ('{card_type}', '{field_data['field_name']}', '{field_data['field_type']}', 
-                {field_data.get('is_required', False)}, '{field_data.get('options', '')}', 
-                '{current_user.get('username', 'system')}', '{datetime.utcnow()}')"""
+                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (card_type, field_data['field_name'], field_data['field_type'], 
+                 field_data.get('is_required', False), field_data.get('options', ''), 
+                 current_user.get('username', 'system'), datetime.utcnow())
             )
             conn.commit()
             
@@ -154,10 +235,9 @@ async def delete_custom_field(
 ):
     """Delete a custom field"""
     try:
-        engine = get_company_db_engine(company_name)
-        
-        with engine.connect() as conn:
-            conn.execute(f"DELETE FROM data_input_custom_fields WHERE id = {field_id}")
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM data_input_custom_fields WHERE id = %s", (field_id,))
             conn.commit()
             
         return {"message": "Custom field deleted successfully"}
@@ -175,8 +255,7 @@ async def get_card_status(
 ):
     """Get status for a specific card"""
     try:
-        engine = get_company_db_engine(company_name)
-        create_tables_if_not_exist(engine)
+        create_tables_if_not_exist(company_name)
         
         table_map = {
             'entity_amounts': 'entity_amounts',
@@ -188,30 +267,36 @@ async def get_card_status(
         if not table_name:
             return {"rows": 0, "validated": 0, "errors": 0, "lastUpload": None}
         
-        with engine.connect() as conn:
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            
             # Get total rows
-            result = conn.execute(
-                f"SELECT COUNT(*) as count FROM {table_name} WHERE process_id = {process_id} AND scenario_id = {scenario_id}"
+            cur.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE process_id = %s AND scenario_id = %s",
+                (process_id, scenario_id)
             )
-            total_rows = result.scalar() or 0
+            total_rows = cur.fetchone()[0] or 0
             
             # Get validated rows
-            result = conn.execute(
-                f"SELECT COUNT(*) as count FROM {table_name} WHERE process_id = {process_id} AND scenario_id = {scenario_id} AND status = 'validated'"
+            cur.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE process_id = %s AND scenario_id = %s AND status = 'validated'",
+                (process_id, scenario_id)
             )
-            validated_rows = result.scalar() or 0
+            validated_rows = cur.fetchone()[0] or 0
             
             # Get error rows
-            result = conn.execute(
-                f"SELECT COUNT(*) as count FROM {table_name} WHERE process_id = {process_id} AND scenario_id = {scenario_id} AND status = 'error'"
+            cur.execute(
+                f"SELECT COUNT(*) FROM {table_name} WHERE process_id = %s AND scenario_id = %s AND status = 'error'",
+                (process_id, scenario_id)
             )
-            error_rows = result.scalar() or 0
+            error_rows = cur.fetchone()[0] or 0
             
             # Get last upload time
-            result = conn.execute(
-                f"SELECT MAX(created_at) as last_upload FROM {table_name} WHERE process_id = {process_id} AND scenario_id = {scenario_id}"
+            cur.execute(
+                f"SELECT MAX(created_at) FROM {table_name} WHERE process_id = %s AND scenario_id = %s",
+                (process_id, scenario_id)
             )
-            last_upload = result.scalar()
+            last_upload = cur.fetchone()[0]
             
         return {
             "rows": total_rows,
@@ -237,8 +322,7 @@ async def upload_data(
 ):
     """Upload CSV/Excel file for data input"""
     try:
-        engine = get_company_db_engine(company_name)
-        create_tables_if_not_exist(engine)
+        create_tables_if_not_exist(company_name)
         
         # Read file
         contents = await file.read()
@@ -252,24 +336,26 @@ async def upload_data(
         
         # Process and insert rows
         table_map = {
-            'entity_amounts': EntityAmount,
-            'ic_amounts': ICAmount,
-            'other_amounts': OtherAmount
+            'entity_amounts': 'entity_amounts',
+            'ic_amounts': 'ic_amounts',
+            'other_amounts': 'other_amounts'
         }
         
-        table_class = table_map.get(card_type)
-        if not table_class:
+        table_name = table_map.get(card_type)
+        if not table_name:
             raise HTTPException(status_code=400, detail="Invalid card type")
         
         rows_inserted = 0
-        with engine.connect() as conn:
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
             for _, row in df.iterrows():
                 try:
-                    # Insert row (simplified - you'd want validation here)
+                    # Insert row (simplified - add proper column mapping based on card type)
                     rows_inserted += 1
                 except Exception as row_error:
                     print(f"Error inserting row: {row_error}")
                     continue
+            conn.commit()
         
         return {"message": "Upload successful", "rows_inserted": rows_inserted}
     except Exception as e:
@@ -285,10 +371,13 @@ async def create_manual_entry(
 ):
     """Create a manual entry"""
     try:
-        engine = get_company_db_engine(company_name)
-        create_tables_if_not_exist(engine)
+        create_tables_if_not_exist(company_name)
         
-        # Insert entry (simplified)
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            # Insert entry (simplified - add proper INSERT based on card type)
+            conn.commit()
+            
         return {"message": "Entry created successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
