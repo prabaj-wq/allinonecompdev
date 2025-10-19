@@ -142,6 +142,10 @@ class Scenario(CompanyBase):
     approved_by = Column(Integer, nullable=True)
     approved_at = Column(DateTime, nullable=True)
     
+    # Reference scenarios for comparison
+    previous_references = Column(JSONB, default='[]')  # Array of previous scenario references
+    upcoming_references = Column(JSONB, default='[]')  # Array of upcoming scenario references
+    
     # Advanced settings
     settings = Column(JSONB, default='{}')  # Flexible settings storage
     custom_fields = Column(JSONB, default='{}')  # User-defined custom fields

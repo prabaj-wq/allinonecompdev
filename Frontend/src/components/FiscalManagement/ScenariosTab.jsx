@@ -402,26 +402,19 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
   const [settings, setSettings] = useState(scenario.settings || {})
   const [allScenarios, setAllScenarios] = useState([])
   const [allFiscalYears, setAllFiscalYears] = useState([])
-  const [previousOffsets, setPreviousOffsets] = useState(Array.isArray(scenario.previous_scenario_offsets) ? scenario.previous_scenario_offsets : [])
-  const [nextOffsets, setNextOffsets] = useState(Array.isArray(scenario.next_scenario_offsets) ? scenario.next_scenario_offsets : [])
-  const [selectedRefScenarioId, setSelectedRefScenarioId] = useState('')
+  const [previousReferences, setPreviousReferences] = useState(scenario.previous_references || [])
+  const [upcomingReferences, setUpcomingReferences] = useState(scenario.upcoming_references || [])
+  const [referenceDirection, setReferenceDirection] = useState('previous')
   const [selectedRefFiscalYearId, setSelectedRefFiscalYearId] = useState('')
+  const [selectedRefScenarioId, setSelectedRefScenarioId] = useState('')
+  const [availableScenariosForYear, setAvailableScenariosForYear] = useState([])
   const [saving, setSaving] = useState(false)
 
-  // Fetch all scenarios and fiscal years for reference
+  // Fetch all fiscal years for reference
   useEffect(() => {
     const fetchReferenceData = async () => {
-      if (!selectedCompany || !year.id) return
+      if (!selectedCompany) return
       try {
-        // Fetch scenarios from current fiscal year
-        const scenariosResponse = await fetch(`/api/fiscal-management/fiscal-years/${year.id}/scenarios`, {
-          headers: { 'X-Company-Database': selectedCompany }
-        })
-        if (scenariosResponse.ok) {
-          const scenariosData = await scenariosResponse.json()
-          setAllScenarios(scenariosData.scenarios || [])
-        }
-        
         // Fetch all fiscal years for cross-year references
         const fiscalYearsResponse = await fetch(`/api/fiscal-management/fiscal-years`, {
           headers: { 'X-Company-Database': selectedCompany }
@@ -435,56 +428,81 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
       }
     }
     fetchReferenceData()
-  }, [selectedCompany, year.id])
+  }, [selectedCompany])
+
+  // Fetch scenarios when fiscal year is selected
+  useEffect(() => {
+    const fetchScenariosForYear = async () => {
+      if (!selectedCompany || !selectedRefFiscalYearId) {
+        setAvailableScenariosForYear([])
+        return
+      }
+      
+      try {
+        const scenariosResponse = await fetch(`/api/fiscal-management/fiscal-years/${selectedRefFiscalYearId}/scenarios`, {
+          headers: { 'X-Company-Database': selectedCompany }
+        })
+        if (scenariosResponse.ok) {
+          const scenariosData = await scenariosResponse.json()
+          setAvailableScenariosForYear(scenariosData.scenarios || [])
+        }
+      } catch (error) {
+        console.error('Error fetching scenarios for year:', error)
+        setAvailableScenariosForYear([])
+      }
+    }
+    fetchScenariosForYear()
+  }, [selectedCompany, selectedRefFiscalYearId])
 
   const handleSettingChange = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }))
   }
 
-  const getScenarioOrder = () => {
-    return [...allScenarios].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  const generateReferenceCode = (direction, references) => {
+    const prefix = direction === 'previous' ? 'prevref' : 'upcomref'
+    let counter = 1
+    while (references.some(ref => ref.code === `${prefix}${counter}`)) {
+      counter++
+    }
+    return `${prefix}${counter}`
   }
 
-  const computeOffsetForScenario = (targetScenarioId) => {
-    const ordered = getScenarioOrder()
-    const currentIndex = ordered.findIndex((s) => s.id === scenario.id)
-    const targetIndex = ordered.findIndex((s) => s.id === Number(targetScenarioId))
-    if (currentIndex === -1 || targetIndex === -1) return 0
-    return targetIndex - currentIndex
-  }
-
-  const addReferenceByScenario = () => {
-    if (!selectedRefScenarioId && !selectedRefFiscalYearId) return
+  const addReference = () => {
+    if (!selectedRefFiscalYearId || !selectedRefScenarioId) return
     
-    let offset = 0
-    if (selectedRefFiscalYearId) {
-      // Calculate fiscal year offset
-      const currentFYIndex = allFiscalYears.findIndex(fy => fy.id === year.id)
-      const targetFYIndex = allFiscalYears.findIndex(fy => fy.id === Number(selectedRefFiscalYearId))
-      if (currentFYIndex !== -1 && targetFYIndex !== -1) {
-        offset = targetFYIndex - currentFYIndex
-      }
-    } else if (selectedRefScenarioId) {
-      // Calculate scenario offset within same fiscal year
-      offset = computeOffsetForScenario(selectedRefScenarioId)
+    const selectedFiscalYear = allFiscalYears.find(fy => fy.id === Number(selectedRefFiscalYearId))
+    const selectedScenario = availableScenariosForYear.find(s => s.id === Number(selectedRefScenarioId))
+    
+    if (!selectedFiscalYear || !selectedScenario) return
+    
+    const newReference = {
+      code: generateReferenceCode(referenceDirection, referenceDirection === 'previous' ? previousReferences : upcomingReferences),
+      fiscal_year_id: selectedFiscalYear.id,
+      fiscal_year_name: selectedFiscalYear.year_name,
+      fiscal_year_code: selectedFiscalYear.year_code,
+      scenario_id: selectedScenario.id,
+      scenario_name: selectedScenario.scenario_name,
+      scenario_code: selectedScenario.scenario_code,
+      direction: referenceDirection
     }
     
-    if (offset === 0) return
-    
-    if (offset < 0) {
-      const val = Math.abs(offset)
-      if (!previousOffsets.includes(val)) setPreviousOffsets([...previousOffsets, val].sort((a,b)=>a-b))
+    if (referenceDirection === 'previous') {
+      setPreviousReferences([...previousReferences, newReference])
     } else {
-      if (!nextOffsets.includes(offset)) setNextOffsets([...nextOffsets, offset].sort((a,b)=>a-b))
+      setUpcomingReferences([...upcomingReferences, newReference])
     }
     
-    setSelectedRefScenarioId('')
+    // Reset form
     setSelectedRefFiscalYearId('')
+    setSelectedRefScenarioId('')
   }
 
-  const removeOffset = (direction, value) => {
-    if (direction === 'previous') setPreviousOffsets(previousOffsets.filter(v => v !== value))
-    else setNextOffsets(nextOffsets.filter(v => v !== value))
+  const removeReference = (direction, code) => {
+    if (direction === 'previous') {
+      setPreviousReferences(previousReferences.filter(ref => ref.code !== code))
+    } else {
+      setUpcomingReferences(upcomingReferences.filter(ref => ref.code !== code))
+    }
   }
 
   const handleSaveSettings = async () => {
@@ -499,8 +517,8 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
         body: JSON.stringify({
           ...scenario,
           settings: settings,
-          previous_scenario_offsets: previousOffsets,
-          next_scenario_offsets: nextOffsets
+          previous_references: previousReferences,
+          upcoming_references: upcomingReferences
         })
       })
       if (response.ok) {
@@ -542,85 +560,123 @@ const ScenarioSettingsTab = ({ scenario, year, onUpdate }) => {
           </div>
 
           {settings.reference_scenarios_enabled && (
-            <div className="mt-4 space-y-4 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Fiscal Year</label>
-                  <select
-                    value={selectedRefFiscalYearId}
-                    onChange={(e) => setSelectedRefFiscalYearId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="">Select Fiscal Year</option>
-                    {allFiscalYears.filter(fy => fy.id !== year.id).map((fy) => (
-                      <option key={fy.id} value={fy.id}>
-                        {fy.year_name} ({fy.year_code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Scenario (Current Year)</label>
-                  <select
-                    value={selectedRefScenarioId}
-                    onChange={(e) => setSelectedRefScenarioId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="">Choose a scenario</option>
-                    {getScenarioOrder().filter(s => s.id !== scenario.id).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.scenario_name} ({s.scenario_code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={addReferenceByScenario}
-                    disabled={!selectedRefFiscalYearId && !selectedRefScenarioId}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Add Reference
-                  </button>
+            <div className="mt-4 space-y-6 pl-4 border-l-2 border-gray-200 dark:border-gray-700">
+              {/* Add Reference Form */}
+              <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Add New Reference</h5>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reference Direction</label>
+                    <select
+                      value={referenceDirection}
+                      onChange={(e) => setReferenceDirection(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-600 dark:text-white"
+                    >
+                      <option value="previous">Previous</option>
+                      <option value="upcoming">Upcoming/Future</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Fiscal Year</label>
+                    <select
+                      value={selectedRefFiscalYearId}
+                      onChange={(e) => {
+                        setSelectedRefFiscalYearId(e.target.value)
+                        setSelectedRefScenarioId('') // Reset scenario when year changes
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-600 dark:text-white"
+                    >
+                      <option value="">Select Fiscal Year</option>
+                      {allFiscalYears.filter(fy => fy.id !== year.id).map((fy) => (
+                        <option key={fy.id} value={fy.id}>
+                          {fy.year_name} ({fy.year_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Scenario</label>
+                    <select
+                      value={selectedRefScenarioId}
+                      onChange={(e) => setSelectedRefScenarioId(e.target.value)}
+                      disabled={!selectedRefFiscalYearId}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">Choose a scenario</option>
+                      {availableScenariosForYear.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.scenario_name} ({s.scenario_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={addReference}
+                      disabled={!selectedRefFiscalYearId || !selectedRefScenarioId}
+                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Add Reference
+                    </button>
+                  </div>
                 </div>
               </div>
 
+              {/* References Display */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Previous Year References</h5>
-                  <div className="flex flex-wrap gap-2">
-                    {previousOffsets.length === 0 && (
-                      <span className="text-sm text-gray-500 dark:text-gray-400">None</span>
+                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Previous Year References</h5>
+                  <div className="space-y-2">
+                    {previousReferences.length === 0 && (
+                      <div className="text-sm text-gray-500 dark:text-gray-400 italic">None</div>
                     )}
-                    {previousOffsets.sort((a,b)=>a-b).map((off) => {
-                      const currentFYIndex = allFiscalYears.findIndex(fy => fy.id === year.id)
-                      const refFY = allFiscalYears[currentFYIndex - off]
-                      return (
-                        <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200">
-                          {refFY ? refFY.year_code : 'Unknown'}
-                          <button onClick={() => removeOffset('previous', off)} className="text-red-500 hover:text-red-700">&times;</button>
-                        </span>
-                      )
-                    })}
+                    {previousReferences.map((ref) => (
+                      <div key={ref.code} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {ref.fiscal_year_name} – {ref.scenario_name}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            Code: {ref.code} | {ref.fiscal_year_code} | {ref.scenario_code}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeReference('previous', ref.code)}
+                          className="ml-2 p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-100 dark:hover:bg-red-800 rounded transition-colors"
+                          title="Remove reference"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
                 <div>
-                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Future Year References</h5>
-                  <div className="flex flex-wrap gap-2">
-                    {nextOffsets.length === 0 && (
-                      <span className="text-sm text-gray-500 dark:text-gray-400">None</span>
+                  <h5 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Future Year References</h5>
+                  <div className="space-y-2">
+                    {upcomingReferences.length === 0 && (
+                      <div className="text-sm text-gray-500 dark:text-gray-400 italic">None</div>
                     )}
-                    {nextOffsets.sort((a,b)=>a-b).map((off) => {
-                      const currentFYIndex = allFiscalYears.findIndex(fy => fy.id === year.id)
-                      const refFY = allFiscalYears[currentFYIndex + off]
-                      return (
-                        <span key={off} className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
-                          {refFY ? refFY.year_code : 'Unknown'}
-                          <button onClick={() => removeOffset('next', off)} className="text-green-500 hover:text-green-700">&times;</button>
-                        </span>
-                      )
-                    })}
+                    {upcomingReferences.map((ref) => (
+                      <div key={ref.code} className="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {ref.fiscal_year_name} – {ref.scenario_name}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            Code: {ref.code} | {ref.fiscal_year_code} | {ref.scenario_code}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeReference('upcoming', ref.code)}
+                          className="ml-2 p-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-800 rounded transition-colors"
+                          title="Remove reference"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
