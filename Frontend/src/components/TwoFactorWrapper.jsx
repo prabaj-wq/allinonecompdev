@@ -10,6 +10,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import DashboardEnhanced from '../pages/DashboardEnhanced'
 import ModernDashboard from '../pages/ModernDashboard'
 import Process from '../pages/Process'
+import DataInput from '../pages/DataInput'
 import Consolidation from '../pages/Consolidation'
 import Support from '../pages/Support'
 import Profile from '../pages/Profile'
@@ -124,6 +125,11 @@ const TwoFactorWrapper = () => {
           <Route path="/process" element={
             <PageAccessWrapper requiredPage="/process" pageName="Process Management">
               <Process />
+            </PageAccessWrapper>
+          } />
+          <Route path="/data-input" element={
+            <PageAccessWrapper requiredPage="/process" pageName="Data Input">
+              <DataInput />
             </PageAccessWrapper>
           } />
           <Route path="/etl" element={

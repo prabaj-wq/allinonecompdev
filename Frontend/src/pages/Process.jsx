@@ -10,6 +10,47 @@ import {
   CheckCircle, Lock, Unlock
 } from 'lucide-react'
 
+// Add CSS animations
+const styles = `
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+`
+
+const styleSheet = document.createElement("style")
+styleSheet.textContent = styles
+if (!document.head.querySelector('style[data-process-animations]')) {
+  styleSheet.setAttribute('data-process-animations', 'true')
+  document.head.appendChild(styleSheet)
+}
+
 // Node Library - Segregated by Entity-wise and Consolidation flows
 const NODE_LIBRARY = [
   // ==================== ENTITY-WISE NODES ====================
@@ -257,11 +298,24 @@ const Process = () => {
   // Get unique categories from NODE_LIBRARY
   const categories = ['all', ...new Set(NODE_LIBRARY.map(node => node.category))]
   
-  // Get filtered nodes based on flow mode
+  // Get filtered nodes based on flow mode and configuration
   const getAvailableNodes = () => {
-    return NODE_LIBRARY.filter(node => 
-      node.flowType === flowMode || node.flowType === 'both'
-    )
+    return NODE_LIBRARY.filter(node => {
+      // Check if node type already exists in workflow with specific config
+      const existingNode = workflowNodes.find(n => n.type === node.type)
+      
+      if (existingNode && existingNode.config) {
+        // If node exists in workflow, respect its config settings
+        if (flowMode === 'entity') {
+          return existingNode.config.availableForEntity !== false
+        } else if (flowMode === 'consolidation') {
+          return existingNode.config.availableForConsolidation !== false
+        }
+      }
+      
+      // Default behavior: check flowType
+      return node.flowType === flowMode || node.flowType === 'both'
+    })
   }
 
   // Utility Functions
@@ -487,37 +541,50 @@ const Process = () => {
         const config = await response.json()
         console.log('⚙️ Loaded process configuration:', config)
         
-        // Load both workflows
-        if (config.entityWorkflowNodes) setEntityWorkflowNodes(config.entityWorkflowNodes)
-        if (config.consolidationWorkflowNodes) setConsolidationWorkflowNodes(config.consolidationWorkflowNodes)
+        // Safely load workflows with validation
+        const safeEntityNodes = Array.isArray(config.entityWorkflowNodes) ? config.entityWorkflowNodes : []
+        const safeConsolidationNodes = Array.isArray(config.consolidationWorkflowNodes) ? config.consolidationWorkflowNodes : []
+        const safeNodes = Array.isArray(config.nodes) ? config.nodes : []
         
-        // Set current workflow based on mode
-        if (config.flowMode) {
-          setFlowMode(config.flowMode)
-          if (config.flowMode === 'entity' && config.entityWorkflowNodes) {
-            setWorkflowNodes(config.entityWorkflowNodes)
-          } else if (config.flowMode === 'consolidation' && config.consolidationWorkflowNodes) {
-            setWorkflowNodes(config.consolidationWorkflowNodes)
-          } else if (config.nodes) {
-            setWorkflowNodes(config.nodes) // Fallback for old config
-          }
+        setEntityWorkflowNodes(safeEntityNodes)
+        setConsolidationWorkflowNodes(safeConsolidationNodes)
+        
+        // Set current workflow based on mode with proper fallback
+        const currentFlowMode = config.flowMode || 'entity'
+        setFlowMode(currentFlowMode)
+        
+        if (currentFlowMode === 'entity') {
+          setWorkflowNodes(safeEntityNodes.length > 0 ? safeEntityNodes : safeNodes)
+        } else if (currentFlowMode === 'consolidation') {
+          setWorkflowNodes(safeConsolidationNodes.length > 0 ? safeConsolidationNodes : safeNodes)
+        } else {
+          setWorkflowNodes(safeNodes)
         }
         
-        if (config.selectedEntities) setSelectedEntities(config.selectedEntities)
+        // Safely set other config values
+        if (Array.isArray(config.selectedEntities)) setSelectedEntities(config.selectedEntities)
         if (config.fiscalYear) {
           setSelectedYear(config.fiscalYear)
           fetchPeriodsForYear(config.fiscalYear)
           fetchScenariosForYear(config.fiscalYear)
         }
-        if (config.periods) setSelectedPeriods(config.periods)
+        if (Array.isArray(config.periods)) setSelectedPeriods(config.periods)
         if (config.scenario) setSelectedScenario(config.scenario)
         if (config.fiscalSettingsLocked !== undefined) setFiscalSettingsLocked(config.fiscalSettingsLocked)
       } else {
         console.warn(`⚠️ Configuration load returned status ${response.status}`)
+        // Initialize with empty arrays to prevent errors
+        setEntityWorkflowNodes([])
+        setConsolidationWorkflowNodes([])
+        setWorkflowNodes([])
       }
     } catch (error) {
       console.error('❌ Error loading process configuration:', error)
       showNotification('Failed to load configuration', 'error')
+      // Initialize with empty arrays to prevent errors
+      setEntityWorkflowNodes([])
+      setConsolidationWorkflowNodes([])
+      setWorkflowNodes([])
     }
   }
 
@@ -1281,7 +1348,7 @@ const Process = () => {
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Node Library Expandable Panel */}
             {showNodeLibrary && (
-              <div className="bg-gradient-to-r from-white via-blue-50 to-white dark:from-gray-950 dark:via-blue-900/10 dark:to-gray-950 border-b border-gray-200 dark:border-gray-800 p-4 shadow-lg animate-in slide-in-from-top-4">
+              <div className="bg-gradient-to-r from-white via-blue-50 to-white dark:from-gray-950 dark:via-blue-900/10 dark:to-gray-950 border-b border-gray-200 dark:border-gray-800 p-4 shadow-lg transition-all duration-300 ease-in-out" style={{ animation: 'slideDown 0.3s ease-out' }}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <Workflow className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -1306,8 +1373,10 @@ const Process = () => {
                         <div
                           key={node.type}
                           onClick={() => !isAdded && addNodeToWorkflow(node.type)}
-                          style={{ animationDelay: `${idx * 50}ms` }}
-                          className={`flex-shrink-0 w-36 p-3 border-2 rounded-xl transition-all duration-300 bg-gradient-to-br transform animate-in fade-in slide-in-from-left-2 ${
+                          style={{ 
+                            animation: `slideIn 0.3s ease-out ${idx * 0.05}s both`
+                          }}
+                          className={`flex-shrink-0 w-36 p-3 border-2 rounded-xl transition-all duration-300 bg-gradient-to-br transform ${
                             isAdded
                               ? 'from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-green-300 dark:border-green-700 opacity-70 cursor-not-allowed'
                               : 'from-white to-gray-50 dark:from-gray-900 dark:to-gray-800 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 cursor-pointer hover:shadow-xl hover:scale-105'
@@ -1367,9 +1436,23 @@ const Process = () => {
                           <div
                             onClick={() => setSelectedNode(node)}
                             onDoubleClick={() => {
-                              // Navigate to relevant module
-                              showNotification(`Opening ${node.title} module...`, 'success')
-                              // You can add navigation logic here based on node type
+                              // Navigate to relevant module based on node type
+                              if (node.type === 'data_input' || node.type === 'entity_data_load') {
+                                // Navigate to Data Input page with context
+                                const params = new URLSearchParams({
+                                  processId: selectedProcess.id,
+                                  processName: selectedProcess.name,
+                                  scenario: selectedScenario || '',
+                                  scenarioName: scenarios.find(s => s.id === selectedScenario)?.scenario_name || '',
+                                  year: selectedYear || '',
+                                  yearName: fiscalYears.find(fy => fy.id === selectedYear)?.year || '',
+                                  entities: selectedEntities.join(',') || ''
+                                })
+                                navigate(`/data-input?${params.toString()}`)
+                                showNotification(`Opening ${node.title} module...`, 'success')
+                              } else {
+                                showNotification(`${node.title} module coming soon...`, 'info')
+                              }
                             }}
                             className={`flex-shrink-0 w-64 bg-gradient-to-br from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 rounded-xl shadow-lg border-2 transition-all duration-300 cursor-pointer transform hover:scale-105 hover:shadow-xl ${
                               isSelected 
@@ -1932,8 +2015,8 @@ const Process = () => {
                     >
                       <option value="">Choose a year</option>
                       {fiscalYears.map((fy) => (
-                        <option key={fy.id || fy.year} value={fy.year || fy.id}>
-                          {fy.year || fy.name} - {fy.name || `FY ${fy.year}`}
+                        <option key={fy.id} value={fy.id}>
+                          {fy.year} - {fy.name}
                         </option>
                       ))}
                     </select>
