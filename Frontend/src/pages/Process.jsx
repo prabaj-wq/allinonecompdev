@@ -720,7 +720,7 @@ const Process = () => {
                       name: process.name,
                       description: process.description,
                       type: process.process_type || process.type || 'actuals',
-                      fiscal_year: process.fiscal_year,
+                      fiscal_year: typeof process.fiscal_year === 'object' ? process.fiscal_year?.id || '' : process.fiscal_year,
                       reporting_currency: process.reporting_currency,
                       settings: process.settings || {}
                     })
@@ -735,8 +735,8 @@ const Process = () => {
             
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                <span>FY {process.fiscal_year}</span>
-                <span>{process.reporting_currency}</span>
+                <span>FY {typeof process.fiscal_year === 'object' ? JSON.stringify(process.fiscal_year) : (process.fiscal_year || 'N/A')}</span>
+                <span>{process.reporting_currency || 'N/A'}</span>
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 Created {new Date(process.created_at).toLocaleDateString()}
