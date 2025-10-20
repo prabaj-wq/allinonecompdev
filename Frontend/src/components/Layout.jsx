@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import CompanySelector from './CompanySelector'
 import SearchBar from './SearchBar'
 import ChatAssistant from './ChatAssistant'
+import AirMouse from './AirMouse'
 import './Sidebar.css'
 import './glassmorphism.css'
 import { 
@@ -58,7 +59,8 @@ import {
   CheckCircle,
   Handshake,
   UserCheck,
-  Lightbulb
+  Lightbulb,
+  Hand
 } from 'lucide-react'
 
 const Layout = ({ children }) => {
@@ -66,6 +68,7 @@ const Layout = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [hoveredItem, setHoveredItem] = useState(null)
   const [sqlRunningTabs, setSqlRunningTabs] = useState(['dashboard', 'trial-balance', 'consolidation'])
+  const [airMouseOpen, setAirMouseOpen] = useState(false)
   const { user, logout } = useAuth()
   const { selectedCompany } = useCompany()
   const { theme, toggleTheme } = useTheme()
@@ -668,6 +671,21 @@ const Layout = ({ children }) => {
               </div>
             </button>
 
+            {/* Air Mouse toggle */}
+            <button
+              onClick={() => setAirMouseOpen(true)}
+              className="-m-2.5 p-2.5 text-slate-400 hover:text-slate-500 dark:hover:text-slate-300 transition-colors duration-200 relative group"
+              title="Hands Free Control"
+            >
+              <Hand className="h-6 w-6" />
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                <div className="p-3">
+                  <h3 className="text-sm font-medium text-slate-900 dark:text-white">Hands Free</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Control mouse with gestures</p>
+                </div>
+              </div>
+            </button>
+
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
@@ -729,6 +747,12 @@ const Layout = ({ children }) => {
 
       {/* Chat Assistant */}
       <ChatAssistant />
+      
+      {/* Air Mouse Modal */}
+      <AirMouse 
+        isOpen={airMouseOpen} 
+        onClose={() => setAirMouseOpen(false)} 
+      />
     </div>
   )
 }
