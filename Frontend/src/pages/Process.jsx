@@ -1134,22 +1134,6 @@ const Process = () => {
     }
   }
 
-  // Entity Configuration Functions
-  const getEntityNodeConfig = (entityId, nodeId) => {
-    return entityNodeConfigs[entityId]?.[nodeId] || { enabled: true, settings: {} }
-  }
-
-  const updateEntityNodeConfig = (entityId, nodeId, config) => {
-    setEntityNodeConfigs(prev => ({
-      ...prev,
-      [entityId]: {
-        ...prev[entityId],
-        [nodeId]: { ...prev[entityId]?.[nodeId], ...config }
-      }
-    }))
-    setHasUnsavedChanges(true)
-  }
-
   const getFilteredNodesForEntity = (entityId) => {
     if (entityId === 'all') return workflowNodes
     
