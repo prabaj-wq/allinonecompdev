@@ -67,9 +67,9 @@ const DataInput = () => {
   const [scenarios, setScenarios] = useState([])
   
   // Entity filtering state
-  const [selectedEntityFilter, setSelectedEntityFilter] = useState(defaultEntity || 'all')
-  const [selectedICEntityFilter, setSelectedICEntityFilter] = useState(defaultEntity || 'all')
-  const [selectedOtherEntityFilter, setSelectedOtherEntityFilter] = useState(defaultEntity || 'all')
+  const [selectedEntityFilter, setSelectedEntityFilter] = useState('all')
+  const [selectedICEntityFilter, setSelectedICEntityFilter] = useState('all')
+  const [selectedOtherEntityFilter, setSelectedOtherEntityFilter] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
   const [filteredEntries, setFilteredEntries] = useState([])
 
@@ -109,6 +109,11 @@ const DataInput = () => {
           from_entity_code: entity.entity_code
         }))
         
+        // Also set the filter to this entity so entries are visible
+        setSelectedEntityFilter(entity.id)
+        setSelectedICEntityFilter(entity.id)
+        setSelectedOtherEntityFilter(entity.id)
+        
         // Show context notification
         if (defaultEntity !== 'all') {
           showToast(`Filtered for entity: ${entity.entity_name || entity.name}`, 'info')
@@ -121,26 +126,41 @@ const DataInput = () => {
   useEffect(() => {
     let filtered = [...entries]
     
+    console.log('🔍 Filtering entries:', {
+      totalEntries: entries.length,
+      activeCard,
+      selectedEntityFilter,
+      selectedICEntityFilter,
+      selectedOtherEntityFilter
+    })
+    
     // Apply entity filter based on active card
     if (activeCard === 'entity_amounts' && selectedEntityFilter !== 'all') {
-      filtered = filtered.filter(entry => 
-        entry.entity_id === selectedEntityFilter || 
-        entry.entity_code === selectedEntityFilter
-      )
+      filtered = filtered.filter(entry => {
+        const matches = entry.entity_id == selectedEntityFilter || entry.entity_code === selectedEntityFilter
+        console.log('🔍 Entity filter check:', {
+          entry_entity_id: entry.entity_id,
+          entry_entity_code: entry.entity_code,
+          selectedEntityFilter,
+          matches
+        })
+        return matches
+      })
     } else if (activeCard === 'ic_amounts' && selectedICEntityFilter !== 'all') {
       filtered = filtered.filter(entry => 
-        entry.from_entity_id === selectedICEntityFilter || 
-        entry.to_entity_id === selectedICEntityFilter ||
+        entry.from_entity_id == selectedICEntityFilter || 
+        entry.to_entity_id == selectedICEntityFilter ||
         entry.from_entity_code === selectedICEntityFilter ||
         entry.to_entity_code === selectedICEntityFilter
       )
     } else if (activeCard === 'other_amounts' && selectedOtherEntityFilter !== 'all') {
       filtered = filtered.filter(entry => 
-        entry.entity_id === selectedOtherEntityFilter || 
+        entry.entity_id == selectedOtherEntityFilter || 
         entry.entity_code === selectedOtherEntityFilter
       )
     }
     
+    console.log('✅ Filtered entries result:', filtered.length)
     setFilteredEntries(filtered)
   }, [entries, selectedEntityFilter, selectedICEntityFilter, selectedOtherEntityFilter, activeCard])
 
@@ -279,17 +299,22 @@ const DataInput = () => {
         params.append('scenario_id', scenarioId)
       }
 
-      const response = await fetch(
-        `/api/financial-process/processes/${processId}/data-input/${activeCard}?${params.toString()}`,
-        {
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
-        }
-      )
+      const url = `/api/financial-process/processes/${processId}/data-input/${activeCard}?${params.toString()}`
+      console.log('🔍 Fetching entries from:', url)
+      
+      const response = await fetch(url, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+      })
 
       if (response.ok) {
         const data = await response.json()
+        console.log('✅ Fetched entries data:', data)
+        console.log('📊 Entries count:', data.entries?.length || 0)
         setEntries(data.entries || [])
+      } else {
+        console.error('Failed to fetch entries:', response.status)
+        setEntries([])
       }
     } catch (error) {
       console.error('Error fetching entries:', error)
@@ -299,6 +324,7 @@ const DataInput = () => {
     }
   }
 
+// ...
   const saveEntry = async () => {
     if (!selectedCompany || !processId) {
       showToast('Missing required context data', 'error')
