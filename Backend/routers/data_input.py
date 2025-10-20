@@ -225,6 +225,9 @@ async def get_custom_fields(
             
         return {"fields": fields}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ Export error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Entries Endpoints
@@ -554,6 +557,8 @@ async def export_data(
         if not process_id:
             raise HTTPException(status_code=400, detail="process_id is required for export")
 
+        print(f"📤 Export request: card_type={card_type}, company={company_name}, process_id={process_id}, scenario_id={scenario_id}")
+
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -574,6 +579,7 @@ async def export_data(
                 )
             """, (table_name,))
             if not cur.fetchone()[0]:
+                print(f"⚠️ Export table missing: {table_name}")
                 raise HTTPException(status_code=404, detail="No data available for export")
 
             where_conditions = ["process_id = %s"]
@@ -585,16 +591,28 @@ async def export_data(
 
             where_clause = " AND ".join(where_conditions)
 
-            select_columns: List[str]
+            field_mapping: Dict[str, str]
             headers: List[str]
 
             if card_type == 'entity_amounts':
-                select_columns = [
-                    'entity_code', 'entity_name', 'account_code', 'account_name',
-                    'period_code', 'period_name', 'fiscal_year', 'fiscal_month',
-                    'transaction_date', 'amount', 'currency', 'scenario_code',
-                    'description', 'reference_id', 'custom_fields', 'created_at'
-                ]
+                field_mapping = {
+                    'Entity Code': 'entity_code',
+                    'Entity Name': 'entity_name',
+                    'Account Code': 'account_code',
+                    'Account Name': 'account_name',
+                    'Period Code': 'period_code',
+                    'Period Name': 'period_name',
+                    'Fiscal Year': 'fiscal_year',
+                    'Fiscal Month': 'fiscal_month',
+                    'Transaction Date': 'transaction_date',
+                    'Amount': 'amount',
+                    'Currency': 'currency',
+                    'Scenario Code': 'scenario_code',
+                    'Description': 'description',
+                    'Reference ID': 'reference_id',
+                    'Custom Fields': 'custom_fields',
+                    'Created At': 'created_at'
+                }
                 headers = [
                     'Entity Code', 'Entity Name', 'Account Code', 'Account Name',
                     'Period Code', 'Period Name', 'Fiscal Year', 'Fiscal Month',
@@ -602,12 +620,25 @@ async def export_data(
                     'Description', 'Reference ID', 'Custom Fields', 'Created At'
                 ]
             elif card_type == 'ic_amounts':
-                select_columns = [
-                    'from_entity_code', 'from_entity_name', 'to_entity_code', 'to_entity_name',
-                    'from_account_code', 'from_account_name', 'to_account_code', 'to_account_name',
-                    'transaction_date', 'amount', 'currency', 'transaction_type', 'fx_rate',
-                    'description', 'reference_id', 'custom_fields', 'created_at'
-                ]
+                field_mapping = {
+                    'From Entity Code': 'from_entity_code',
+                    'From Entity Name': 'from_entity_name',
+                    'To Entity Code': 'to_entity_code',
+                    'To Entity Name': 'to_entity_name',
+                    'From Account Code': 'from_account_code',
+                    'From Account Name': 'from_account_name',
+                    'To Account Code': 'to_account_code',
+                    'To Account Name': 'to_account_name',
+                    'Transaction Date': 'transaction_date',
+                    'Amount': 'amount',
+                    'Currency': 'currency',
+                    'Transaction Type': 'transaction_type',
+                    'FX Rate': 'fx_rate',
+                    'Description': 'description',
+                    'Reference ID': 'reference_id',
+                    'Custom Fields': 'custom_fields',
+                    'Created At': 'created_at'
+                }
                 headers = [
                     'From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name',
                     'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
@@ -615,12 +646,24 @@ async def export_data(
                     'Description', 'Reference ID', 'Custom Fields', 'Created At'
                 ]
             elif card_type == 'other_amounts':
-                select_columns = [
-                    'entity_code', 'entity_name', 'account_code', 'account_name',
-                    'period_code', 'period_name', 'fiscal_year', 'fiscal_month',
-                    'transaction_date', 'amount', 'currency', 'scenario_code',
-                    'description', 'reference_id', 'custom_fields', 'created_at'
-                ]
+                field_mapping = {
+                    'Entity Code': 'entity_code',
+                    'Entity Name': 'entity_name',
+                    'Account Code': 'account_code',
+                    'Account Name': 'account_name',
+                    'Period Code': 'period_code',
+                    'Period Name': 'period_name',
+                    'Fiscal Year': 'fiscal_year',
+                    'Fiscal Month': 'fiscal_month',
+                    'Transaction Date': 'transaction_date',
+                    'Amount': 'amount',
+                    'Currency': 'currency',
+                    'Scenario Code': 'scenario_code',
+                    'Description': 'description',
+                    'Reference ID': 'reference_id',
+                    'Custom Fields': 'custom_fields',
+                    'Created At': 'created_at'
+                }
                 headers = [
                     'Entity Code', 'Entity Name', 'Account Code', 'Account Name',
                     'Period Code', 'Period Name', 'Fiscal Year', 'Fiscal Month',
@@ -631,25 +674,33 @@ async def export_data(
                 raise HTTPException(status_code=400, detail="Invalid card type")
 
             query = f"""
-                SELECT {', '.join(select_columns)}
+                SELECT *
                 FROM {table_name}
                 WHERE {where_clause}
                 ORDER BY created_at DESC
             """
 
+            print(f"📄 Export query: {query}")
+            print(f"📄 Export params: {params}")
             cur.execute(query, params)
             rows = cur.fetchall()
+            print(f"✅ Retrieved {len(rows)} rows for export")
 
         if not rows:
             df = pd.DataFrame(columns=headers)
         else:
-            df = pd.DataFrame(rows, columns=select_columns)
-            # Convert any JSON fields to strings for CSV
-            for col in ['custom_fields']:
-                if col in df.columns:
-                    df[col] = df[col].apply(lambda v: json.dumps(v) if isinstance(v, (dict, list)) else (v or ''))
+            data_for_df: List[List[Any]] = []
+            for row in rows:
+                record: List[Any] = []
+                for header in headers:
+                    source_key = field_mapping.get(header)
+                    value = row.get(source_key) if source_key else ''
+                    if source_key == 'custom_fields' and isinstance(value, (dict, list)):
+                        value = json.dumps(value)
+                    record.append('' if value is None else value)
+                data_for_df.append(record)
 
-            df.columns = headers
+            df = pd.DataFrame(data_for_df, columns=headers)
 
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
