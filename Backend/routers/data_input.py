@@ -9,6 +9,7 @@ import psycopg2
 import psycopg2.extras
 import os
 import csv
+import re
 from contextlib import contextmanager
 from auth.dependencies import get_current_user
 
@@ -544,128 +545,122 @@ async def create_manual_entry(
 async def export_data(
     card_type: str,
     company_name: str = Query(...),
-    process_id: Optional[int] = Query(None),
-    scenario_id: Optional[int] = Query(None),
+    process_id: Optional[str] = Query(None),
+    scenario_id: Optional[str] = Query(None),
     current_user: dict = Depends(get_current_user)
 ):
     """Export data as CSV for a specific card type"""
     try:
-        create_tables_if_not_exist(company_name)
-        
-        table_map = {
-            'entity_amounts': 'entity_amounts',
-            'ic_amounts': 'intercompany_data',
-            'other_amounts': 'other_amounts'
-        }
-        
-        table_name = table_map.get(card_type)
-        if not table_name:
-            raise HTTPException(status_code=400, detail="Invalid card type")
-        
+        if not process_id:
+            raise HTTPException(status_code=400, detail="process_id is required for export")
+
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            
-            # Build query with optional filters
-            where_conditions = []
-            params = []
-            
-            if process_id is not None:
-                where_conditions.append("process_id = %s")
-                params.append(process_id)
-            
+
+            # Resolve process-specific table name used by financial_process data input
+            cur.execute("SELECT name FROM financial_processes WHERE id = %s", (process_id,))
+            process_row = cur.fetchone()
+            if not process_row:
+                raise HTTPException(status_code=404, detail="Process not found")
+
+            safe_process_name = re.sub(r'[^a-zA-Z0-9_]', '_', process_row['name'].lower())
+            table_name = f"{safe_process_name}_{card_type}_entries"
+
+            # Ensure table exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = %s
+                )
+            """, (table_name,))
+            if not cur.fetchone()[0]:
+                raise HTTPException(status_code=404, detail="No data available for export")
+
+            where_conditions = ["process_id = %s"]
+            params: List[Any] = [process_id]
+
             if scenario_id is not None:
                 where_conditions.append("scenario_id = %s")
                 params.append(scenario_id)
-            
-            where_clause = ""
-            if where_conditions:
-                where_clause = "WHERE " + " AND ".join(where_conditions)
-            
-            if card_type == 'ic_amounts':
-                # For intercompany data, get entity and account codes
-                query = f"""
-                    SELECT 
-                        fe.entity_code as from_entity_code,
-                        fe.entity_name as from_entity_name,
-                        te.entity_code as to_entity_code,
-                        te.entity_name as to_entity_name,
-                        fa.account_code as from_account_code,
-                        fa.account_name as from_account_name,
-                        ta.account_code as to_account_code,
-                        ta.account_name as to_account_name,
-                        ic.amount,
-                        ic.currency_code,
-                        ic.transaction_type,
-                        ic.custom_transaction_type,
-                        ic.transaction_date,
-                        ic.description,
-                        ic.reference_id,
-                        ic.created_at
-                    FROM {table_name} ic
-                    LEFT JOIN entity_axes fe ON ic.from_entity_id = fe.id
-                    LEFT JOIN entity_axes te ON ic.to_entity_id = te.id
-                    LEFT JOIN account_axes fa ON ic.from_account_id = fa.id
-                    LEFT JOIN account_axes ta ON ic.to_account_id = ta.id
-                    {where_clause}
-                    ORDER BY ic.created_at DESC
-                """
+
+            where_clause = " AND ".join(where_conditions)
+
+            select_columns: List[str]
+            headers: List[str]
+
+            if card_type == 'entity_amounts':
+                select_columns = [
+                    'entity_code', 'entity_name', 'account_code', 'account_name',
+                    'period_code', 'period_name', 'fiscal_year', 'fiscal_month',
+                    'transaction_date', 'amount', 'currency', 'scenario_code',
+                    'description', 'reference_id', 'custom_fields', 'created_at'
+                ]
+                headers = [
+                    'Entity Code', 'Entity Name', 'Account Code', 'Account Name',
+                    'Period Code', 'Period Name', 'Fiscal Year', 'Fiscal Month',
+                    'Transaction Date', 'Amount', 'Currency', 'Scenario Code',
+                    'Description', 'Reference ID', 'Custom Fields', 'Created At'
+                ]
+            elif card_type == 'ic_amounts':
+                select_columns = [
+                    'from_entity_code', 'from_entity_name', 'to_entity_code', 'to_entity_name',
+                    'from_account_code', 'from_account_name', 'to_account_code', 'to_account_name',
+                    'transaction_date', 'amount', 'currency', 'transaction_type', 'fx_rate',
+                    'description', 'reference_id', 'custom_fields', 'created_at'
+                ]
+                headers = [
+                    'From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name',
+                    'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
+                    'Transaction Date', 'Amount', 'Currency', 'Transaction Type', 'FX Rate',
+                    'Description', 'Reference ID', 'Custom Fields', 'Created At'
+                ]
+            elif card_type == 'other_amounts':
+                select_columns = [
+                    'entity_code', 'entity_name', 'account_code', 'account_name',
+                    'period_code', 'period_name', 'fiscal_year', 'fiscal_month',
+                    'transaction_date', 'amount', 'currency', 'scenario_code',
+                    'description', 'reference_id', 'custom_fields', 'created_at'
+                ]
+                headers = [
+                    'Entity Code', 'Entity Name', 'Account Code', 'Account Name',
+                    'Period Code', 'Period Name', 'Fiscal Year', 'Fiscal Month',
+                    'Transaction Date', 'Amount', 'Currency', 'Scenario Code',
+                    'Description', 'Reference ID', 'Custom Fields', 'Created At'
+                ]
             else:
-                # For entity_amounts and other_amounts
-                query = f"""
-                    SELECT 
-                        e.entity_code,
-                        e.entity_name,
-                        a.account_code,
-                        a.account_name,
-                        t.amount,
-                        t.currency,
-                        t.description,
-                        t.created_at
-                    FROM {table_name} t
-                    LEFT JOIN entity_axes e ON t.entity_id = e.id
-                    LEFT JOIN account_axes a ON t.account_id = a.id
-                    {where_clause}
-                    ORDER BY t.created_at DESC
-                """
-            
+                raise HTTPException(status_code=400, detail="Invalid card type")
+
+            query = f"""
+                SELECT {', '.join(select_columns)}
+                FROM {table_name}
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+            """
+
             cur.execute(query, params)
             rows = cur.fetchall()
-        
+
         if not rows:
-            # Return empty CSV with headers
-            if card_type == 'ic_amounts':
-                headers = ['From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name', 
-                          'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
-                          'Amount', 'Currency', 'Transaction Type', 'Custom Transaction Type', 
-                          'Transaction Date', 'Description', 'Reference ID', 'Created At']
-            else:
-                headers = ['Entity Code', 'Entity Name', 'Account Code', 'Account Name', 
-                          'Amount', 'Currency', 'Description', 'Created At']
-            
             df = pd.DataFrame(columns=headers)
         else:
-            # Convert to DataFrame
-            df = pd.DataFrame(rows)
-            
-            # Rename columns for better CSV headers
-            if card_type == 'ic_amounts':
-                df.columns = ['From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name', 
-                             'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
-                             'Amount', 'Currency', 'Transaction Type', 'Custom Transaction Type', 
-                             'Transaction Date', 'Description', 'Reference ID', 'Created At']
-            else:
-                df.columns = ['Entity Code', 'Entity Name', 'Account Code', 'Account Name', 
-                             'Amount', 'Currency', 'Description', 'Created At']
-        
-        # Create CSV
+            df = pd.DataFrame(rows, columns=select_columns)
+            # Convert any JSON fields to strings for CSV
+            for col in ['custom_fields']:
+                if col in df.columns:
+                    df[col] = df[col].apply(lambda v: json.dumps(v) if isinstance(v, (dict, list)) else (v or ''))
+
+            df.columns = headers
+
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         csv_data = csv_buffer.getvalue()
-        
+
+        filename = f"{card_type}_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+
         return StreamingResponse(
             iter([csv_data]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={card_type}_export.csv"}
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
