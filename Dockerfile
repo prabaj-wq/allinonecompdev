@@ -38,6 +38,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatlas-base-dev \
     gfortran \
     pkg-config \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -68,6 +70,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng16-16 \
     libtiff5 \
     libatlas3-base \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies and backend code

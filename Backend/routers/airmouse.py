@@ -1,8 +1,17 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
-import cv2
-import mediapipe as mp
 import numpy as np
+
+# Try to import OpenCV and MediaPipe, handle gracefully if not available
+try:
+    import cv2
+    import mediapipe as mp
+    CV2_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: OpenCV/MediaPipe not available: {e}")
+    CV2_AVAILABLE = False
+    cv2 = None
+    mp = None
 import threading
 import time
 import io
@@ -14,6 +23,15 @@ import sys
 import os
 
 router = APIRouter(prefix="/api/airmouse", tags=["airmouse"])
+
+@router.get("/health")
+async def airmouse_health():
+    """Check if airmouse dependencies are available"""
+    return {
+        "status": "success" if CV2_AVAILABLE else "error",
+        "opencv_available": CV2_AVAILABLE,
+        "message": "AirMouse ready" if CV2_AVAILABLE else "OpenCV/MediaPipe not available - missing system dependencies"
+    }
 
 # Global variables for air mouse control
 airmouse_process = None
@@ -43,6 +61,9 @@ class AirMouseController:
         
     def initialize(self):
         """Initialize MediaPipe and camera"""
+        if not CV2_AVAILABLE:
+            raise Exception("OpenCV/MediaPipe not available - missing system dependencies")
+            
         try:
             # Initialize MediaPipe Hand module
             self.mp_hands = mp.solutions.hands
