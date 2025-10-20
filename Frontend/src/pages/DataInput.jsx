@@ -430,7 +430,14 @@ const DataInput = () => {
   // Export functionality
   const handleExport = async (cardType) => {
     try {
-      const response = await fetch(`/api/data-input/export/${cardType}?company_name=${encodeURIComponent(selectedCompany)}`, {
+      const params = new URLSearchParams({ company_name: selectedCompany })
+      if (processId) params.append('process_id', processId)
+      if (scenarioId) {
+        const trimmedScenario = `${scenarioId}`.trim()
+        if (trimmedScenario) params.append('scenario_id', trimmedScenario)
+      }
+
+      const response = await fetch(`/api/data-input/export/${cardType}?${params.toString()}`, {
         method: 'GET',
         credentials: 'include',
         headers: {
