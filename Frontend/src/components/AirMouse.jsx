@@ -36,8 +36,17 @@ const AirMouse = ({ isOpen, onClose }) => {
     try {
       const response = await fetch('/api/airmouse/status')
       const data = await response.json()
+      
+      if (!data.opencv_available) {
+        setError('OpenCV/MediaPipe not available - missing system dependencies')
+        setIsActive(false)
+        setCameraInitialized(false)
+        return
+      }
+      
       setIsActive(data.active)
       setCameraInitialized(data.camera_initialized)
+      setError(null)
     } catch (err) {
       console.error('Failed to check air mouse status:', err)
       setError('Failed to check status')
@@ -73,6 +82,10 @@ const AirMouse = ({ isOpen, onClose }) => {
           if (right_click) {
             simulateClick('right')
           }
+        } else if (data.status === 'error') {
+          // Stop polling if there's an error
+          stopGesturePolling()
+          setError(data.message)
         }
       } catch (err) {
         console.error('Failed to get gesture data:', err)
@@ -147,10 +160,18 @@ const AirMouse = ({ isOpen, onClose }) => {
       }
       
       const data = await response.json()
+      
+      if (data.status === 'error') {
+        setError(data.message)
+        setIsActive(false)
+        return
+      }
+      
       setIsActive(data.active)
+      setError(null)
       
       // Initialize stream if not already done
-      if (!streamRef.current) {
+      if (!streamRef.current && data.active) {
         initializeStream()
       }
       

@@ -200,15 +200,18 @@ async def start_airmouse():
     """Start the air mouse functionality"""
     global controller
     
+    if not CV2_AVAILABLE:
+        return {"status": "error", "message": "OpenCV/MediaPipe not available - missing system dependencies", "active": False}
+    
     try:
         if not controller.cap:
             if not controller.initialize():
-                raise HTTPException(status_code=500, detail="Failed to initialize camera")
+                return {"status": "error", "message": "Failed to initialize camera", "active": False}
         
         controller.start()
         return {"status": "success", "message": "Air mouse started", "active": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start air mouse: {str(e)}")
+        return {"status": "error", "message": f"Failed to start air mouse: {str(e)}", "active": False}
 
 @router.post("/stop")
 async def stop_airmouse():
@@ -219,22 +222,37 @@ async def stop_airmouse():
         controller.stop()
         return {"status": "success", "message": "Air mouse stopped", "active": False}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to stop air mouse: {str(e)}")
+        return {"status": "error", "message": f"Failed to stop air mouse: {str(e)}", "active": False}
 
 @router.get("/status")
 async def get_airmouse_status():
     """Get current air mouse status"""
+    if not CV2_AVAILABLE:
+        return {
+            "active": False,
+            "camera_initialized": False,
+            "opencv_available": False,
+            "message": "OpenCV/MediaPipe not available"
+        }
+    
     return {
         "active": controller.active,
-        "camera_initialized": controller.cap is not None and controller.cap.isOpened() if controller.cap else False
+        "camera_initialized": controller.cap is not None and controller.cap.isOpened() if controller.cap else False,
+        "opencv_available": True
     }
 
 @router.get("/stream")
 async def video_stream():
     """Stream video feed from camera"""
+    if not CV2_AVAILABLE:
+        raise HTTPException(status_code=503, detail="OpenCV/MediaPipe not available - missing system dependencies")
+    
     if not controller.cap:
-        if not controller.initialize():
-            raise HTTPException(status_code=500, detail="Failed to initialize camera")
+        try:
+            if not controller.initialize():
+                raise HTTPException(status_code=500, detail="Failed to initialize camera")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to initialize camera: {str(e)}")
     
     return StreamingResponse(
         generate_frames(),
@@ -246,6 +264,9 @@ async def toggle_airmouse():
     """Toggle air mouse on/off"""
     global controller
     
+    if not CV2_AVAILABLE:
+        return {"status": "error", "message": "OpenCV/MediaPipe not available - missing system dependencies", "active": False}
+    
     try:
         if controller.active:
             controller.stop()
@@ -253,16 +274,24 @@ async def toggle_airmouse():
         else:
             if not controller.cap:
                 if not controller.initialize():
-                    raise HTTPException(status_code=500, detail="Failed to initialize camera")
+                    return {"status": "error", "message": "Failed to initialize camera", "active": False}
             controller.start()
             return {"status": "success", "message": "Air mouse started", "active": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to toggle air mouse: {str(e)}")
+        return {"status": "error", "message": f"Failed to toggle air mouse: {str(e)}", "active": False}
 
 @router.get("/gesture-data")
 async def get_gesture_data():
     """Get current gesture data for web-based mouse control"""
     global controller
+    
+    if not CV2_AVAILABLE:
+        return {
+            "status": "error",
+            "active": False,
+            "gesture_data": None,
+            "message": "OpenCV/MediaPipe not available"
+        }
     
     return {
         "status": "success",
@@ -279,4 +308,4 @@ async def cleanup_airmouse():
         controller.cleanup()
         return {"status": "success", "message": "Air mouse cleaned up"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup air mouse: {str(e)}")
+        return {"status": "error", "message": f"Failed to cleanup air mouse: {str(e)}"}
