@@ -611,8 +611,6 @@ const Process = () => {
   // Entity-specific Configuration State
   const [selectedEntityContext, setSelectedEntityContext] = useState('all') // 'all' or specific entity ID
   const [entityNodeConfigs, setEntityNodeConfigs] = useState({}) // { entityId: { nodeId: { enabled: true, settings: {} } } }
-  const [showLaunchModal, setShowLaunchModal] = useState(false)
-  const [launchEntityId, setLaunchEntityId] = useState('all')
 
   const markUnsavedChanges = useCallback(() => {
     setHasUnsavedChanges(true)
@@ -686,8 +684,19 @@ const Process = () => {
 
   const getEntityWorkflowNodes = useCallback((entityId) => {
     if (entityId === 'all') {
-      // For "all" view, show all nodes but with entity-specific enabled/disabled status
-      return workflowNodes
+      // For "all" view, show nodes grouped by entity
+      // Only show entities that actually have nodes
+      const entitiesWithNodes = new Set()
+      workflowNodes.forEach(node => {
+        if (node.entityContext) {
+          entitiesWithNodes.add(node.entityContext)
+        }
+      })
+      
+      // Return nodes only from entities that have nodes
+      return workflowNodes.filter(node => 
+        node.entityContext && entitiesWithNodes.has(node.entityContext)
+      )
     }
     
     // Filter nodes based on entity-specific configuration AND entity context
@@ -1441,7 +1450,7 @@ const Process = () => {
     }
     
     const newNode = {
-      id: `node-${Date.now()}-${selectedEntityContext}`,
+      id: `${crypto.randomUUID()}`,
       type: nodeType,
       title: nodeTemplate.title,
       description: nodeTemplate.description,
@@ -1718,8 +1727,13 @@ const Process = () => {
                 </button>
                 <button 
                   onClick={async () => {
-                    await saveProcessConfiguration()
-                    showNotification('✅ Process flow saved successfully!', 'success')
+                    try {
+                      await saveProcessConfiguration()
+                      showNotification('✅ Process flow saved successfully!', 'success')
+                    } catch (error) {
+                      console.error('❌ Error saving process flow:', error)
+                      showNotification('❌ Failed to save process flow. Please try again.', 'error')
+                    }
                   }}
                   className="btn-success inline-flex items-center gap-2 text-sm"
                 >
@@ -1740,14 +1754,6 @@ const Process = () => {
                 >
                   <Play className="h-4 w-4" />
                   Run Simulation
-                </button>
-                <button 
-                  onClick={() => setShowLaunchModal(true)}
-                  disabled={workflowNodes.length === 0}
-                  className="btn-success inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Zap className="h-4 w-4" />
-                  Launch Process
                 </button>
               </div>
             </div>
@@ -1788,7 +1794,15 @@ const Process = () => {
                     // Load consolidation workflow
                     setFlowMode('consolidation')
                     setWorkflowNodes(consolidationWorkflowNodes)
-                    showNotification('Switched to Consolidation mode', 'success')
+                    
+                    // Auto-select all entities for consolidation
+                    const allEntityIds = availableEntities.map(e => getEntityIdentifier(e))
+                    setSelectedEntities(allEntityIds)
+                    
+                    // Set entity context to 'all' for consolidation
+                    setSelectedEntityContext('all')
+                    
+                    showNotification('Switched to Consolidation mode - All entities selected', 'success')
                     saveProcessConfiguration()
                   }}
                   className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
@@ -1802,24 +1816,36 @@ const Process = () => {
                 </button>
               </div>
 
-              {/* Entity Context Selector */}
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Entity Context:
-                </label>
-                <select
-                  value={selectedEntityContext}
-                  onChange={(e) => setSelectedEntityContext(e.target.value)}
-                  className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Entities</option>
-                  {availableEntities.map((entity) => (
-                    <option key={getEntityIdentifier(entity)} value={getEntityIdentifier(entity)}>
-                      {getEntityName(entity)} ({getEntityCode(entity)})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Entity Context Selector - Only show in Entity mode */}
+              {flowMode === 'entity' && (
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Entity Context:
+                  </label>
+                  <select
+                    value={selectedEntityContext}
+                    onChange={(e) => setSelectedEntityContext(e.target.value)}
+                    className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All Entities</option>
+                    {availableEntities.map((entity) => (
+                      <option key={getEntityIdentifier(entity)} value={getEntityIdentifier(entity)}>
+                        {getEntityName(entity)} ({getEntityCode(entity)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              {/* Consolidation Mode Info */}
+              {flowMode === 'consolidation' && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <Layers className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
+                    Consolidation Mode - All Entities Selected
+                  </span>
+                </div>
+              )}
 
               {/* Entity Selector */}
               <div className="relative">
@@ -2493,86 +2519,6 @@ const Process = () => {
           )}
         </div>
 
-        {/* Launch Process Modal */}
-        {showLaunchModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-w-full mx-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Launch Process
-                </h3>
-                <button
-                  onClick={() => setShowLaunchModal(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Launch for Entity:
-                  </label>
-                  <select
-                    value={launchEntityId}
-                    onChange={(e) => setLaunchEntityId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700"
-                  >
-                    <option value="all">All Entities</option>
-                    {availableEntities.map((entity) => (
-                      <option key={getEntityIdentifier(entity)} value={getEntityIdentifier(entity)}>
-                        {getEntityName(entity)} ({getEntityCode(entity)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Nodes to Execute:
-                  </label>
-                  <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 max-h-40 overflow-y-auto">
-                    {getFilteredNodesForEntity(launchEntityId).map((node) => (
-                      <div key={node.id} className="flex items-center gap-2 py-1">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
-                          {node.title}
-                        </span>
-                      </div>
-                    ))}
-                    {getFilteredNodesForEntity(launchEntityId).length === 0 && (
-                      <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-2">
-                        No nodes configured for this entity
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    onClick={() => setShowLaunchModal(false)}
-                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      // TODO: Implement entity-specific launch logic
-                      showNotification(`🚀 Launching process for ${launchEntityId === 'all' ? 'all entities' : 'selected entity'}...`, 'success')
-                      setShowLaunchModal(false)
-                    }}
-                    disabled={getFilteredNodesForEntity(launchEntityId).length === 0}
-                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Zap className="h-4 w-4 inline mr-1" />
-                    Launch
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     )
   }

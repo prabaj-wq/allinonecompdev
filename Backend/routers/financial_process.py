@@ -617,7 +617,8 @@ async def create_node(
     try:
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
-            node_id = str(uuid.uuid4())
+            # Use frontend-provided ID if available, otherwise generate new UUID
+            node_id = node_data.get("id") or str(uuid.uuid4())
             cur.execute(
                 """
                 INSERT INTO financial_process_nodes 
@@ -746,6 +747,72 @@ async def delete_node(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting node: {str(e)}")
+
+@router.get("/processes/{process_id}/nodes")
+async def get_process_nodes(
+    process_id: str,
+    company_name: str = Query(...),
+    entity_context: str = Query(None, description="Filter by entity context"),
+    current_user = Depends(get_current_active_user)
+):
+    """Get all nodes for a process, optionally filtered by entity context"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            if entity_context and entity_context != 'all':
+                # Filter by specific entity context
+                cur.execute("""
+                    SELECT id, node_type, name, description, x, y, width, height, 
+                           canvas_mode, entity_context, status, configuration, sequence, 
+                           is_active, created_at, updated_at
+                    FROM financial_process_nodes 
+                    WHERE process_id = %s AND entity_context = %s AND is_active = true
+                    ORDER BY sequence, created_at
+                """, (process_id, entity_context))
+            elif entity_context == 'all':
+                # Get all nodes but group by entity context
+                cur.execute("""
+                    SELECT id, node_type, name, description, x, y, width, height, 
+                           canvas_mode, entity_context, status, configuration, sequence, 
+                           is_active, created_at, updated_at
+                    FROM financial_process_nodes 
+                    WHERE process_id = %s AND is_active = true AND entity_context IS NOT NULL
+                    ORDER BY entity_context, sequence, created_at
+                """, (process_id,))
+            else:
+                # Get all nodes
+                cur.execute("""
+                    SELECT id, node_type, name, description, x, y, width, height, 
+                           canvas_mode, entity_context, status, configuration, sequence, 
+                           is_active, created_at, updated_at
+                    FROM financial_process_nodes 
+                    WHERE process_id = %s AND is_active = true
+                    ORDER BY sequence, created_at
+                """, (process_id,))
+            
+            nodes = cur.fetchall()
+            
+            # Convert to list of dictionaries
+            nodes_list = []
+            for node in nodes:
+                node_dict = dict(node)
+                # Parse configuration JSON
+                if node_dict.get('configuration'):
+                    try:
+                        node_dict['configuration'] = json.loads(node_dict['configuration']) if isinstance(node_dict['configuration'], str) else node_dict['configuration']
+                    except:
+                        node_dict['configuration'] = {}
+                nodes_list.append(node_dict)
+            
+            return {
+                "nodes": nodes_list,
+                "total_count": len(nodes_list),
+                "entity_context": entity_context
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching nodes: {str(e)}")
 
 # ============================================================================
 # CONNECTION MANAGEMENT
@@ -1656,6 +1723,13 @@ async def save_process_configuration(
                     if not node_id:
                         node_id = str(uuid.uuid4())
                     
+                    # Validate UUID format
+                    try:
+                        uuid.UUID(node_id)
+                    except ValueError:
+                        print(f"⚠️ Invalid UUID format for node {node_id}, generating new UUID")
+                        node_id = str(uuid.uuid4())
+                    
                     # Check if node exists
                     cur.execute("""
                         SELECT id FROM financial_process_nodes 
@@ -1723,6 +1797,92 @@ async def save_process_configuration(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving configuration: {str(e)}")
+
+@router.get("/processes/{process_id}/consolidation-nodes")
+async def get_consolidation_nodes(
+    process_id: str,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Get nodes specifically for consolidation mode - returns nodes from all entities"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get all nodes that are suitable for consolidation
+            cur.execute("""
+                SELECT id, node_type, name, description, x, y, width, height, 
+                       canvas_mode, entity_context, status, configuration, sequence, 
+                       is_active, created_at, updated_at
+                FROM financial_process_nodes 
+                WHERE process_id = %s AND is_active = true 
+                AND (canvas_mode = 'consolidation' OR canvas_mode = 'both' OR canvas_mode IS NULL)
+                ORDER BY entity_context, sequence, created_at
+            """, (process_id,))
+            
+            nodes = cur.fetchall()
+            
+            # Convert to list and group by entity
+            nodes_by_entity = {}
+            for node in nodes:
+                node_dict = dict(node)
+                # Parse configuration JSON
+                if node_dict.get('configuration'):
+                    try:
+                        node_dict['configuration'] = json.loads(node_dict['configuration']) if isinstance(node_dict['configuration'], str) else node_dict['configuration']
+                    except:
+                        node_dict['configuration'] = {}
+                
+                entity_context = node_dict.get('entity_context', 'global')
+                if entity_context not in nodes_by_entity:
+                    nodes_by_entity[entity_context] = []
+                nodes_by_entity[entity_context].append(node_dict)
+            
+            return {
+                "nodes_by_entity": nodes_by_entity,
+                "total_entities": len(nodes_by_entity),
+                "total_nodes": len(nodes)
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching consolidation nodes: {str(e)}")
+
+@router.put("/processes/{process_id}/flow-mode")
+async def update_flow_mode(
+    process_id: str,
+    flow_data: dict = Body(...),
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Update the flow mode (entity vs consolidation) for a process"""
+    try:
+        flow_mode = flow_data.get('flow_mode', 'entity')
+        selected_entities = flow_data.get('selected_entities', [])
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Update the process configuration
+            cur.execute("""
+                UPDATE process_configurations 
+                SET configuration = jsonb_set(
+                    COALESCE(configuration, '{}'),
+                    '{flow_mode}',
+                    %s
+                ) || jsonb_build_object('selected_entities', %s)
+                WHERE process_id = %s
+            """, (json.dumps(flow_mode), json.dumps(selected_entities), process_id))
+            
+            conn.commit()
+            
+            return {
+                "message": f"Flow mode updated to {flow_mode}",
+                "flow_mode": flow_mode,
+                "selected_entities": selected_entities
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating flow mode: {str(e)}")
 
 # ============================================================================
 # PYDANTIC MODELS FOR NEW FUNCTIONALITY
