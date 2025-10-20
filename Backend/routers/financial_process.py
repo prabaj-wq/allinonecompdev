@@ -1693,84 +1693,84 @@ async def create_data_input(
                         data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
                         data.get('reference_id'), json.dumps(data.get('custom_fields', {})), data.get('created_by')
                     ))
-            
-            elif data_type == 'ic_amounts':
-                # Get from/to entity information
-                from_entity_info = {}
-                to_entity_info = {}
-                from_account_info = {}
-                to_account_info = {}
                 
-                if data.get('from_entity_id'):
-                    cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
-                              (data.get('from_entity_id'), data.get('from_entity_id')))
-                    result = cur.fetchone()
-                    if result:
-                        from_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
+                elif data_type == 'ic_amounts':
+                    # Get from/to entity information
+                    from_entity_info = {}
+                    to_entity_info = {}
+                    from_account_info = {}
+                    to_account_info = {}
                 
-                if data.get('to_entity_id'):
-                    cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
-                              (data.get('to_entity_id'), data.get('to_entity_id')))
-                    result = cur.fetchone()
-                    if result:
-                        to_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
+                    if data.get('from_entity_id'):
+                        cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
+                                  (data.get('from_entity_id'), data.get('from_entity_id')))
+                        result = cur.fetchone()
+                        if result:
+                            from_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
+                    
+                    if data.get('to_entity_id'):
+                        cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
+                                  (data.get('to_entity_id'), data.get('to_entity_id')))
+                        result = cur.fetchone()
+                        if result:
+                            to_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
+                    
+                    if data.get('from_account_id'):
+                        cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
+                                  (data.get('from_account_id'), data.get('from_account_id')))
+                        result = cur.fetchone()
+                        if result:
+                            from_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
+                    
+                    if data.get('to_account_id'):
+                        cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
+                                  (data.get('to_account_id'), data.get('to_account_id')))
+                        result = cur.fetchone()
+                        if result:
+                            to_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
+                    
+                    cur.execute(f"""
+                        INSERT INTO {table_name} 
+                        (id, process_id, from_entity_id, from_entity_code, from_entity_name, to_entity_id, to_entity_code, to_entity_name,
+                         from_account_id, from_account_code, from_account_name, to_account_id, to_account_code, to_account_name,
+                         period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
+                         amount, currency, scenario_id, scenario_code, description, reference_id, transaction_type, fx_rate, custom_fields, created_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING *
+                    """, (
+                        entry_id, process_id,
+                        data.get('from_entity_id'), from_entity_info.get('entity_code'), from_entity_info.get('entity_name'),
+                        data.get('to_entity_id'), to_entity_info.get('entity_code'), to_entity_info.get('entity_name'),
+                        data.get('from_account_id'), from_account_info.get('account_code'), from_account_info.get('account_name'),
+                        data.get('to_account_id'), to_account_info.get('account_code'), to_account_info.get('account_name'),
+                        period_info['period_id'], period_info['period_code'], period_info['period_name'],
+                        period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
+                        data.get('amount'), data.get('currency_code', 'USD'),
+                        data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
+                        data.get('reference_id'), data.get('transaction_type'), data.get('fx_rate', 1.0),
+                        json.dumps(data.get('custom_fields', {})), data.get('created_by')
+                    ))
                 
-                if data.get('from_account_id'):
-                    cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
-                              (data.get('from_account_id'), data.get('from_account_id')))
-                    result = cur.fetchone()
-                    if result:
-                        from_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
-                
-                if data.get('to_account_id'):
-                    cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
-                              (data.get('to_account_id'), data.get('to_account_id')))
-                    result = cur.fetchone()
-                    if result:
-                        to_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
-                
-                cur.execute(f"""
-                    INSERT INTO {table_name} 
-                    (id, process_id, from_entity_id, from_entity_code, from_entity_name, to_entity_id, to_entity_code, to_entity_name,
-                     from_account_id, from_account_code, from_account_name, to_account_id, to_account_code, to_account_name,
-                     period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
-                     amount, currency, scenario_id, scenario_code, description, reference_id, transaction_type, fx_rate, custom_fields, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING *
-                """, (
-                    entry_id, process_id,
-                    data.get('from_entity_id'), from_entity_info.get('entity_code'), from_entity_info.get('entity_name'),
-                    data.get('to_entity_id'), to_entity_info.get('entity_code'), to_entity_info.get('entity_name'),
-                    data.get('from_account_id'), from_account_info.get('account_code'), from_account_info.get('account_name'),
-                    data.get('to_account_id'), to_account_info.get('account_code'), to_account_info.get('account_name'),
-                    period_info['period_id'], period_info['period_code'], period_info['period_name'],
-                    period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
-                    data.get('amount'), data.get('currency_code', 'USD'),
-                    data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
-                    data.get('reference_id'), data.get('transaction_type'), data.get('fx_rate', 1.0),
-                    json.dumps(data.get('custom_fields', {})), data.get('created_by')
-                ))
-            
-            elif data_type == 'other_amounts':
-                cur.execute(f"""
-                    INSERT INTO {table_name} 
-                    (id, process_id, entity_id, entity_code, entity_name, account_id, account_code, account_name,
-                     period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
-                     amount, currency, scenario_id, scenario_code, description, reference_id, 
-                     adjustment_type, custom_transaction_type, custom_fields, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING *
-                """, (
-                    entry_id, process_id,
-                    data.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
-                    data.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
-                    period_info['period_id'], period_info['period_code'], period_info['period_name'],
-                    period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
-                    data.get('amount'), data.get('currency_code', 'USD'),
-                    data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
-                    data.get('reference_id'), data.get('adjustment_type'), data.get('custom_transaction_type'),
-                    json.dumps(data.get('custom_fields', {})), data.get('created_by')
-                ))
+                elif data_type == 'other_amounts':
+                    cur.execute(f"""
+                        INSERT INTO {table_name} 
+                        (id, process_id, entity_id, entity_code, entity_name, account_id, account_code, account_name,
+                         period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
+                         amount, currency, scenario_id, scenario_code, description, reference_id, 
+                         adjustment_type, custom_transaction_type, custom_fields, created_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING *
+                    """, (
+                        entry_id, process_id,
+                        entity_info.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
+                        account_info.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
+                        period_info['period_id'], period_info['period_code'], period_info['period_name'],
+                        period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
+                        data.get('amount'), data.get('currency', 'USD'),
+                        data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
+                        data.get('reference_id'), data.get('adjustment_type'), data.get('custom_transaction_type'),
+                        json.dumps(data.get('custom_fields', {})), data.get('created_by')
+                    ))
             
                 result = cur.fetchone()
                 conn.commit()
