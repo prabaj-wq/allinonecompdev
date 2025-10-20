@@ -669,6 +669,7 @@ const Process = () => {
   }, [entityNodeConfigs])
 
   const updateEntityNodeConfig = useCallback((entityId, nodeId, updates) => {
+    console.log(`🔧 Updating entity config for ${entityId}, node ${nodeId}:`, updates)
     setEntityNodeConfigs(prev => ({
       ...prev,
       [entityId]: {
@@ -679,6 +680,7 @@ const Process = () => {
         }
       }
     }))
+    setHasUnsavedChanges(true)
     markUnsavedChanges()
   }, [getEntityNodeConfig, markUnsavedChanges])
 
@@ -1056,6 +1058,9 @@ const Process = () => {
         if (Array.isArray(config.periods)) setSelectedPeriods(config.periods)
         if (config.scenario) setSelectedScenario(config.scenario)
         if (config.fiscalSettingsLocked !== undefined) setFiscalSettingsLocked(config.fiscalSettingsLocked)
+        
+        // Load entity-specific configurations after main config is loaded
+        await loadEntityConfigurations()
       } else {
         console.warn(`⚠️ Configuration load returned status ${response.status}`)
         // Do not inject mock configuration
@@ -1071,8 +1076,7 @@ const Process = () => {
       }
     } catch (error) {
       console.error('❌ Error loading process configuration:', error)
-      showNotification('Failed to load configuration', 'error')
-      // Do not inject mock configuration
+      // Clear state on error
       setWorkflowNodes([])
       setEntityWorkflowNodes([])
       setConsolidationWorkflowNodes([])
@@ -1141,6 +1145,100 @@ const Process = () => {
       const config = getEntityNodeConfig(entityId, node.id)
       return config.enabled
     })
+  }
+
+  // Load entity-specific configurations from backend
+  const loadEntityConfigurations = async () => {
+    if (!selectedProcess?.id) return
+
+    try {
+      const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/entity-node-configs?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'GET',
+        headers: {
+          ...getAuthHeaders()
+        }
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Entity configurations loaded:', result)
+        
+        // Convert backend format to frontend format
+        const loadedConfigs = {}
+        result.configurations.forEach(config => {
+          if (!loadedConfigs[config.entity_code]) {
+            loadedConfigs[config.entity_code] = {}
+          }
+          loadedConfigs[config.entity_code][config.node_id] = {
+            enabled: config.enabled,
+            settings: config.settings || {}
+          }
+        })
+        
+        // Merge with existing configs (preserve 'all' configs)
+        setEntityNodeConfigs(prev => ({
+          ...prev,
+          ...loadedConfigs
+        }))
+      } else {
+        console.warn(`⚠️ Failed to load entity configurations (${response.status})`)
+      }
+    } catch (error) {
+      console.error('❌ Error loading entity configurations:', error)
+    }
+  }
+
+  // Save entity-specific configurations to backend
+  const saveEntityConfigurations = async () => {
+    if (!selectedProcess?.id) return
+
+    try {
+      setSavingConfig(true)
+      
+      // Convert entityNodeConfigs to the format expected by backend
+      const configs = []
+      
+      Object.entries(entityNodeConfigs).forEach(([entityCode, nodeConfigs]) => {
+        if (entityCode !== 'all') { // Skip 'all' - only save specific entity configs
+          Object.entries(nodeConfigs).forEach(([nodeId, config]) => {
+            configs.push({
+              entity_code: entityCode,
+              node_id: nodeId,
+              enabled: config.enabled,
+              settings: config.settings || {}
+            })
+          })
+        }
+      })
+
+      console.log('💾 Saving entity configurations:', configs)
+
+      const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/entity-node-configs?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify(configs)
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        console.log('✅ Entity configurations saved:', result)
+        showNotification('✅ Entity configurations saved successfully!', 'success')
+        setHasUnsavedChanges(false)
+        setLastSavedAt(new Date())
+      } else {
+        const errorText = await response.text()
+        console.error(`❌ Failed to save entity configurations (${response.status}):`, errorText)
+        showNotification('Failed to save entity configurations', 'error')
+      }
+    } catch (error) {
+      console.error('❌ Error saving entity configurations:', error)
+      showNotification('Failed to save entity configurations - check connection', 'error')
+    } finally {
+      setSavingConfig(false)
+    }
   }
 
   const handleConsolidationModeEntitySelection = () => {
@@ -2403,8 +2501,25 @@ const Process = () => {
                 </p>
               </div>
             </div>
-            {/* Save status indicator */}
-            <div>
+            {/* Save button and status indicator */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={saveEntityConfigurations}
+                disabled={savingConfig}
+                className="btn-primary inline-flex items-center gap-2 text-sm"
+              >
+                {savingConfig ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4" />
+                    Save Settings
+                  </>
+                )}
+              </button>
               {renderSaveStatus()}
             </div>
           </div>
