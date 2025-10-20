@@ -686,13 +686,21 @@ const Process = () => {
 
   const getEntityWorkflowNodes = useCallback((entityId) => {
     if (entityId === 'all') {
+      // For "all" view, show all nodes but with entity-specific enabled/disabled status
       return workflowNodes
     }
     
-    // Filter nodes based on entity-specific configuration
+    // Filter nodes based on entity-specific configuration AND entity context
     return workflowNodes.filter(node => {
+      // Check if node was added for this specific entity
+      const wasAddedForThisEntity = node.entityContext === entityId
+      
+      // Check if node is enabled for this entity
       const config = getEntityNodeConfig(entityId, node.id)
-      return config.enabled
+      const isEnabledForEntity = config.enabled
+      
+      // Show node if it was added for this entity OR if it's a global node that's enabled for this entity
+      return wasAddedForThisEntity || (node.entityContext === undefined && isEnabledForEntity)
     })
   }, [workflowNodes, getEntityNodeConfig])
 
@@ -1421,13 +1429,19 @@ const Process = () => {
     </div>
   )
 
-  // Add node to workflow
-  const addNodeToWorkflow = (nodeType) => {
+  // Add node to workflow - Entity-Specific Version
+  const addNodeToWorkflow = async (nodeType) => {
     const nodeTemplate = NODE_LIBRARY.find(n => n.type === nodeType)
     if (!nodeTemplate) return
     
+    // Check if we're in entity-specific context
+    if (selectedEntityContext === 'all') {
+      showNotification('⚠️ Please select a specific entity to add nodes. Nodes cannot be added to "All Entities" view.', 'warning')
+      return
+    }
+    
     const newNode = {
-      id: `node-${Date.now()}`,
+      id: `node-${Date.now()}-${selectedEntityContext}`,
       type: nodeType,
       title: nodeTemplate.title,
       description: nodeTemplate.description,
@@ -1436,18 +1450,29 @@ const Process = () => {
       category: nodeTemplate.category,
       flowType: nodeTemplate.flowType,
       dependencies: nodeTemplate.dependencies || [],
-      status: 'pending', // pending, running, completed, error
+      status: 'pending',
+      entityContext: selectedEntityContext, // Track which entity this node belongs to
       config: {
         enabled: true,
         availableForEntity: true,
         availableForConsolidation: nodeTemplate.flowType === 'consolidation' || nodeTemplate.flowType === 'both',
         restrictions: {}
       },
-      sequence: workflowNodes.length
+      sequence: getCurrentWorkflowNodes().length
     }
     
+    // Add to global workflow nodes
     const updatedNodes = [...workflowNodes, newNode]
     setWorkflowNodes(updatedNodes)
+    
+    // Set entity-specific configuration
+    updateEntityNodeConfig(selectedEntityContext, newNode.id, { 
+      enabled: true, 
+      settings: {
+        addedByEntity: selectedEntityContext,
+        createdAt: new Date().toISOString()
+      }
+    })
     
     // IMPORTANT: Also update the mode-specific workflow
     if (flowMode === 'entity') {
@@ -1456,7 +1481,43 @@ const Process = () => {
       setConsolidationWorkflowNodes(updatedNodes)
     }
     
-    showNotification(`Added ${nodeTemplate.title} to workflow`, 'success')
+    // Save node to backend database
+    try {
+      const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/nodes?company_name=${encodeURIComponent(selectedCompany)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({
+          id: newNode.id,
+          type: newNode.type,
+          title: newNode.title,
+          name: newNode.title,
+          description: newNode.description,
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 100,
+          entityContext: newNode.entityContext,
+          status: newNode.status,
+          sequence: newNode.sequence,
+          configuration: newNode.config || {}
+        })
+      })
+
+      if (response.ok) {
+        console.log(`✅ Node ${newNode.title} saved to database for entity ${selectedEntityContext}`)
+        showNotification(`Added ${nodeTemplate.title} to ${selectedEntityContext} workflow`, 'success')
+      } else {
+        console.error(`❌ Failed to save node to database: ${response.status}`)
+        showNotification(`Added ${nodeTemplate.title} locally (database save failed)`, 'warning')
+      }
+    } catch (error) {
+      console.error('❌ Error saving node to database:', error)
+      showNotification(`Added ${nodeTemplate.title} locally (database save failed)`, 'warning')
+    }
+    
     setShowNodeLibrary(false)
     
     // Update save status after adding node
@@ -1639,8 +1700,18 @@ const Process = () => {
               {/* Right Side - Action Buttons */}
               <div className="flex items-center gap-2">
                 <button 
-                  onClick={() => setShowNodeLibrary(!showNodeLibrary)}
-                  className="btn-secondary inline-flex items-center gap-2 text-sm"
+                  onClick={() => {
+                    if (selectedEntityContext === 'all') {
+                      showNotification('⚠️ Please select a specific entity to add nodes', 'warning')
+                      return
+                    }
+                    setShowNodeLibrary(!showNodeLibrary)
+                  }}
+                  disabled={selectedEntityContext === 'all'}
+                  className={`btn-secondary inline-flex items-center gap-2 text-sm ${
+                    selectedEntityContext === 'all' ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title={selectedEntityContext === 'all' ? 'Select a specific entity to add nodes' : 'Add Node'}
                 >
                   <Plus className="h-4 w-4" />
                   Add Node
@@ -2045,11 +2116,14 @@ const Process = () => {
                   <div className="flex gap-3 pb-2" style={{ minWidth: 'max-content' }}>
                     {availableNodes.map((node, idx) => {
                       const IconComponent = getIconComponent(node.icon)
-                      const isAdded = workflowNodes.some(n => n.type === node.type)
+                      // Check if node is added for current entity context
+                      const isAdded = selectedEntityContext === 'all' 
+                        ? workflowNodes.some(n => n.type === node.type)
+                        : getCurrentWorkflowNodes().some(n => n.type === node.type)
                       return (
                         <div
                           key={node.type}
-                          onClick={() => !isAdded && addNodeToWorkflow(node.type)}
+                          onClick={async () => !isAdded && await addNodeToWorkflow(node.type)}
                           style={{ 
                             animation: `slideIn 0.3s ease-out ${idx * 0.05}s both`
                           }}
@@ -2085,7 +2159,19 @@ const Process = () => {
             {/* Workflow Nodes - Horizontal Scroll */}
             <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
               {/* Entity Context Info */}
-              {selectedEntityContext !== 'all' && (
+              {selectedEntityContext === 'all' ? (
+                <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <span className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                      All Entities View - Read Only
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    You're viewing all entity workflows. To add or configure nodes, please select a specific entity from the Entity Context dropdown above.
+                  </p>
+                </div>
+              ) : (
                 <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -2094,7 +2180,7 @@ const Process = () => {
                     </span>
                   </div>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                    Only nodes enabled for this entity are shown. Switch to "All Entities" to see the complete workflow.
+                    Only nodes for this entity are shown. Nodes added here will be specific to this entity only.
                   </p>
                 </div>
               )}
@@ -2104,13 +2190,26 @@ const Process = () => {
                   <div className="text-center text-gray-400 dark:text-gray-500">
                     <Workflow className="h-16 w-16 mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-medium mb-2">No Nodes in Workflow</h3>
-                    <p className="text-sm mb-4">Click "Add Node" to start building your process</p>
+                    <p className="text-sm mb-4">
+                      {selectedEntityContext === 'all' 
+                        ? 'Select a specific entity to add nodes' 
+                        : 'Click "Add Node" to start building your process'}
+                    </p>
                     <button
-                      onClick={() => setShowNodeLibrary(true)}
-                      className="btn-primary inline-flex items-center gap-2"
+                      onClick={() => {
+                        if (selectedEntityContext === 'all') {
+                          showNotification('⚠️ Please select a specific entity to add nodes', 'warning')
+                          return
+                        }
+                        setShowNodeLibrary(true)
+                      }}
+                      disabled={selectedEntityContext === 'all'}
+                      className={`btn-primary inline-flex items-center gap-2 ${
+                        selectedEntityContext === 'all' ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       <Plus className="h-4 w-4" />
-                      Add Your First Node
+                      {selectedEntityContext === 'all' ? 'Select Entity First' : 'Add Your First Node'}
                     </button>
                   </div>
                 </div>

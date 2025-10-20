@@ -130,6 +130,14 @@ def ensure_financial_tables(conn):
         ALTER TABLE financial_process_nodes
         ADD COLUMN IF NOT EXISTS canvas_mode VARCHAR(50) DEFAULT 'entity'
     """)
+    cur.execute("""
+        ALTER TABLE financial_process_nodes
+        ADD COLUMN IF NOT EXISTS entity_context VARCHAR(100)
+    """)
+    cur.execute("""
+        ALTER TABLE financial_process_nodes
+        ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending'
+    """)
 
     # Create process_connections table
     cur.execute("""
@@ -613,20 +621,22 @@ async def create_node(
             cur.execute(
                 """
                 INSERT INTO financial_process_nodes 
-                (id, process_id, node_type, name, description, x, y, sequence, canvas_mode, configuration, is_active, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
-                RETURNING id, node_type, name, description, x, y, canvas_mode
+                (id, process_id, node_type, name, description, x, y, sequence, canvas_mode, entity_context, status, configuration, is_active, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+                RETURNING id, node_type, name, description, x, y, canvas_mode, entity_context, status
                 """,
                 (
                     node_id,
                     process_id,
                     node_data.get("node_type") or node_data.get("type"),
-                    node_data.get("name"),
+                    node_data.get("name") or node_data.get("title"),
                     node_data.get("description", ""),
                     node_data.get("x_position") or node_data.get("x", 100),
                     node_data.get("y_position") or node_data.get("y", 100),
                     node_data.get("sequence", 1),
                     node_data.get("canvas_mode", "entity"),
+                    node_data.get("entity_context") or node_data.get("entityContext"),
+                    node_data.get("status", "pending"),
                     json.dumps(node_data.get("configuration", {}))
                 )
             )
@@ -1517,23 +1527,69 @@ async def get_process_configuration(
             
             config_row = cur.fetchone()
             
+            # Load nodes from database
+            cur.execute("""
+                SELECT id, node_type, name, description, x, y, width, height, 
+                       canvas_mode, entity_context, status, configuration, sequence, 
+                       is_active, created_at, updated_at
+                FROM financial_process_nodes 
+                WHERE process_id = %s AND is_active = true
+                ORDER BY sequence, created_at
+            """, (process_id,))
+            
+            nodes_from_db = cur.fetchall()
+            
+            # Convert database nodes to frontend format
+            nodes = []
+            for node in nodes_from_db:
+                node_dict = dict(node)
+                # Convert configuration JSON string back to dict
+                if node_dict.get('configuration'):
+                    try:
+                        node_dict['configuration'] = json.loads(node_dict['configuration']) if isinstance(node_dict['configuration'], str) else node_dict['configuration']
+                    except:
+                        node_dict['configuration'] = {}
+                
+                # Map database fields to frontend format
+                frontend_node = {
+                    "id": str(node_dict['id']),
+                    "type": node_dict['node_type'],
+                    "title": node_dict['name'],
+                    "description": node_dict['description'] or "",
+                    "x": float(node_dict['x']) if node_dict['x'] else 100,
+                    "y": float(node_dict['y']) if node_dict['y'] else 100,
+                    "width": float(node_dict['width']) if node_dict['width'] else 200,
+                    "height": float(node_dict['height']) if node_dict['height'] else 100,
+                    "entityContext": node_dict['entity_context'],
+                    "status": node_dict['status'] or 'pending',
+                    "sequence": node_dict['sequence'] or 0,
+                    "config": node_dict['configuration'] or {},
+                    "flowType": "both",  # Default value
+                    "category": "Process",  # Default value
+                    "color": "bg-blue-500",  # Default value
+                    "icon": node_dict['node_type']  # Will be converted to icon component on frontend
+                }
+                nodes.append(frontend_node)
+            
             if not config_row:
-                # Return empty configuration if none exists yet
+                # Return configuration with nodes from database
                 return {
-                    "nodes": [],
-                    "entityWorkflowNodes": [],
-                    "consolidationWorkflowNodes": [],
+                    "nodes": nodes,
+                    "entityWorkflowNodes": [n for n in nodes if n.get('entityContext') or True],  # Include all for backward compatibility
+                    "consolidationWorkflowNodes": [n for n in nodes if n.get('entityContext') or True],
                     "flowMode": "entity",
                     "selectedEntities": [],
                     "fiscalYear": None,
                     "periods": [],
                     "scenario": None,
-                    "fiscalSettingsLocked": False,
-                    "new_key": "new_value"
+                    "fiscalSettingsLocked": False
                 }
             
-            # Return the stored configuration
+            # Return the stored configuration with nodes from database
             config = config_row['configuration']
+            config['nodes'] = nodes  # Override with database nodes
+            config['entityWorkflowNodes'] = [n for n in nodes if n.get('entityContext') or True]
+            config['consolidationWorkflowNodes'] = [n for n in nodes if n.get('entityContext') or True]
             config['updated_at'] = config_row['updated_at'].isoformat() if config_row['updated_at'] else None
             
             return config
@@ -1581,11 +1637,87 @@ async def save_process_configuration(
                 """, (config_id, process_id, json.dumps(configuration)))
             
             result = cur.fetchone()
+            
+            # Save nodes to database if they exist in configuration
+            nodes = configuration.get('nodes', [])
+            if nodes:
+                print(f"💾 Saving {len(nodes)} nodes to database")
+                
+                # First, mark all existing nodes as inactive
+                cur.execute("""
+                    UPDATE financial_process_nodes 
+                    SET is_active = false, updated_at = NOW()
+                    WHERE process_id = %s
+                """, (process_id,))
+                
+                # Insert or update nodes
+                for node in nodes:
+                    node_id = node.get('id')
+                    if not node_id:
+                        node_id = str(uuid.uuid4())
+                    
+                    # Check if node exists
+                    cur.execute("""
+                        SELECT id FROM financial_process_nodes 
+                        WHERE id = %s
+                    """, (node_id,))
+                    
+                    existing_node = cur.fetchone()
+                    
+                    if existing_node:
+                        # Update existing node
+                        cur.execute("""
+                            UPDATE financial_process_nodes 
+                            SET node_type = %s, name = %s, description = %s, 
+                                x = %s, y = %s, width = %s, height = %s,
+                                entity_context = %s, status = %s, sequence = %s,
+                                configuration = %s, is_active = true, updated_at = NOW()
+                            WHERE id = %s
+                        """, (
+                            node.get('type'),
+                            node.get('title') or node.get('name'),
+                            node.get('description', ''),
+                            node.get('x', 100),
+                            node.get('y', 100),
+                            node.get('width', 200),
+                            node.get('height', 100),
+                            node.get('entityContext'),
+                            node.get('status', 'pending'),
+                            node.get('sequence', 0),
+                            json.dumps(node.get('config', {})),
+                            node_id
+                        ))
+                    else:
+                        # Insert new node
+                        cur.execute("""
+                            INSERT INTO financial_process_nodes 
+                            (id, process_id, node_type, name, description, x, y, width, height,
+                             entity_context, status, sequence, configuration, is_active, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, NOW(), NOW())
+                        """, (
+                            node_id,
+                            process_id,
+                            node.get('type'),
+                            node.get('title') or node.get('name'),
+                            node.get('description', ''),
+                            node.get('x', 100),
+                            node.get('y', 100),
+                            node.get('width', 200),
+                            node.get('height', 100),
+                            node.get('entityContext'),
+                            node.get('status', 'pending'),
+                            node.get('sequence', 0),
+                            json.dumps(node.get('config', {}))
+                        ))
+                
+                print(f"✅ Successfully saved {len(nodes)} nodes to database")
+            
             conn.commit()
             
             return {
-                "message": "Configuration saved successfully",
+                "message": "Configuration and nodes saved successfully",
                 "configuration_id": str(result['id']),
+                "nodes_saved": len(nodes),
                 "updated_at": result['updated_at'].isoformat() if result['updated_at'] else None
             }
         
