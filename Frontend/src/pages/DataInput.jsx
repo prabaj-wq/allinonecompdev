@@ -96,17 +96,23 @@ const DataInput = () => {
   // Initialize entity context and form defaults
   useEffect(() => {
     if (defaultEntity && entities.length > 0) {
-      // Set default entity in form data
-      setFormData(prev => ({
-        ...prev,
-        entity_id: defaultEntity,
-        from_entity_id: defaultEntity
-      }))
+      // Find entity by ID or code
+      const entity = entities.find(e => e.id === defaultEntity || e.entity_code === defaultEntity)
       
-      // Show context notification
-      const entityName = entities.find(e => e.id === defaultEntity || e.entity_code === defaultEntity)?.entity_name || defaultEntity
-      if (entityName && defaultEntity !== 'all') {
-        showToast(`Filtered for entity: ${entityName}`, 'info')
+      if (entity) {
+        // Set default entity in form data using the actual entity ID
+        setFormData(prev => ({
+          ...prev,
+          entity_id: entity.id,
+          entity_code: entity.entity_code,
+          from_entity_id: entity.id,
+          from_entity_code: entity.entity_code
+        }))
+        
+        // Show context notification
+        if (defaultEntity !== 'all') {
+          showToast(`Filtered for entity: ${entity.entity_name || entity.name}`, 'info')
+        }
       }
     }
   }, [defaultEntity, entities])
@@ -795,7 +801,14 @@ const DataInput = () => {
                     </label>
                     <select
                       value={formData.entity_id}
-                      onChange={(e) => setFormData({...formData, entity_id: e.target.value})}
+                      onChange={(e) => {
+                        const selectedEntity = entities.find(ent => ent.id === e.target.value)
+                        setFormData({
+                          ...formData, 
+                          entity_id: e.target.value,
+                          entity_code: selectedEntity?.entity_code || selectedEntity?.code || ''
+                        })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select Entity</option>
@@ -827,7 +840,14 @@ const DataInput = () => {
                     </label>
                     <select
                       value={formData.account_id}
-                      onChange={(e) => setFormData({...formData, account_id: e.target.value})}
+                      onChange={(e) => {
+                        const selectedAccount = accounts.find(acc => acc.id === e.target.value)
+                        setFormData({
+                          ...formData, 
+                          account_id: e.target.value,
+                          account_code: selectedAccount?.account_code || selectedAccount?.code || ''
+                        })
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select Account</option>

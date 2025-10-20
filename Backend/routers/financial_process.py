@@ -1568,7 +1568,7 @@ def convert_date_to_period(transaction_date: str, conn, company_name: str):
         
         # Find the appropriate fiscal year and period
         cur.execute("""
-            SELECT fy.id as fiscal_year_id, fy.year as fiscal_year,
+            SELECT fy.id as fiscal_year_id, fy.fiscal_year as fiscal_year,
                    p.id as period_id, p.period_name, p.period_code,
                    p.start_date, p.end_date
             FROM fiscal_years fy
@@ -1625,73 +1625,74 @@ async def create_data_input(
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            # Get process information
-            cur.execute("SELECT name FROM financial_processes WHERE id = %s", (process_id,))
-            process_result = cur.fetchone()
-            process_name = process_result['name'] if process_result else f"process_{process_id[:8]}"
-            
-            # Create process-specific table
-            table_name = create_process_table(conn, process_id, process_name, data_type)
-            
-            # Convert transaction date to period information
-            transaction_date = data.get('transaction_date') or data.get('period_date')
-            period_info = convert_date_to_period(transaction_date, conn, company_name)
-            
-            # Get entity information - handle both entity_id and entity_code
-            entity_info = {}
-            entity_identifier = data.get('entity_id') or data.get('entity_code')
-            if entity_identifier:
-                cur.execute("""
-                    SELECT id, entity_code, entity_name 
-                    FROM entities 
-                    WHERE id = %s OR entity_code = %s
-                """, (entity_identifier, entity_identifier))
-                entity_result = cur.fetchone()
-                if entity_result:
-                    entity_info = {
-                        'entity_id': entity_result['id'],
-                        'entity_code': entity_result['entity_code'],
-                        'entity_name': entity_result['entity_name']
-                    }
-            
-            # Get account information - handle both account_id and account_code
-            account_info = {}
-            account_identifier = data.get('account_id') or data.get('account_code')
-            if account_identifier:
-                cur.execute("""
-                    SELECT id, account_code, account_name 
-                    FROM accounts 
-                    WHERE id = %s OR account_code = %s
-                """, (account_identifier, account_identifier))
-                account_result = cur.fetchone()
-                if account_result:
-                    account_info = {
-                        'account_id': account_result['id'],
-                        'account_code': account_result['account_code'],
-                        'account_name': account_result['account_name']
-                    }
-            
-            entry_id = str(uuid.uuid4())
-            
-            # Insert data based on type
-            if data_type == 'entity_amounts':
-                cur.execute(f"""
-                    INSERT INTO {table_name} 
-                    (id, process_id, entity_id, entity_code, entity_name, account_id, account_code, account_name,
-                     period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
-                     amount, currency, scenario_id, scenario_code, description, reference_id, custom_fields, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING *
-                """, (
-                    entry_id, process_id, 
-                    entity_info.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
-                    account_info.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
-                    period_info['period_id'], period_info['period_code'], period_info['period_name'],
-                    period_info['fiscal_year'], period_info['fiscal_month'], transaction_date,
-                    data.get('amount'), data.get('currency', 'USD'),
-                    data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
-                    data.get('reference_id'), json.dumps(data.get('custom_fields', {})), data.get('created_by')
-                ))
+            try:
+                # Get process information
+                cur.execute("SELECT name FROM financial_processes WHERE id = %s", (process_id,))
+                process_result = cur.fetchone()
+                process_name = process_result['name'] if process_result else f"process_{process_id[:8]}"
+                
+                # Create process-specific table
+                table_name = create_process_table(conn, process_id, process_name, data_type)
+                
+                # Convert transaction date to period information
+                transaction_date = data.get('transaction_date') or data.get('period_date')
+                period_info = convert_date_to_period(transaction_date, conn, company_name)
+                
+                # Get entity information - handle both entity_id and entity_code
+                entity_info = {}
+                entity_identifier = data.get('entity_id') or data.get('entity_code')
+                if entity_identifier:
+                    cur.execute("""
+                        SELECT id, entity_code, entity_name 
+                        FROM entities 
+                        WHERE id = %s OR entity_code = %s
+                    """, (entity_identifier, entity_identifier))
+                    entity_result = cur.fetchone()
+                    if entity_result:
+                        entity_info = {
+                            'entity_id': entity_result['id'],
+                            'entity_code': entity_result['entity_code'],
+                            'entity_name': entity_result['entity_name']
+                        }
+                
+                # Get account information - handle both account_id and account_code
+                account_info = {}
+                account_identifier = data.get('account_id') or data.get('account_code')
+                if account_identifier:
+                    cur.execute("""
+                        SELECT id, account_code, account_name 
+                        FROM accounts 
+                        WHERE id = %s OR account_code = %s
+                    """, (account_identifier, account_identifier))
+                    account_result = cur.fetchone()
+                    if account_result:
+                        account_info = {
+                            'account_id': account_result['id'],
+                            'account_code': account_result['account_code'],
+                            'account_name': account_result['account_name']
+                        }
+                
+                entry_id = str(uuid.uuid4())
+                
+                # Insert data based on type
+                if data_type == 'entity_amounts':
+                    cur.execute(f"""
+                        INSERT INTO {table_name} 
+                        (id, process_id, entity_id, entity_code, entity_name, account_id, account_code, account_name,
+                         period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
+                         amount, currency, scenario_id, scenario_code, description, reference_id, custom_fields, created_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING *
+                    """, (
+                        entry_id, process_id, 
+                        entity_info.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
+                        account_info.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
+                        period_info['period_id'], period_info['period_code'], period_info['period_name'],
+                        period_info['fiscal_year'], period_info['fiscal_month'], transaction_date,
+                        data.get('amount'), data.get('currency', 'USD'),
+                        data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
+                        data.get('reference_id'), json.dumps(data.get('custom_fields', {})), data.get('created_by')
+                    ))
             
             elif data_type == 'ic_amounts':
                 # Get from/to entity information
@@ -1771,15 +1772,20 @@ async def create_data_input(
                     json.dumps(data.get('custom_fields', {})), data.get('created_by')
                 ))
             
-            result = cur.fetchone()
-            conn.commit()
-            
-            print(f"✅ Created {data_type} entry in table {table_name}: {result}")
-            return {
-                "entry": dict(result), 
-                "table_name": table_name,
-                "message": f"{data_type.replace('_', ' ').title()} entry created successfully"
-            }
+                result = cur.fetchone()
+                conn.commit()
+                
+                print(f"✅ Created {data_type} entry in table {table_name}: {result}")
+                return {
+                    "entry": dict(result), 
+                    "table_name": table_name,
+                    "message": f"{data_type.replace('_', ' ').title()} entry created successfully"
+                }
+                
+            except Exception as inner_e:
+                conn.rollback()
+                print(f"❌ Transaction error in {data_type}: {str(inner_e)}")
+                raise inner_e
             
     except Exception as e:
         print(f"❌ Error creating {data_type}: {str(e)}")
