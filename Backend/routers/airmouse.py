@@ -2,8 +2,6 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 import cv2
 import mediapipe as mp
-from pynput.mouse import Button, Listener as MouseListener
-from pynput import mouse
 import numpy as np
 import threading
 import time
@@ -35,6 +33,13 @@ class AirMouseController:
         self.prev_x = 0
         self.prev_y = 0
         self.smooth_factor = 0.2
+        self.gesture_data = {
+            'cursor_x': 0,
+            'cursor_y': 0,
+            'left_click': False,
+            'right_click': False,
+            'timestamp': 0
+        }
         
     def initialize(self):
         """Initialize MediaPipe and camera"""
@@ -90,21 +95,13 @@ class AirMouseController:
                     # Get coordinates of the index finger tip
                     x, y = hand_landmarks.landmark[8].x, hand_landmarks.landmark[8].y
                     
-                    # Get screen size (using a reasonable default)
-                    screen_width, screen_height = 1920, 1080  # Default screen size
+                    # Normalize coordinates (0-1 range)
+                    normalized_x = max(0, min(1, x))
+                    normalized_y = max(0, min(1, y))
                     
-                    # Map coordinates to screen
-                    screen_x = min(max(screen_width * x, 0), screen_width - 1)
-                    screen_y = min(max(screen_height * y, 0), screen_height - 1)
-                    
-                    # Smooth the mouse movement
-                    smooth_x = self.prev_x + (screen_x - self.prev_x) * self.smooth_factor
-                    smooth_y = self.prev_y + (screen_y - self.prev_y) * self.smooth_factor
-                    
-                    try:
-                        mouse.Controller().position = (smooth_x, smooth_y)
-                    except:
-                        pass  # Ignore mouse movement errors
+                    # Smooth the movement
+                    smooth_x = self.prev_x + (normalized_x - self.prev_x) * self.smooth_factor
+                    smooth_y = self.prev_y + (normalized_y - self.prev_y) * self.smooth_factor
                     
                     # Update previous coordinates
                     self.prev_x, self.prev_y = smooth_x, smooth_y
@@ -120,15 +117,14 @@ class AirMouseController:
                     # Click threshold
                     click_threshold = 0.05
                     
-                    # Perform clicks
-                    try:
-                        mouse_controller = mouse.Controller()
-                        if distance_index_thumb < click_threshold:
-                            mouse_controller.click(Button.left)
-                        if distance_middle_thumb < click_threshold:
-                            mouse_controller.click(Button.right)
-                    except:
-                        pass  # Ignore click errors
+                    # Update gesture data
+                    self.gesture_data.update({
+                        'cursor_x': smooth_x,
+                        'cursor_y': smooth_y,
+                        'left_click': distance_index_thumb < click_threshold,
+                        'right_click': distance_middle_thumb < click_threshold,
+                        'timestamp': time.time()
+                    })
         
         # Add status indicator
         status_color = (0, 255, 0) if self.active else (128, 128, 128)
@@ -241,6 +237,17 @@ async def toggle_airmouse():
             return {"status": "success", "message": "Air mouse started", "active": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to toggle air mouse: {str(e)}")
+
+@router.get("/gesture-data")
+async def get_gesture_data():
+    """Get current gesture data for web-based mouse control"""
+    global controller
+    
+    return {
+        "status": "success",
+        "active": controller.active,
+        "gesture_data": controller.gesture_data
+    }
 
 @router.post("/cleanup")
 async def cleanup_airmouse():

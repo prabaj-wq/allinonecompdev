@@ -8,6 +8,8 @@ const AirMouse = ({ isOpen, onClose }) => {
   const [cameraInitialized, setCameraInitialized] = useState(false)
   const videoRef = useRef(null)
   const streamRef = useRef(null)
+  const gestureIntervalRef = useRef(null)
+  const cursorRef = useRef(null)
 
   // Check status on component mount
   useEffect(() => {
@@ -50,6 +52,84 @@ const AirMouse = ({ isOpen, onClose }) => {
     }
   }
 
+  const startGesturePolling = () => {
+    if (gestureIntervalRef.current) return
+    
+    gestureIntervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch('/api/airmouse/gesture-data')
+        const data = await response.json()
+        
+        if (data.status === 'success' && data.active && data.gesture_data) {
+          const { cursor_x, cursor_y, left_click, right_click } = data.gesture_data
+          
+          // Update cursor position
+          updateCursorPosition(cursor_x, cursor_y)
+          
+          // Handle clicks
+          if (left_click) {
+            simulateClick('left')
+          }
+          if (right_click) {
+            simulateClick('right')
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get gesture data:', err)
+      }
+    }, 50) // 20 FPS polling
+  }
+
+  const stopGesturePolling = () => {
+    if (gestureIntervalRef.current) {
+      clearInterval(gestureIntervalRef.current)
+      gestureIntervalRef.current = null
+    }
+  }
+
+  const updateCursorPosition = (x, y) => {
+    // Convert normalized coordinates to screen coordinates
+    const screenX = x * window.screen.width
+    const screenY = y * window.screen.height
+    
+    // Create or update virtual cursor
+    if (!cursorRef.current) {
+      cursorRef.current = document.createElement('div')
+      cursorRef.current.style.cssText = `
+        position: fixed;
+        width: 20px;
+        height: 20px;
+        background: rgba(0, 255, 0, 0.8);
+        border: 2px solid #00ff00;
+        border-radius: 50%;
+        pointer-events: none;
+        z-index: 10000;
+        transition: all 0.1s ease;
+      `
+      document.body.appendChild(cursorRef.current)
+    }
+    
+    cursorRef.current.style.left = `${screenX}px`
+    cursorRef.current.style.top = `${screenY}px`
+  }
+
+  const simulateClick = (button) => {
+    // Get element at cursor position
+    const element = document.elementFromPoint(
+      parseFloat(cursorRef.current?.style.left || 0),
+      parseFloat(cursorRef.current?.style.top || 0)
+    )
+    
+    if (element) {
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        button: button === 'left' ? 0 : 2
+      })
+      element.dispatchEvent(event)
+    }
+  }
+
   const toggleAirMouse = async () => {
     setIsLoading(true)
     setError(null)
@@ -74,6 +154,13 @@ const AirMouse = ({ isOpen, onClose }) => {
         initializeStream()
       }
       
+      // Start or stop gesture polling
+      if (data.active) {
+        startGesturePolling()
+      } else {
+        stopGesturePolling()
+      }
+      
       // Check status after toggle
       setTimeout(checkStatus, 500)
       
@@ -86,6 +173,15 @@ const AirMouse = ({ isOpen, onClose }) => {
   }
 
   const handleClose = async () => {
+    // Stop gesture polling
+    stopGesturePolling()
+    
+    // Remove virtual cursor
+    if (cursorRef.current) {
+      document.body.removeChild(cursorRef.current)
+      cursorRef.current = null
+    }
+    
     // Stop air mouse if active
     if (isActive) {
       try {

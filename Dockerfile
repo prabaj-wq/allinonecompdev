@@ -29,21 +29,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    libgtk-3-0 \
     libavcodec-dev \
     libavformat-dev \
     libswscale-dev \
-    libv4l-dev \
-    libxvidcore-dev \
-    libx264-dev \
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
     libatlas-base-dev \
     gfortran \
     pkg-config \
-    libxtst6 \
-    libxss1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -67,19 +61,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     libgomp1 \
-    libgtk-3-0 \
     libavcodec58 \
     libavformat58 \
     libswscale5 \
-    libv4l-0 \
-    libxvidcore4 \
-    libx264-155 \
     libjpeg62-turbo \
     libpng16-16 \
     libtiff5 \
     libatlas3-base \
-    libxtst6 \
-    libxss1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies and backend code
