@@ -39,7 +39,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gfortran \
     pkg-config \
     libgl1-mesa-glx \
-    libglib2.0-0 \
+    libgl1-mesa-dri \
+    libglu1-mesa \
+    libxrandr2 \
+    libxss1 \
+    libxcursor1 \
+    libxcomposite1 \
+    libasound2 \
+    libxi6 \
+    libxtst6 \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -71,7 +80,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtiff5 \
     libatlas3-base \
     libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    libglu1-mesa \
+    libxrandr2 \
+    libxss1 \
+    libxcursor1 \
+    libxcomposite1 \
+    libasound2 \
+    libxi6 \
+    libxtst6 \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables for OpenCV
+ENV DISPLAY=:99
+ENV QT_QPA_PLATFORM=offscreen
+ENV OPENCV_IO_ENABLE_OPENEXR=1
 
 # Copy Python dependencies and backend code
 COPY --from=backend-builder /usr/local /usr/local
@@ -103,5 +127,6 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 # Start backend as myuser, NGINX as root
-CMD su myuser -c "cd /app/backend && uvicorn main_simple:app --host 0.0.0.0 --port 5000" & \
+CMD Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 & \
+    su myuser -c "cd /app/backend && uvicorn main_simple:app --host 0.0.0.0 --port 5000" & \
     nginx -g 'daemon off;'
