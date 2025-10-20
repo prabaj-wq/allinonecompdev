@@ -24,31 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     libpq-dev \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
-    libatlas-base-dev \
-    gfortran \
-    pkg-config \
-    libgl1-mesa-glx \
-    libgl1-mesa-dri \
-    libglu1-mesa \
-    libxrandr2 \
-    libxss1 \
-    libxcursor1 \
-    libxcomposite1 \
-    libasound2 \
-    libxi6 \
-    libxtst6 \
-    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
@@ -67,35 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     libpq5 \
     curl \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    libgomp1 \
-    libavcodec58 \
-    libavformat58 \
-    libswscale5 \
-    libjpeg62-turbo \
-    libpng16-16 \
-    libtiff5 \
-    libatlas3-base \
-    libgl1-mesa-glx \
-    libgl1-mesa-dri \
-    libglu1-mesa \
-    libxrandr2 \
-    libxss1 \
-    libxcursor1 \
-    libxcomposite1 \
-    libasound2 \
-    libxi6 \
-    libxtst6 \
-    xvfb \
     && rm -rf /var/lib/apt/lists/*
-
-# Set environment variables for OpenCV
-ENV DISPLAY=:99
-ENV QT_QPA_PLATFORM=offscreen
-ENV OPENCV_IO_ENABLE_OPENEXR=1
 
 # Copy Python dependencies and backend code
 COPY --from=backend-builder /usr/local /usr/local
@@ -127,6 +74,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/health || exit 1
 
 # Start backend as myuser, NGINX as root
-CMD Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 & \
-    su myuser -c "cd /app/backend && uvicorn main_simple:app --host 0.0.0.0 --port 5000" & \
+CMD su myuser -c "cd /app/backend && uvicorn main_simple:app --host 0.0.0.0 --port 5000" & \
     nginx -g 'daemon off;'

@@ -586,14 +586,6 @@ from routers import (
     workflow_builder, process_builder_enhanced, financial_process, data_input
 )
 
-# Try to import airmouse, but don't fail if it's not available
-try:
-    from routers import airmouse
-    AIRMOUSE_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: AirMouse functionality not available: {e}")
-    AIRMOUSE_AVAILABLE = False
-
 # Include all routers with /api prefix
 # All routers including SQL router should use the same prefix pattern
 app.include_router(auth.router, prefix="/api")
@@ -627,8 +619,6 @@ app.include_router(workflow_builder.router, prefix="/api")
 app.include_router(process_builder_enhanced.router, prefix="/api")
 app.include_router(financial_process.router, prefix="/api")
 app.include_router(data_input.router, prefix="/api")
-if AIRMOUSE_AVAILABLE:
-    app.include_router(airmouse.router)
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status
