@@ -2263,10 +2263,18 @@ const Process = () => {
                                   scenarioName: scenarios.find(s => s.id === selectedScenario)?.scenario_name || '',
                                   year: selectedYear || '',
                                   yearName: fiscalYears.find(fy => fy.id === selectedYear)?.year || '',
-                                  entities: selectedEntities.join(',') || ''
+                                  entities: selectedEntities.join(',') || '',
+                                  entityContext: selectedEntityContext || 'all',
+                                  defaultEntity: selectedEntityContext !== 'all' ? selectedEntityContext : (selectedEntities.length === 1 ? selectedEntities[0] : ''),
+                                  flowMode: flowMode || 'entity'
                                 })
                                 navigate(`/data-input?${params.toString()}`)
-                                showNotification(`Opening ${node.title} module...`, 'success')
+                                
+                                // Show context-aware notification
+                                const entityContextMsg = selectedEntityContext !== 'all' 
+                                  ? ` for ${availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.entity_name || selectedEntityContext}`
+                                  : ''
+                                showNotification(`Opening ${node.title} module${entityContextMsg}...`, 'success')
                               } else {
                                 showNotification(`${node.title} module coming soon...`, 'info')
                               }

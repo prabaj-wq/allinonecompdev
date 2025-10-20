@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import {
   ChevronLeft, Calendar, FileSpreadsheet, Building2, Plus,
   Users, TrendingUp, Calculator, Upload, Download, Link,
-  Edit, Trash2, RefreshCw, DollarSign, X, Loader2
+  Edit, Trash2, RefreshCw, DollarSign, X, Loader2, Filter
 } from 'lucide-react'
 
 const DataInput = () => {
@@ -21,6 +21,9 @@ const DataInput = () => {
   const yearId = searchParams.get('year')
   const scenarioId = searchParams.get('scenario')
   const entitiesParam = searchParams.get('entities')
+  const entityContext = searchParams.get('entityContext') || 'all'
+  const defaultEntity = searchParams.get('defaultEntity') || ''
+  const flowMode = searchParams.get('flowMode') || 'entity'
 
   // State management
   const [activeCard, setActiveCard] = useState('entity_amounts')
@@ -62,6 +65,13 @@ const DataInput = () => {
   const [accounts, setAccounts] = useState([])
   const [periods, setPeriods] = useState([])
   const [scenarios, setScenarios] = useState([])
+  
+  // Entity filtering state
+  const [selectedEntityFilter, setSelectedEntityFilter] = useState(defaultEntity || 'all')
+  const [selectedICEntityFilter, setSelectedICEntityFilter] = useState(defaultEntity || 'all')
+  const [selectedOtherEntityFilter, setSelectedOtherEntityFilter] = useState(defaultEntity || 'all')
+  const [showFilters, setShowFilters] = useState(false)
+  const [filteredEntries, setFilteredEntries] = useState([])
 
   const showToast = (message, type = 'success') => {
     // Use built-in notification system
@@ -81,7 +91,52 @@ const DataInput = () => {
     if (processId && selectedCompany) {
       fetchEntries()
     }
-  }, [processId, selectedCompany, activeCard])
+  }, [processId, selectedCompany, activeCard, selectedEntityFilter, selectedICEntityFilter, selectedOtherEntityFilter])
+
+  // Initialize entity context and form defaults
+  useEffect(() => {
+    if (defaultEntity && entities.length > 0) {
+      // Set default entity in form data
+      setFormData(prev => ({
+        ...prev,
+        entity_id: defaultEntity,
+        from_entity_id: defaultEntity
+      }))
+      
+      // Show context notification
+      const entityName = entities.find(e => e.id === defaultEntity || e.entity_code === defaultEntity)?.entity_name || defaultEntity
+      if (entityName && defaultEntity !== 'all') {
+        showToast(`Filtered for entity: ${entityName}`, 'info')
+      }
+    }
+  }, [defaultEntity, entities])
+
+  // Filter entries based on selected filters
+  useEffect(() => {
+    let filtered = [...entries]
+    
+    // Apply entity filter based on active card
+    if (activeCard === 'entity_amounts' && selectedEntityFilter !== 'all') {
+      filtered = filtered.filter(entry => 
+        entry.entity_id === selectedEntityFilter || 
+        entry.entity_code === selectedEntityFilter
+      )
+    } else if (activeCard === 'ic_amounts' && selectedICEntityFilter !== 'all') {
+      filtered = filtered.filter(entry => 
+        entry.from_entity_id === selectedICEntityFilter || 
+        entry.to_entity_id === selectedICEntityFilter ||
+        entry.from_entity_code === selectedICEntityFilter ||
+        entry.to_entity_code === selectedICEntityFilter
+      )
+    } else if (activeCard === 'other_amounts' && selectedOtherEntityFilter !== 'all') {
+      filtered = filtered.filter(entry => 
+        entry.entity_id === selectedOtherEntityFilter || 
+        entry.entity_code === selectedOtherEntityFilter
+      )
+    }
+    
+    setFilteredEntries(filtered)
+  }, [entries, selectedEntityFilter, selectedICEntityFilter, selectedOtherEntityFilter, activeCard])
 
   const fetchProcessConfig = async () => {
     try {
@@ -191,8 +246,35 @@ const DataInput = () => {
 
     setLoading(true)
     try {
+      // Build URL with filtering parameters
+      const params = new URLSearchParams({
+        company_name: selectedCompany
+      })
+      
+      // Add entity filter based on active card
+      let entityFilter = 'all'
+      if (activeCard === 'entity_amounts' && selectedEntityFilter !== 'all') {
+        entityFilter = selectedEntityFilter
+      } else if (activeCard === 'ic_amounts' && selectedICEntityFilter !== 'all') {
+        entityFilter = selectedICEntityFilter
+      } else if (activeCard === 'other_amounts' && selectedOtherEntityFilter !== 'all') {
+        entityFilter = selectedOtherEntityFilter
+      }
+      
+      if (entityFilter !== 'all') {
+        params.append('entity_filter', entityFilter)
+      }
+      
+      if (yearId) {
+        params.append('year_id', yearId)
+      }
+      
+      if (scenarioId) {
+        params.append('scenario_id', scenarioId)
+      }
+
       const response = await fetch(
-        `/api/financial-process/processes/${processId}/data-input/${activeCard}?company_name=${encodeURIComponent(selectedCompany)}`,
+        `/api/financial-process/processes/${processId}/data-input/${activeCard}?${params.toString()}`,
         {
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
@@ -371,7 +453,8 @@ const DataInput = () => {
       description: 'Financial data for individual entities',
       icon: Building2,
       color: 'bg-blue-500',
-      count: entries.length
+      count: activeCard === 'entity_amounts' ? filteredEntries.length : entries.length,
+      totalCount: entries.length
     },
     {
       id: 'ic_amounts',
@@ -379,7 +462,8 @@ const DataInput = () => {
       description: 'Intercompany transactions',
       icon: Users,
       color: 'bg-purple-500',
-      count: 0 // Would need separate fetch for IC amounts
+      count: activeCard === 'ic_amounts' ? filteredEntries.length : 0,
+      totalCount: 0 // Would need separate fetch for IC amounts
     },
     {
       id: 'other_amounts',
@@ -387,7 +471,8 @@ const DataInput = () => {
       description: 'Adjustments and additional data',
       icon: Calculator,
       color: 'bg-green-500',
-      count: 0 // Would need separate fetch for Other amounts
+      count: activeCard === 'other_amounts' ? filteredEntries.length : 0,
+      totalCount: 0 // Would need separate fetch for Other amounts
     }
   ]
 
@@ -413,6 +498,13 @@ const DataInput = () => {
           </div>
 
           <div className="flex gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`btn-secondary inline-flex items-center gap-2 ${showFilters ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : ''}`}
+            >
+              <Filter className="h-4 w-4" />
+              Filters
+            </button>
             <button
               onClick={() => setShowManualEntry(true)}
               className="btn-primary inline-flex items-center gap-2"
@@ -443,6 +535,86 @@ const DataInput = () => {
             </button>
           </div>
         </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Filter Options
+              </h4>
+              <button
+                onClick={() => {
+                  // Reset filters to default entity or 'all'
+                  if (activeCard === 'entity_amounts') {
+                    setSelectedEntityFilter(defaultEntity || 'all')
+                  } else if (activeCard === 'ic_amounts') {
+                    setSelectedICEntityFilter(defaultEntity || 'all')
+                  } else if (activeCard === 'other_amounts') {
+                    setSelectedOtherEntityFilter(defaultEntity || 'all')
+                  }
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                Reset Filters
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Entity Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {activeCard === 'ic_amounts' ? 'Entity (From/To)' : 'Entity'}
+                </label>
+                <select
+                  value={
+                    activeCard === 'entity_amounts' ? selectedEntityFilter :
+                    activeCard === 'ic_amounts' ? selectedICEntityFilter :
+                    selectedOtherEntityFilter
+                  }
+                  onChange={(e) => {
+                    if (activeCard === 'entity_amounts') {
+                      setSelectedEntityFilter(e.target.value)
+                    } else if (activeCard === 'ic_amounts') {
+                      setSelectedICEntityFilter(e.target.value)
+                    } else {
+                      setSelectedOtherEntityFilter(e.target.value)
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-900"
+                >
+                  <option value="all">All Entities</option>
+                  {entities.map(entity => (
+                    <option key={entity.id} value={entity.id}>
+                      {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Context Info */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Current Context
+                </label>
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm text-blue-900 dark:text-blue-100">
+                      {entityContext !== 'all' 
+                        ? `Accessed from: ${entities.find(e => e.id === defaultEntity || e.entity_code === defaultEntity)?.entity_name || defaultEntity || 'Unknown Entity'}`
+                        : 'Accessed from: All Entities'
+                      }
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    You can change the filter above to view data from other entities
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Data Table */}
         <div className="overflow-hidden">
@@ -486,14 +658,17 @@ const DataInput = () => {
                     Loading entries...
                   </td>
                 </tr>
-              ) : entries.length === 0 ? (
+              ) : filteredEntries.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
-                    No entries found. Click "Add Entry" to create your first entry.
+                    {entries.length === 0 
+                      ? 'No entries found. Click "Add Entry" to create your first entry.'
+                      : 'No entries match the current filter. Try adjusting your filter settings.'
+                    }
                   </td>
                 </tr>
               ) : (
-                entries.map((entry) => (
+                filteredEntries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                     {activeCard === 'entity_amounts' && (
                       <>

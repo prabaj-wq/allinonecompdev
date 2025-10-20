@@ -1520,24 +1520,79 @@ async def create_data_input(
 async def get_data_input(
     process_id: str,
     data_type: str,
-    company_name: str = Query(...)
+    company_name: str = Query(...),
+    entity_filter: Optional[str] = Query(None, description="Filter by entity ID or code"),
+    year_id: Optional[str] = Query(None, description="Filter by fiscal year"),
+    scenario_id: Optional[str] = Query(None, description="Filter by scenario")
 ):
-    """Get all data input entries for a specific type"""
+    """Get all data input entries for a specific type with optional filtering"""
     try:
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             
             table_name = data_type  # entity_amounts, ic_amounts, or other_amounts
-            cur.execute(f"""
-                SELECT * FROM {table_name}
-                WHERE process_id = %s
-                ORDER BY created_at DESC
-            """, (process_id,))
             
+            # Build dynamic WHERE clause based on filters
+            where_conditions = ["process_id = %s"]
+            params = [process_id]
+            
+            # Add entity filter based on data type
+            if entity_filter and entity_filter != 'all':
+                if data_type == 'entity_amounts':
+                    where_conditions.append("(entity_id = %s OR entity_code = %s)")
+                    params.extend([entity_filter, entity_filter])
+                elif data_type == 'ic_amounts':
+                    where_conditions.append("(from_entity_id = %s OR to_entity_id = %s OR from_entity_code = %s OR to_entity_code = %s)")
+                    params.extend([entity_filter, entity_filter, entity_filter, entity_filter])
+                elif data_type == 'other_amounts':
+                    where_conditions.append("(entity_id = %s OR entity_code = %s)")
+                    params.extend([entity_filter, entity_filter])
+            
+            # Add year filter if provided
+            if year_id:
+                where_conditions.append("fiscal_year_id = %s")
+                params.append(year_id)
+            
+            # Add scenario filter if provided
+            if scenario_id:
+                where_conditions.append("scenario_id = %s")
+                params.append(scenario_id)
+            
+            where_clause = " AND ".join(where_conditions)
+            
+            query = f"""
+                SELECT * FROM {table_name}
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+            """
+            
+            cur.execute(query, params)
             entries = cur.fetchall()
-            return {"entries": entries}
+            
+            # Convert to list of dicts for JSON serialization
+            entries_list = []
+            for entry in entries:
+                entry_dict = dict(entry)
+                # Convert any Decimal values to float for JSON serialization
+                for key, value in entry_dict.items():
+                    if isinstance(value, Decimal):
+                        entry_dict[key] = float(value)
+                entries_list.append(entry_dict)
+            
+            return {
+                "entries": entries_list,
+                "filters": {
+                    "entity_filter": entity_filter,
+                    "year_id": year_id,
+                    "scenario_id": scenario_id,
+                    "data_type": data_type
+                },
+                "total_count": len(entries_list)
+            }
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error fetching data input: {str(e)}")
 
 @router.delete("/processes/{process_id}/data-input/{data_type}/{entry_id}")
@@ -1569,6 +1624,82 @@ async def delete_data_input(
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting entry: {str(e)}")
+
+@router.get("/processes/{process_id}/data-input-summary")
+async def get_data_input_summary(
+    process_id: str,
+    company_name: str = Query(...),
+    entity_filter: Optional[str] = Query(None, description="Filter by entity ID or code")
+):
+    """Get summary statistics for data input across all types"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            summary = {}
+            
+            # Get counts for each data type
+            for data_type in ['entity_amounts', 'ic_amounts', 'other_amounts']:
+                where_conditions = ["process_id = %s"]
+                params = [process_id]
+                
+                # Add entity filter if provided
+                if entity_filter and entity_filter != 'all':
+                    if data_type == 'entity_amounts':
+                        where_conditions.append("(entity_id = %s OR entity_code = %s)")
+                        params.extend([entity_filter, entity_filter])
+                    elif data_type == 'ic_amounts':
+                        where_conditions.append("(from_entity_id = %s OR to_entity_id = %s OR from_entity_code = %s OR to_entity_code = %s)")
+                        params.extend([entity_filter, entity_filter, entity_filter, entity_filter])
+                    elif data_type == 'other_amounts':
+                        where_conditions.append("(entity_id = %s OR entity_code = %s)")
+                        params.extend([entity_filter, entity_filter])
+                
+                where_clause = " AND ".join(where_conditions)
+                
+                # Check if table exists first
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = %s
+                    )
+                """, (data_type,))
+                
+                table_exists = cur.fetchone()[0]
+                
+                if table_exists:
+                    cur.execute(f"""
+                        SELECT 
+                            COUNT(*) as total_entries,
+                            COALESCE(SUM(CASE WHEN amount IS NOT NULL THEN ABS(amount) ELSE 0 END), 0) as total_amount,
+                            COUNT(DISTINCT COALESCE(entity_id, entity_code)) as unique_entities
+                        FROM {data_type}
+                        WHERE {where_clause}
+                    """, params)
+                    
+                    result = cur.fetchone()
+                    summary[data_type] = {
+                        "total_entries": result['total_entries'] or 0,
+                        "total_amount": float(result['total_amount']) if result['total_amount'] else 0.0,
+                        "unique_entities": result['unique_entities'] or 0
+                    }
+                else:
+                    summary[data_type] = {
+                        "total_entries": 0,
+                        "total_amount": 0.0,
+                        "unique_entities": 0
+                    }
+            
+            return {
+                "summary": summary,
+                "entity_filter": entity_filter,
+                "process_id": process_id
+            }
+            
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error fetching data input summary: {str(e)}")
 
 # ============================================================================
 # PROCESS CONFIGURATION MANAGEMENT
