@@ -249,14 +249,26 @@ const NODE_LIBRARY = [
   }
 ]
 
-// Custom Fields Configuration Component for Data Input
-const DataInputCustomFieldsConfig = ({ processSettings, onUpdate }) => {
+// Custom Fields Configuration Component for Data Input - Entity-Aware
+const DataInputCustomFieldsConfig = ({ processSettings, onUpdate, selectedEntityContext, getEntityCustomFields, updateEntityCustomFields }) => {
   const [activeTab, setActiveTab] = useState('entity_amounts')
-  const [customFields, setCustomFields] = useState({
-    entity_amounts: processSettings?.data_input_custom_fields?.entity_amounts || [],
-    ic_amounts: processSettings?.data_input_custom_fields?.ic_amounts || [],
-    other_amounts: processSettings?.data_input_custom_fields?.other_amounts || []
-  })
+  
+  // Get entity-specific custom fields
+  const entityCustomFields = selectedEntityContext ? getEntityCustomFields(selectedEntityContext) : {
+    entity_amounts: [],
+    ic_amounts: [],
+    other_amounts: []
+  }
+  
+  const [customFields, setCustomFields] = useState(entityCustomFields)
+
+  // Update custom fields when entity context changes
+  React.useEffect(() => {
+    if (selectedEntityContext && getEntityCustomFields) {
+      const newEntityCustomFields = getEntityCustomFields(selectedEntityContext)
+      setCustomFields(newEntityCustomFields)
+    }
+  }, [selectedEntityContext, getEntityCustomFields])
 
   const fieldTypes = [
     { value: 'text', label: 'Text' },
@@ -297,7 +309,11 @@ const DataInputCustomFieldsConfig = ({ processSettings, onUpdate }) => {
   }
 
   const saveCustomFields = () => {
-    onUpdate({ data_input_custom_fields: customFields })
+    if (selectedEntityContext && updateEntityCustomFields) {
+      updateEntityCustomFields(selectedEntityContext, customFields)
+    } else {
+      onUpdate({ data_input_custom_fields: customFields })
+    }
   }
 
   const removeField = (type, fieldId) => {
@@ -306,7 +322,11 @@ const DataInputCustomFieldsConfig = ({ processSettings, onUpdate }) => {
       [type]: customFields[type].filter(f => f.id !== fieldId)
     }
     setCustomFields(updated)
-    onUpdate({ data_input_custom_fields: updated })
+    if (selectedEntityContext && updateEntityCustomFields) {
+      updateEntityCustomFields(selectedEntityContext, updated)
+    } else {
+      onUpdate({ data_input_custom_fields: updated })
+    }
   }
 
   const tabs = [
@@ -317,6 +337,25 @@ const DataInputCustomFieldsConfig = ({ processSettings, onUpdate }) => {
 
   return (
     <div className="space-y-6">
+      {/* Entity Context Header */}
+      {selectedEntityContext && (
+        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <div>
+              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                {selectedEntityContext === 'all' ? 'Default Custom Fields (All Entities)' : `Custom Fields for Entity: ${selectedEntityContext}`}
+              </h3>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                {selectedEntityContext === 'all' 
+                  ? 'These custom fields will apply to all entities unless overridden' 
+                  : 'These custom fields are specific to this entity only'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-4">
@@ -622,6 +661,61 @@ const Process = () => {
       </div>
     )
   }, [hasUnsavedChanges, lastSavedAt])
+
+  // Entity-specific workflow configuration functions
+  const getEntityNodeConfig = useCallback((entityId, nodeId) => {
+    const entityConfigs = entityNodeConfigs[entityId] || {}
+    return entityConfigs[nodeId] || { enabled: true, settings: {} }
+  }, [entityNodeConfigs])
+
+  const updateEntityNodeConfig = useCallback((entityId, nodeId, updates) => {
+    setEntityNodeConfigs(prev => ({
+      ...prev,
+      [entityId]: {
+        ...prev[entityId],
+        [nodeId]: {
+          ...getEntityNodeConfig(entityId, nodeId),
+          ...updates
+        }
+      }
+    }))
+    markUnsavedChanges()
+  }, [getEntityNodeConfig, markUnsavedChanges])
+
+  const getEntityWorkflowNodes = useCallback((entityId) => {
+    if (entityId === 'all') {
+      return workflowNodes
+    }
+    
+    // Filter nodes based on entity-specific configuration
+    return workflowNodes.filter(node => {
+      const config = getEntityNodeConfig(entityId, node.id)
+      return config.enabled
+    })
+  }, [workflowNodes, getEntityNodeConfig])
+
+  const getEntityCustomFields = useCallback((entityId) => {
+    const entityConfig = entityNodeConfigs[entityId] || {}
+    const dataInputConfig = entityConfig['data_input'] || {}
+    return dataInputConfig.settings?.data_input_custom_fields || {
+      entity_amounts: [],
+      ic_amounts: [],
+      other_amounts: []
+    }
+  }, [entityNodeConfigs])
+
+  const updateEntityCustomFields = useCallback((entityId, customFields) => {
+    updateEntityNodeConfig(entityId, 'data_input', {
+      settings: {
+        data_input_custom_fields: customFields
+      }
+    })
+  }, [updateEntityNodeConfig])
+
+  // Get workflow nodes for current entity context
+  const getCurrentWorkflowNodes = useCallback(() => {
+    return getEntityWorkflowNodes(selectedEntityContext)
+  }, [getEntityWorkflowNodes, selectedEntityContext])
 
   const syncWorkflowNodes = useCallback((updatedNodes, { markDirty = true } = {}) => {
     setWorkflowNodes(updatedNodes)
@@ -1908,7 +2002,22 @@ const Process = () => {
 
             {/* Workflow Nodes - Horizontal Scroll */}
             <div className="flex-1 overflow-auto p-6 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-              {workflowNodes.length === 0 ? (
+              {/* Entity Context Info */}
+              {selectedEntityContext !== 'all' && (
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Showing workflow for: {availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.name || selectedEntityContext}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    Only nodes enabled for this entity are shown. Switch to "All Entities" to see the complete workflow.
+                  </p>
+                </div>
+              )}
+
+              {getCurrentWorkflowNodes().length === 0 ? (
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center text-gray-400 dark:text-gray-500">
                     <Workflow className="h-16 w-16 mx-auto mb-4 opacity-50" />
@@ -1927,7 +2036,7 @@ const Process = () => {
                 <div className="min-w-max">
                   {/* Horizontal Node Flow */}
                   <div className="flex items-center gap-4">
-                    {workflowNodes.map((node, index) => {
+                    {getCurrentWorkflowNodes().map((node, index) => {
                       const IconComponent = getIconComponent(node.icon)
                       const isSelected = selectedNode?.id === node.id
                       
@@ -1996,6 +2105,41 @@ const Process = () => {
                                 {node.description}
                               </p>
 
+                              {/* Entity Configuration Badges */}
+                              {selectedEntityContext === 'all' && availableEntities.length > 0 && (
+                                <div className="mb-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    {availableEntities.slice(0, 3).map((entity) => {
+                                      const entityId = getEntityIdentifier(entity)
+                                      const entityConfig = getEntityNodeConfig(entityId, node.id)
+                                      const isEnabled = entityConfig.enabled
+                                      
+                                      return (
+                                        <span
+                                          key={entityId}
+                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
+                                            isEnabled
+                                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                          }`}
+                                          title={`${getEntityName(entity)}: ${isEnabled ? 'Enabled' : 'Disabled'}`}
+                                        >
+                                          {isEnabled ? '✓' : '✗'} {getEntityCode(entity)}
+                                        </span>
+                                      )
+                                    })}
+                                    {availableEntities.length > 3 && (
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                                        +{availableEntities.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Entity configurations
+                                  </p>
+                                </div>
+                              )}
+
                               {/* Node Status & Actions */}
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between">
@@ -2034,7 +2178,7 @@ const Process = () => {
                           </div>
 
                           {/* Arrow Connector */}
-                          {index < workflowNodes.length - 1 && (
+                          {index < getCurrentWorkflowNodes().length - 1 && (
                             <ChevronRight className="h-8 w-8 text-gray-400 dark:text-gray-600 flex-shrink-0" />
                           )}
                         </React.Fragment>
@@ -2660,6 +2804,9 @@ const Process = () => {
                         </h3>
                         <DataInputCustomFieldsConfig 
                           processSettings={processForm.settings}
+                          selectedEntityContext={selectedEntityContext}
+                          getEntityCustomFields={getEntityCustomFields}
+                          updateEntityCustomFields={updateEntityCustomFields}
                           onUpdate={(settings) => {
                             setProcessForm(prev => ({
                               ...prev,

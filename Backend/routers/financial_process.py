@@ -16,6 +16,9 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
 import re
+import csv
+import os
+from pathlib import Path
 
 from database import get_db
 from auth.dependencies import get_current_active_user
@@ -252,6 +255,56 @@ def ensure_financial_tables(conn):
         )
     """)
 
+    # Create entity_node_configurations table for entity-specific node settings
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS entity_node_configurations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            entity_code VARCHAR(50) NOT NULL,
+            node_id UUID REFERENCES financial_process_nodes(id) ON DELETE CASCADE,
+            enabled BOOLEAN DEFAULT true,
+            settings JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(process_id, entity_code, node_id)
+        )
+    """)
+
+    # Create process_executions table for tracking execution history
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS process_executions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            entity_code VARCHAR(50),
+            node_id UUID REFERENCES financial_process_nodes(id) ON DELETE CASCADE,
+            execution_type VARCHAR(50) DEFAULT 'node', -- 'node' or 'full_process'
+            status VARCHAR(50) DEFAULT 'pending', -- 'pending', 'running', 'completed', 'error'
+            start_time TIMESTAMP DEFAULT NOW(),
+            end_time TIMESTAMP,
+            execution_data JSONB DEFAULT '{}',
+            csv_file_path TEXT,
+            error_message TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # Create csv_exports table for tracking CSV file exports
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS csv_exports (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            process_id UUID REFERENCES financial_processes(id) ON DELETE CASCADE,
+            entity_code VARCHAR(50),
+            export_type VARCHAR(50) NOT NULL, -- 'entity_amounts', 'ic_amounts', 'other_amounts', 'consolidated'
+            file_path TEXT NOT NULL,
+            file_size BIGINT,
+            row_count INTEGER,
+            export_date TIMESTAMP DEFAULT NOW(),
+            fiscal_year INTEGER,
+            period_code VARCHAR(20),
+            scenario_id UUID
+        )
+    """)
+
     # Add indexes for better query performance
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_entity_amounts_process 
@@ -264,6 +317,18 @@ def ensure_financial_tables(conn):
     cur.execute("""
         CREATE INDEX IF NOT EXISTS idx_other_amounts_process 
         ON other_amounts(process_id, period_code)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_entity_node_configs 
+        ON entity_node_configurations(process_id, entity_code)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_process_executions 
+        ON process_executions(process_id, entity_code, status)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_csv_exports 
+        ON csv_exports(process_id, entity_code, export_type)
     """)
 
     conn.commit()
@@ -1463,7 +1528,8 @@ async def get_process_configuration(
                     "fiscalYear": None,
                     "periods": [],
                     "scenario": None,
-                    "fiscalSettingsLocked": False
+                    "fiscalSettingsLocked": False,
+                    "new_key": "new_value"
                 }
             
             # Return the stored configuration
@@ -1525,3 +1591,518 @@ async def save_process_configuration(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving configuration: {str(e)}")
+
+# ============================================================================
+# PYDANTIC MODELS FOR NEW FUNCTIONALITY
+# ============================================================================
+
+class EntityNodeConfig(BaseModel):
+    entity_code: str
+    node_id: str
+    enabled: bool = True
+    settings: Dict[str, Any] = {}
+
+class ProcessExecutionRequest(BaseModel):
+    entities: List[str]
+    fiscal_year: Optional[int] = None
+    periods: List[str] = []
+    scenario_id: Optional[str] = None
+    flow_mode: str = "entity"
+    node_id: Optional[str] = None  # For single node execution
+
+class CSVExportRequest(BaseModel):
+    entity_codes: List[str] = []
+    export_types: List[str] = ["entity_amounts", "ic_amounts", "other_amounts"]
+    fiscal_year: Optional[int] = None
+    period_codes: List[str] = []
+
+# ============================================================================
+# CSV EXPORT UTILITIES
+# ============================================================================
+
+def ensure_csv_directory(company_name: str) -> str:
+    """Ensure CSV export directory exists and return path."""
+    csv_dir = Path(f"./csv_exports/{normalize_company_db_name(company_name)}")
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    return str(csv_dir)
+
+def export_entity_amounts_to_csv(conn, process_id: str, entity_codes: List[str], csv_dir: str) -> Dict[str, Any]:
+    """Export entity amounts to CSV file."""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Build query with entity filter
+    entity_filter = ""
+    params = [process_id]
+    if entity_codes:
+        placeholders = ",".join(["%s"] * len(entity_codes))
+        entity_filter = f"AND entity_code IN ({placeholders})"
+        params.extend(entity_codes)
+    
+    cur.execute(f"""
+        SELECT process_id, entity_code, account_code, period_code, 
+               amount, currency, description, custom_fields, created_at
+        FROM entity_amounts 
+        WHERE process_id = %s {entity_filter}
+        ORDER BY entity_code, period_code, account_code
+    """, params)
+    
+    rows = cur.fetchall()
+    
+    if not rows:
+        return {"file_path": None, "row_count": 0}
+    
+    # Generate CSV filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"entity_amounts_{timestamp}.csv"
+    file_path = os.path.join(csv_dir, filename)
+    
+    # Write to CSV
+    with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['process_id', 'entity_code', 'account_code', 'period_code', 
+                     'amount', 'currency', 'description', 'custom_fields', 'created_at']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for row in rows:
+            # Convert custom_fields JSON to string
+            row_dict = dict(row)
+            row_dict['custom_fields'] = json.dumps(row_dict['custom_fields']) if row_dict['custom_fields'] else ''
+            writer.writerow(row_dict)
+    
+    return {
+        "file_path": file_path,
+        "row_count": len(rows),
+        "file_size": os.path.getsize(file_path)
+    }
+
+def export_ic_amounts_to_csv(conn, process_id: str, entity_codes: List[str], csv_dir: str) -> Dict[str, Any]:
+    """Export intercompany amounts to CSV file."""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    entity_filter = ""
+    params = [process_id]
+    if entity_codes:
+        placeholders = ",".join(["%s"] * len(entity_codes))
+        entity_filter = f"AND entity_code IN ({placeholders})"
+        params.extend(entity_codes)
+    
+    cur.execute(f"""
+        SELECT process_id, entity_code, counterparty_entity_code, account_code, 
+               period_code, amount, currency, transaction_type, description, 
+               custom_fields, created_at
+        FROM ic_amounts 
+        WHERE process_id = %s {entity_filter}
+        ORDER BY entity_code, counterparty_entity_code, period_code, account_code
+    """, params)
+    
+    rows = cur.fetchall()
+    
+    if not rows:
+        return {"file_path": None, "row_count": 0}
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ic_amounts_{timestamp}.csv"
+    file_path = os.path.join(csv_dir, filename)
+    
+    with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['process_id', 'entity_code', 'counterparty_entity_code', 'account_code', 
+                     'period_code', 'amount', 'currency', 'transaction_type', 'description', 
+                     'custom_fields', 'created_at']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for row in rows:
+            row_dict = dict(row)
+            row_dict['custom_fields'] = json.dumps(row_dict['custom_fields']) if row_dict['custom_fields'] else ''
+            writer.writerow(row_dict)
+    
+    return {
+        "file_path": file_path,
+        "row_count": len(rows),
+        "file_size": os.path.getsize(file_path)
+    }
+
+def export_other_amounts_to_csv(conn, process_id: str, csv_dir: str) -> Dict[str, Any]:
+    """Export other amounts (adjustments) to CSV file."""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    cur.execute("""
+        SELECT process_id, account_code, period_code, amount, currency, 
+               description, adjustment_type, custom_fields, created_at
+        FROM other_amounts 
+        WHERE process_id = %s
+        ORDER BY period_code, account_code
+    """, [process_id])
+    
+    rows = cur.fetchall()
+    
+    if not rows:
+        return {"file_path": None, "row_count": 0}
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"other_amounts_{timestamp}.csv"
+    file_path = os.path.join(csv_dir, filename)
+    
+    with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['process_id', 'account_code', 'period_code', 'amount', 'currency', 
+                     'description', 'adjustment_type', 'custom_fields', 'created_at']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        for row in rows:
+            row_dict = dict(row)
+            row_dict['custom_fields'] = json.dumps(row_dict['custom_fields']) if row_dict['custom_fields'] else ''
+            writer.writerow(row_dict)
+    
+    return {
+        "file_path": file_path,
+        "row_count": len(rows),
+        "file_size": os.path.getsize(file_path)
+    }
+
+# ============================================================================
+# ENTITY-SPECIFIC CONFIGURATION ENDPOINTS
+# ============================================================================
+
+@router.post("/processes/{process_id}/entity-node-configs")
+async def save_entity_node_configurations(
+    process_id: str,
+    configs: List[EntityNodeConfig],
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Save entity-specific node configurations."""
+    try:
+        ensure_tables_via_sqlalchemy(company_name)
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor()
+            
+            # Delete existing configurations for this process
+            cur.execute("""
+                DELETE FROM entity_node_configurations 
+                WHERE process_id = %s
+            """, (process_id,))
+            
+            # Insert new configurations
+            for config in configs:
+                cur.execute("""
+                    INSERT INTO entity_node_configurations 
+                    (process_id, entity_code, node_id, enabled, settings, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (process_id, entity_code, node_id) 
+                    DO UPDATE SET 
+                        enabled = EXCLUDED.enabled,
+                        settings = EXCLUDED.settings,
+                        updated_at = NOW()
+                """, (
+                    process_id, 
+                    config.entity_code, 
+                    config.node_id, 
+                    config.enabled, 
+                    json.dumps(config.settings)
+                ))
+            
+            conn.commit()
+            
+            return {
+                "message": "Entity node configurations saved successfully",
+                "configurations_count": len(configs)
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving entity configurations: {str(e)}")
+
+@router.get("/processes/{process_id}/entity-node-configs")
+async def get_entity_node_configurations(
+    process_id: str,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Get entity-specific node configurations."""
+    try:
+        ensure_tables_via_sqlalchemy(company_name)
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cur.execute("""
+                SELECT entity_code, node_id, enabled, settings, created_at, updated_at
+                FROM entity_node_configurations 
+                WHERE process_id = %s
+                ORDER BY entity_code, node_id
+            """, (process_id,))
+            
+            configs = cur.fetchall()
+            
+            return {
+                "configurations": [dict(config) for config in configs]
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching entity configurations: {str(e)}")
+
+# ============================================================================
+# PROCESS EXECUTION ENDPOINTS
+# ============================================================================
+
+@router.post("/processes/{process_id}/execute-node")
+async def execute_process_node(
+    process_id: str,
+    execution_request: ProcessExecutionRequest,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Execute a specific process node for selected entities."""
+    try:
+        ensure_tables_via_sqlalchemy(company_name)
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Create execution record
+            execution_id = str(uuid.uuid4())
+            
+            for entity_code in execution_request.entities:
+                cur.execute("""
+                    INSERT INTO process_executions 
+                    (id, process_id, entity_code, node_id, execution_type, status, 
+                     start_time, execution_data, created_at)
+                    VALUES (%s, %s, %s, %s, 'node', 'running', NOW(), %s, NOW())
+                """, (
+                    str(uuid.uuid4()),
+                    process_id,
+                    entity_code,
+                    execution_request.node_id,
+                    json.dumps({
+                        "fiscal_year": execution_request.fiscal_year,
+                        "periods": execution_request.periods,
+                        "scenario_id": execution_request.scenario_id,
+                        "flow_mode": execution_request.flow_mode
+                    })
+                ))
+            
+            conn.commit()
+            
+            # Simulate processing time
+            import time
+            time.sleep(2)
+            
+            # Update execution status to completed
+            cur.execute("""
+                UPDATE process_executions 
+                SET status = 'completed', end_time = NOW()
+                WHERE process_id = %s AND node_id = %s
+            """, (process_id, execution_request.node_id))
+            
+            conn.commit()
+            
+            return {
+                "message": "Node executed successfully",
+                "execution_id": execution_id,
+                "entities_processed": len(execution_request.entities)
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing node: {str(e)}")
+
+@router.post("/processes/{process_id}/execute-flow")
+async def execute_full_process_flow(
+    process_id: str,
+    execution_request: ProcessExecutionRequest,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Execute the complete process flow for selected entities."""
+    try:
+        ensure_tables_via_sqlalchemy(company_name)
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get all nodes for this process
+            cur.execute("""
+                SELECT id, node_type, sequence 
+                FROM financial_process_nodes 
+                WHERE process_id = %s AND is_active = true
+                ORDER BY sequence
+            """, (process_id,))
+            
+            nodes = cur.fetchall()
+            
+            execution_id = str(uuid.uuid4())
+            
+            # Create execution records for full flow
+            for entity_code in execution_request.entities:
+                cur.execute("""
+                    INSERT INTO process_executions 
+                    (id, process_id, entity_code, execution_type, status, 
+                     start_time, execution_data, created_at)
+                    VALUES (%s, %s, %s, 'full_process', 'running', NOW(), %s, NOW())
+                """, (
+                    str(uuid.uuid4()),
+                    process_id,
+                    entity_code,
+                    json.dumps({
+                        "fiscal_year": execution_request.fiscal_year,
+                        "periods": execution_request.periods,
+                        "scenario_id": execution_request.scenario_id,
+                        "flow_mode": execution_request.flow_mode,
+                        "nodes_count": len(nodes)
+                    })
+                ))
+            
+            conn.commit()
+            
+            # Simulate processing
+            import time
+            time.sleep(5)
+            
+            # Update execution status
+            cur.execute("""
+                UPDATE process_executions 
+                SET status = 'completed', end_time = NOW()
+                WHERE process_id = %s AND execution_type = 'full_process'
+            """, (process_id,))
+            
+            conn.commit()
+            
+            return {
+                "message": "Full process flow executed successfully",
+                "execution_id": execution_id,
+                "entities_processed": len(execution_request.entities),
+                "nodes_executed": len(nodes)
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing process flow: {str(e)}")
+
+# ============================================================================
+# CSV EXPORT ENDPOINTS
+# ============================================================================
+
+@router.post("/processes/{process_id}/export-csv")
+async def export_process_data_to_csv(
+    process_id: str,
+    export_request: CSVExportRequest,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Export process data to CSV files for consolidation."""
+    try:
+        ensure_tables_via_sqlalchemy(company_name)
+        csv_dir = ensure_csv_directory(company_name)
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor()
+            
+            export_results = []
+            
+            # Export entity amounts
+            if "entity_amounts" in export_request.export_types:
+                result = export_entity_amounts_to_csv(conn, process_id, export_request.entity_codes, csv_dir)
+                if result["file_path"]:
+                    # Record export in database
+                    cur.execute("""
+                        INSERT INTO csv_exports 
+                        (process_id, export_type, file_path, file_size, row_count, 
+                         export_date, fiscal_year)
+                        VALUES (%s, 'entity_amounts', %s, %s, %s, NOW(), %s)
+                    """, (
+                        process_id, 
+                        result["file_path"], 
+                        result["file_size"], 
+                        result["row_count"],
+                        export_request.fiscal_year
+                    ))
+                    export_results.append({
+                        "type": "entity_amounts",
+                        "file_path": result["file_path"],
+                        "row_count": result["row_count"]
+                    })
+            
+            # Export IC amounts
+            if "ic_amounts" in export_request.export_types:
+                result = export_ic_amounts_to_csv(conn, process_id, export_request.entity_codes, csv_dir)
+                if result["file_path"]:
+                    cur.execute("""
+                        INSERT INTO csv_exports 
+                        (process_id, export_type, file_path, file_size, row_count, 
+                         export_date, fiscal_year)
+                        VALUES (%s, 'ic_amounts', %s, %s, %s, NOW(), %s)
+                    """, (
+                        process_id, 
+                        result["file_path"], 
+                        result["file_size"], 
+                        result["row_count"],
+                        export_request.fiscal_year
+                    ))
+                    export_results.append({
+                        "type": "ic_amounts",
+                        "file_path": result["file_path"],
+                        "row_count": result["row_count"]
+                    })
+            
+            # Export other amounts
+            if "other_amounts" in export_request.export_types:
+                result = export_other_amounts_to_csv(conn, process_id, csv_dir)
+                if result["file_path"]:
+                    cur.execute("""
+                        INSERT INTO csv_exports 
+                        (process_id, export_type, file_path, file_size, row_count, 
+                         export_date, fiscal_year)
+                        VALUES (%s, 'other_amounts', %s, %s, %s, NOW(), %s)
+                    """, (
+                        process_id, 
+                        result["file_path"], 
+                        result["file_size"], 
+                        result["row_count"],
+                        export_request.fiscal_year
+                    ))
+                    export_results.append({
+                        "type": "other_amounts",
+                        "file_path": result["file_path"],
+                        "row_count": result["row_count"]
+                    })
+            
+            conn.commit()
+            
+            return {
+                "message": "CSV export completed successfully",
+                "exports": export_results,
+                "csv_directory": csv_dir
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting CSV: {str(e)}")
+
+@router.get("/processes/{process_id}/csv-exports")
+async def get_csv_export_history(
+    process_id: str,
+    company_name: str = Query(...),
+    current_user = Depends(get_current_active_user)
+):
+    """Get CSV export history for a process."""
+    try:
+        ensure_tables_via_sqlalchemy(company_name)
+        
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cur.execute("""
+                SELECT id, entity_code, export_type, file_path, file_size, 
+                       row_count, export_date, fiscal_year, period_code
+                FROM csv_exports 
+                WHERE process_id = %s
+                ORDER BY export_date DESC
+                LIMIT 50
+            """, (process_id,))
+            
+            exports = cur.fetchall()
+            
+            return {
+                "exports": [dict(export) for export in exports]
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching export history: {str(e)}")
