@@ -1556,7 +1556,13 @@ def convert_date_to_period(transaction_date: str, conn, company_name: str):
     """Convert transaction date to fiscal period information"""
     try:
         from datetime import datetime
-        date_obj = datetime.strptime(transaction_date, '%Y-%m-%d').date()
+        
+        # Handle None or empty transaction_date
+        if not transaction_date:
+            print("⚠️ No transaction date provided, using current date")
+            date_obj = datetime.now().date()
+        else:
+            date_obj = datetime.strptime(transaction_date, '%Y-%m-%d').date()
         
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
@@ -1628,34 +1634,39 @@ async def create_data_input(
             table_name = create_process_table(conn, process_id, process_name, data_type)
             
             # Convert transaction date to period information
-            period_info = convert_date_to_period(data.get('transaction_date'), conn, company_name)
+            transaction_date = data.get('transaction_date') or data.get('period_date')
+            period_info = convert_date_to_period(transaction_date, conn, company_name)
             
-            # Get entity information
+            # Get entity information - handle both entity_id and entity_code
             entity_info = {}
-            if data.get('entity_id'):
+            entity_identifier = data.get('entity_id') or data.get('entity_code')
+            if entity_identifier:
                 cur.execute("""
-                    SELECT entity_code, entity_name 
+                    SELECT id, entity_code, entity_name 
                     FROM entities 
                     WHERE id = %s OR entity_code = %s
-                """, (data.get('entity_id'), data.get('entity_id')))
+                """, (entity_identifier, entity_identifier))
                 entity_result = cur.fetchone()
                 if entity_result:
                     entity_info = {
+                        'entity_id': entity_result['id'],
                         'entity_code': entity_result['entity_code'],
                         'entity_name': entity_result['entity_name']
                     }
             
-            # Get account information
+            # Get account information - handle both account_id and account_code
             account_info = {}
-            if data.get('account_id'):
+            account_identifier = data.get('account_id') or data.get('account_code')
+            if account_identifier:
                 cur.execute("""
-                    SELECT account_code, account_name 
+                    SELECT id, account_code, account_name 
                     FROM accounts 
                     WHERE id = %s OR account_code = %s
-                """, (data.get('account_id'), data.get('account_id')))
+                """, (account_identifier, account_identifier))
                 account_result = cur.fetchone()
                 if account_result:
                     account_info = {
+                        'account_id': account_result['id'],
                         'account_code': account_result['account_code'],
                         'account_name': account_result['account_name']
                     }
@@ -1673,11 +1684,11 @@ async def create_data_input(
                     RETURNING *
                 """, (
                     entry_id, process_id, 
-                    data.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
-                    data.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
+                    entity_info.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
+                    account_info.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
                     period_info['period_id'], period_info['period_code'], period_info['period_name'],
-                    period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
-                    data.get('amount'), data.get('currency_code', 'USD'),
+                    period_info['fiscal_year'], period_info['fiscal_month'], transaction_date,
+                    data.get('amount'), data.get('currency', 'USD'),
                     data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
                     data.get('reference_id'), json.dumps(data.get('custom_fields', {})), data.get('created_by')
                 ))
@@ -1807,7 +1818,8 @@ async def get_data_input(
                 )
             """, (table_name,))
             
-            table_exists = cur.fetchone()[0]
+            result = cur.fetchone()
+            table_exists = result['exists'] if result else False
             
             if not table_exists:
                 print(f"⚠️ Table {table_name} does not exist, returning empty results")

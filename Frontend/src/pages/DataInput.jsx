@@ -311,23 +311,38 @@ const DataInput = () => {
       })
 
       const entryData = {
-        entity_code: formData.entity_code || formData.entity_id,
-        period_code: formData.period_code || formData.period_id,
-        period_date: formData.transaction_date,
-        account_code: formData.account_code || formData.account_id,
+        entity_id: formData.entity_id,
+        entity_code: formData.entity_code,
+        period_id: formData.period_id,
+        period_code: formData.period_code,
+        transaction_date: formData.transaction_date,
+        account_id: formData.account_id,
+        account_code: formData.account_code,
         amount: parseFloat(formData.amount) || 0,
         currency: formData.currency_code || 'USD',
         description: formData.description,
+        reference_id: formData.reference_id,
+        scenario_id: formData.scenario_id,
+        scenario_code: formData.scenario_code,
         origin: 'web_input',
         custom_fields: customFields
       }
 
       // Add type-specific fields
       if (activeCard === 'ic_amounts') {
-        entryData.counterparty_entity_code = formData.to_entity_id
-        entryData.ic_reason = formData.transaction_type
+        entryData.from_entity_id = formData.from_entity_id || formData.entity_id
+        entryData.from_entity_code = formData.from_entity_code || formData.entity_code
+        entryData.to_entity_id = formData.to_entity_id
+        entryData.to_entity_code = formData.to_entity_code
+        entryData.from_account_id = formData.from_account_id || formData.account_id
+        entryData.from_account_code = formData.from_account_code || formData.account_code
+        entryData.to_account_id = formData.to_account_id
+        entryData.to_account_code = formData.to_account_code
+        entryData.transaction_type = formData.transaction_type
+        entryData.fx_rate = formData.fx_rate || 1.0
       } else if (activeCard === 'other_amounts') {
         entryData.adjustment_type = formData.adjustment_type
+        entryData.custom_transaction_type = formData.custom_transaction_type
       }
 
       const response = await fetch(
