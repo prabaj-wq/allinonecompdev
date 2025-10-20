@@ -1663,8 +1663,8 @@ async def create_data_input(
                     cur.execute("""
                         SELECT id, entity_code, entity_name 
                         FROM entities 
-                        WHERE id = %s OR entity_code = %s
-                    """, (entity_identifier, entity_identifier))
+                        WHERE id = %s OR entity_code = %s::text
+                    """, (entity_identifier, str(entity_identifier)))
                     entity_result = cur.fetchone()
                     if entity_result:
                         entity_info = {
@@ -1686,8 +1686,8 @@ async def create_data_input(
                     cur.execute("""
                         SELECT id, account_code, account_name 
                         FROM accounts 
-                        WHERE id = %s OR account_code = %s
-                    """, (account_identifier, account_identifier))
+                        WHERE id = %s OR account_code = %s::text
+                    """, (account_identifier, str(account_identifier)))
                     account_result = cur.fetchone()
                     if account_result:
                         account_info = {
@@ -1731,29 +1731,29 @@ async def create_data_input(
                     to_account_info = {}
                 
                     if data.get('from_entity_id'):
-                        cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
-                                  (data.get('from_entity_id'), data.get('from_entity_id')))
+                        cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s::text", 
+                                  (data.get('from_entity_id'), str(data.get('from_entity_id'))))
                         result = cur.fetchone()
                         if result:
                             from_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
                     
                     if data.get('to_entity_id'):
-                        cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
-                                  (data.get('to_entity_id'), data.get('to_entity_id')))
+                        cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s::text", 
+                                  (data.get('to_entity_id'), str(data.get('to_entity_id'))))
                         result = cur.fetchone()
                         if result:
                             to_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
                     
                     if data.get('from_account_id'):
-                        cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
-                                  (data.get('from_account_id'), data.get('from_account_id')))
+                        cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s::text", 
+                                  (data.get('from_account_id'), str(data.get('from_account_id'))))
                         result = cur.fetchone()
                         if result:
                             from_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
                     
                     if data.get('to_account_id'):
-                        cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
-                                  (data.get('to_account_id'), data.get('to_account_id')))
+                        cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s::text", 
+                                  (data.get('to_account_id'), str(data.get('to_account_id'))))
                         result = cur.fetchone()
                         if result:
                             to_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
