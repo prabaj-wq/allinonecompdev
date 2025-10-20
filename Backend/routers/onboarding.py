@@ -206,9 +206,15 @@ def create_company_and_user_records(data: OnboardingData, database_name: str):
         logger.info(f"Created admin user: {user.username} (ID: {user.id})")
         print(f"Created admin user: {user.username} (ID: {user.id})")
         
-        # Skip role and permission creation for now to avoid transaction issues
-        # TODO: Add role and permission creation later
-        logger.info("Skipping role/permission creation for simplified onboarding")
+        # Create admin role and permissions for the first user
+        logger.info("Creating admin role and permissions...")
+        try:
+            create_admin_role_and_permissions(company.id, user.id, database_name)
+            logger.info("✅ Admin role and permissions created successfully")
+        except Exception as role_error:
+            logger.warning(f"⚠️ Failed to create admin role: {role_error}")
+            # Don't fail the onboarding if role creation fails
+            pass
         
         # Commit all changes
         logger.info(f"About to commit all changes...")
@@ -245,6 +251,116 @@ def create_company_and_user_records(data: OnboardingData, database_name: str):
     finally:
         db.close()
         logger.info(f"=== Finished create_company_and_user_records ===")
+
+def create_admin_role_and_permissions(company_id: int, user_id: int, database_name: str):
+    """Create admin role and assign full permissions to the first user"""
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        
+        db_params = get_db_connection_params()
+        
+        # Connect to epm_tool database for role management
+        conn = psycopg2.connect(
+            host=db_params['host'],
+            database="epm_tool",
+            user=db_params['user'],
+            password=db_params['password'],
+            port=db_params['port']
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Ensure role management tables exist
+        from routers.role_management import ensure_role_management_tables
+        ensure_role_management_tables(cur)
+        
+        # Create Super Admin role with full permissions
+        admin_role_data = {
+            'name': 'Super Admin',
+            'description': 'Full system administrator with all permissions',
+            'page_permissions': {
+                '/dashboard': True,
+                '/process': True,
+                '/fiscal-management': True,
+                '/axes-entity': True,
+                '/axes-accounts': True,
+                '/custom-axes': True,
+                '/database-management': True,
+                '/role-management': True,
+                '/user-management': True,
+                '/reports': True,
+                '/settings': True,
+                '/audit-logs': True,
+                '/system-integration': True,
+                '/backup-restore': True,
+                '/company-management': True
+            },
+            'database_permissions': {
+                database_name: {
+                    'read': True,
+                    'write': True,
+                    'execute': True,
+                    'admin': True
+                }
+            },
+            'is_active': True,
+            'created_by': 'system',
+            'company': database_name
+        }
+        
+        # Insert admin role
+        cur.execute("""
+            INSERT INTO roles (name, description, page_permissions, database_permissions, is_active, created_by, company, created_at, updated_at)
+            VALUES (%(name)s, %(description)s, %(page_permissions)s, %(database_permissions)s, %(is_active)s, %(created_by)s, %(company)s, NOW(), NOW())
+            RETURNING id
+        """, {
+            'name': admin_role_data['name'],
+            'description': admin_role_data['description'],
+            'page_permissions': json.dumps(admin_role_data['page_permissions']),
+            'database_permissions': json.dumps(admin_role_data['database_permissions']),
+            'is_active': admin_role_data['is_active'],
+            'created_by': admin_role_data['created_by'],
+            'company': admin_role_data['company']
+        })
+        
+        role_result = cur.fetchone()
+        admin_role_id = role_result['id']
+        
+        # Assign role to user
+        cur.execute("""
+            INSERT INTO user_roles (user_id, role_id, assigned_by, assigned_at, is_active)
+            VALUES (%s, %s, %s, NOW(), TRUE)
+            ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = TRUE, assigned_at = NOW()
+        """, (user_id, admin_role_id, 'system'))
+        
+        # Create user permissions record with full access
+        user_permissions = {
+            'page_permissions': admin_role_data['page_permissions'],
+            'database_permissions': admin_role_data['database_permissions'],
+            'role_permissions': admin_role_data['page_permissions'],
+            'temporary_access': {},
+            'custom_permissions': {}
+        }
+        
+        cur.execute("""
+            INSERT INTO user_permissions (user_id, permissions, role_id, updated_by, updated_at, company)
+            VALUES (%s, %s, %s, %s, NOW(), %s)
+            ON CONFLICT (user_id) DO UPDATE SET 
+                permissions = EXCLUDED.permissions,
+                role_id = EXCLUDED.role_id,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+        """, (user_id, json.dumps(user_permissions), admin_role_id, 'system', database_name))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        logger.info(f"✅ Created Super Admin role (ID: {admin_role_id}) and assigned to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating admin role: {str(e)}")
+        raise
 
 def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     """Create a JWT access token"""
@@ -336,4 +452,53 @@ def complete_onboarding(data: OnboardingData):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Onboarding failed: {str(e)}"
+        )
+
+@router.post("/fix-admin-permissions")
+def fix_existing_admin_permissions():
+    """Fix admin permissions for existing users who should be admins"""
+    try:
+        db = SessionLocal()
+        
+        # Get all companies and their first users (who should be admins)
+        companies = db.query(Company).filter(Company.status == 'active').all()
+        
+        fixed_users = []
+        
+        for company in companies:
+            # Get the first user for this company (should be admin)
+            first_user = db.query(User).filter(
+                User.company_id == company.id
+            ).order_by(User.id.asc()).first()
+            
+            if first_user:
+                # Make sure they're marked as superuser
+                if not first_user.is_superuser:
+                    first_user.is_superuser = True
+                    db.commit()
+                
+                # Create admin role and permissions
+                try:
+                    create_admin_role_and_permissions(company.id, first_user.id, company.code)
+                    fixed_users.append({
+                        'company': company.name,
+                        'user': first_user.username,
+                        'user_id': first_user.id
+                    })
+                except Exception as role_error:
+                    logger.warning(f"Failed to create admin role for {first_user.username}: {role_error}")
+        
+        db.close()
+        
+        return {
+            "status": "success",
+            "message": f"Fixed admin permissions for {len(fixed_users)} users",
+            "fixed_users": fixed_users
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fixing admin permissions: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fix admin permissions: {str(e)}"
         )

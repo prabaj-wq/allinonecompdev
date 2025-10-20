@@ -169,7 +169,7 @@ def login_with_company(credentials: CompanyLogin):
             )
             
             company_cur = company_conn.cursor()
-            company_cur.execute("SELECT id, username, email, password_hash FROM users WHERE username = %s", (credentials.username,))
+            company_cur.execute("SELECT id, username, email, password_hash, is_superuser FROM users WHERE username = %s", (credentials.username,))
             user_data = company_cur.fetchone()
             company_cur.close()
             company_conn.close()
@@ -192,7 +192,7 @@ def login_with_company(credentials: CompanyLogin):
                 
                 main_cur = main_conn.cursor()
                 main_cur.execute("""
-                    SELECT u.id, u.username, u.email, u.password_hash 
+                    SELECT u.id, u.username, u.email, u.password_hash, u.is_superuser 
                     FROM users u 
                     JOIN companies c ON u.company_id = c.id 
                     WHERE u.username = %s AND c.name = %s
@@ -209,7 +209,7 @@ def login_with_company(credentials: CompanyLogin):
                 detail="Invalid username or password"
             )
         
-        user_id, username, email, password_hash = user_data
+        user_id, username, email, password_hash, is_superuser = user_data
         
         # Verify password
         if not verify_password(credentials.password, password_hash):
@@ -236,7 +236,8 @@ def login_with_company(credentials: CompanyLogin):
             "company_name": credentials.company_name,
             "username": username,
             "user_id": user_id,
-            "email": email
+            "email": email,
+            "is_superuser": is_superuser or False
         }
     except HTTPException:
         raise

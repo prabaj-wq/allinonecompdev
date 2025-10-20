@@ -79,11 +79,11 @@ export const PermissionsProvider = ({ children }) => {
 
   // Check if user has access to a specific page
   const hasPageAccess = (pagePath) => {
-    // If permissions are loading or failed to load, deny access (no fallback)
+    // If permissions are loading or failed to load, check for superuser fallback
     if (!userPermissions) {
-      // Only allow access for the actual 'admin' username as a last resort
-      if (user?.username === 'admin') {
-        console.log('🔐 Granting access based on admin username fallback for:', pagePath)
+      // Allow access for superusers or admin username as fallback
+      if (user?.is_superuser === true || user?.username === 'admin') {
+        console.log('🔐 Granting access based on superuser/admin fallback for:', pagePath, 'is_superuser:', user?.is_superuser)
         return true
       }
       console.log('🔐 No permissions loaded, denying access to:', pagePath)
@@ -164,12 +164,19 @@ export const PermissionsProvider = ({ children }) => {
 
   // Check if user is admin (has access to role management)
   const isAdmin = () => {
-    // Only check permission-based admin status, not the basic role field
-    const adminByUsername = user?.username === 'admin'
-    const adminByPermission = hasPageAccess('/rolemanagement')
+    // Check if user is superuser from the database
+    const isSuperuser = user?.is_superuser === true
     
-    console.log('🔐 Admin check - by username:', adminByUsername, 'by permission:', adminByPermission)
-    return adminByUsername || adminByPermission
+    // Check permission-based admin status
+    const adminByUsername = user?.username === 'admin'
+    const adminByPermission = hasPageAccess('/role-management') || hasPageAccess('/rolemanagement')
+    
+    // Check if user has admin permissions in any database
+    const hasAdminDbAccess = userPermissions?.database_permissions && 
+      Object.values(userPermissions.database_permissions).some(perms => perms?.admin === true)
+    
+    console.log('🔐 Admin check - superuser:', isSuperuser, 'by username:', adminByUsername, 'by permission:', adminByPermission, 'db admin:', hasAdminDbAccess)
+    return isSuperuser || adminByUsername || adminByPermission || hasAdminDbAccess
   }
 
   // Filter databases based on user permissions
