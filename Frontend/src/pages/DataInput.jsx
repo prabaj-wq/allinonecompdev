@@ -632,8 +632,8 @@ const DataInput = () => {
                 )}
                 {activeCard === 'ic_amounts' && (
                   <>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entity</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Counterparty</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">From Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">To Entity</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Amount</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
                   </>
@@ -673,51 +673,51 @@ const DataInput = () => {
                     {activeCard === 'entity_amounts' && (
                       <>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entities.find(e => e.id === entry.entity_id)?.name || entry.entity_name || 'Unknown'}
+                          {entry.entity_name || entry.entity_code || 'Unknown Entity'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {periods.find(p => p.id === entry.period_id)?.period_name || 'Unknown'}
+                          {entry.period_name || entry.period_code || 'Unknown Period'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {accounts.find(a => a.id === entry.account_id)?.account_name || entry.account_code || 'Unknown'}
+                          {entry.account_name || entry.account_code || 'Unknown Account'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entry.amount?.toLocaleString()}
+                          {entry.amount?.toLocaleString() || '0'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entry.currency_code}
+                          {entry.currency || 'USD'}
                         </td>
                       </>
                     )}
                     {activeCard === 'ic_amounts' && (
                       <>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entities.find(e => e.id === entry.from_entity_id)?.name || 'Unknown'}
+                          {entry.from_entity_name || entry.from_entity_code || 'Unknown From Entity'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entities.find(e => e.id === entry.to_entity_id)?.name || 'Unknown'}
+                          {entry.to_entity_name || entry.to_entity_code || 'Unknown To Entity'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entry.amount?.toLocaleString()}
+                          {entry.amount?.toLocaleString() || '0'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entry.transaction_type}
+                          {entry.transaction_type || 'Standard'}
                         </td>
                       </>
                     )}
                     {activeCard === 'other_amounts' && (
                       <>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entities.find(e => e.id === entry.entity_id)?.name || 'Global'}
+                          {entry.entity_name || entry.entity_code || 'Global'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {periods.find(p => p.id === entry.period_id)?.period_name || 'Unknown'}
+                          {entry.period_name || entry.period_code || 'Unknown Period'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {accounts.find(a => a.id === entry.account_id)?.account_name || 'Unknown'}
+                          {entry.account_name || entry.account_code || 'Unknown Account'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                          {entry.amount?.toLocaleString()}
+                          {entry.amount?.toLocaleString() || '0'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
                           {entry.adjustment_type}

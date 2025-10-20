@@ -1439,9 +1439,170 @@ async def get_execution_history(
         raise HTTPException(status_code=500, detail=f"Error fetching execution history: {str(e)}")
 
 # ============================================================================
-# ============================================================================
 # DATA INPUT MANAGEMENT
 # ============================================================================
+
+def create_process_table(conn, process_id: str, process_name: str, data_type: str):
+    """Create process-specific table for data isolation"""
+    cur = conn.cursor()
+    
+    # Sanitize process name for table naming
+    safe_process_name = re.sub(r'[^a-zA-Z0-9_]', '_', process_name.lower())
+    table_name = f"{safe_process_name}_{data_type}_entries"
+    
+    # Create table if it doesn't exist
+    if data_type == 'entity_amounts':
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id VARCHAR(36) PRIMARY KEY,
+                process_id VARCHAR(36) NOT NULL,
+                entity_id VARCHAR(36),
+                entity_code VARCHAR(50),
+                entity_name VARCHAR(255),
+                account_id VARCHAR(36),
+                account_code VARCHAR(50),
+                account_name VARCHAR(255),
+                period_id VARCHAR(36),
+                period_code VARCHAR(50),
+                period_name VARCHAR(255),
+                fiscal_year VARCHAR(10),
+                fiscal_month VARCHAR(10),
+                transaction_date DATE,
+                amount DECIMAL(18,2),
+                currency VARCHAR(10) DEFAULT 'USD',
+                scenario_id VARCHAR(36),
+                scenario_code VARCHAR(50),
+                description TEXT,
+                reference_id VARCHAR(100),
+                custom_fields JSONB DEFAULT '{{}}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100)
+            )
+        """)
+    elif data_type == 'ic_amounts':
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id VARCHAR(36) PRIMARY KEY,
+                process_id VARCHAR(36) NOT NULL,
+                from_entity_id VARCHAR(36),
+                from_entity_code VARCHAR(50),
+                from_entity_name VARCHAR(255),
+                to_entity_id VARCHAR(36),
+                to_entity_code VARCHAR(50),
+                to_entity_name VARCHAR(255),
+                from_account_id VARCHAR(36),
+                from_account_code VARCHAR(50),
+                from_account_name VARCHAR(255),
+                to_account_id VARCHAR(36),
+                to_account_code VARCHAR(50),
+                to_account_name VARCHAR(255),
+                period_id VARCHAR(36),
+                period_code VARCHAR(50),
+                period_name VARCHAR(255),
+                fiscal_year VARCHAR(10),
+                fiscal_month VARCHAR(10),
+                transaction_date DATE,
+                amount DECIMAL(18,2),
+                currency VARCHAR(10) DEFAULT 'USD',
+                scenario_id VARCHAR(36),
+                scenario_code VARCHAR(50),
+                description TEXT,
+                reference_id VARCHAR(100),
+                transaction_type VARCHAR(100),
+                fx_rate DECIMAL(10,6) DEFAULT 1.0,
+                custom_fields JSONB DEFAULT '{{}}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100)
+            )
+        """)
+    elif data_type == 'other_amounts':
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table_name} (
+                id VARCHAR(36) PRIMARY KEY,
+                process_id VARCHAR(36) NOT NULL,
+                entity_id VARCHAR(36),
+                entity_code VARCHAR(50),
+                entity_name VARCHAR(255),
+                account_id VARCHAR(36),
+                account_code VARCHAR(50),
+                account_name VARCHAR(255),
+                period_id VARCHAR(36),
+                period_code VARCHAR(50),
+                period_name VARCHAR(255),
+                fiscal_year VARCHAR(10),
+                fiscal_month VARCHAR(10),
+                transaction_date DATE,
+                amount DECIMAL(18,2),
+                currency VARCHAR(10) DEFAULT 'USD',
+                scenario_id VARCHAR(36),
+                scenario_code VARCHAR(50),
+                description TEXT,
+                reference_id VARCHAR(100),
+                adjustment_type VARCHAR(100),
+                custom_transaction_type VARCHAR(100),
+                custom_fields JSONB DEFAULT '{{}}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_by VARCHAR(100)
+            )
+        """)
+    
+    conn.commit()
+    return table_name
+
+def convert_date_to_period(transaction_date: str, conn, company_name: str):
+    """Convert transaction date to fiscal period information"""
+    try:
+        from datetime import datetime
+        date_obj = datetime.strptime(transaction_date, '%Y-%m-%d').date()
+        
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Find the appropriate fiscal year and period
+        cur.execute("""
+            SELECT fy.id as fiscal_year_id, fy.year as fiscal_year,
+                   p.id as period_id, p.period_name, p.period_code,
+                   p.start_date, p.end_date
+            FROM fiscal_years fy
+            JOIN periods p ON p.fiscal_year_id = fy.id
+            WHERE %s BETWEEN p.start_date AND p.end_date
+            ORDER BY p.start_date
+            LIMIT 1
+        """, (date_obj,))
+        
+        period_info = cur.fetchone()
+        
+        if period_info:
+            return {
+                'fiscal_year_id': period_info['fiscal_year_id'],
+                'fiscal_year': period_info['fiscal_year'],
+                'period_id': period_info['period_id'],
+                'period_name': period_info['period_name'],
+                'period_code': period_info['period_code'],
+                'fiscal_month': str(date_obj.month).zfill(2)
+            }
+        else:
+            # Fallback: create basic period info from date
+            return {
+                'fiscal_year_id': None,
+                'fiscal_year': str(date_obj.year),
+                'period_id': None,
+                'period_name': f"{date_obj.strftime('%B')} {date_obj.year}",
+                'period_code': f"{date_obj.year}-{str(date_obj.month).zfill(2)}",
+                'fiscal_month': str(date_obj.month).zfill(2)
+            }
+    except Exception as e:
+        print(f"Error converting date to period: {e}")
+        return {
+            'fiscal_year_id': None,
+            'fiscal_year': '2024',
+            'period_id': None,
+            'period_name': 'Unknown Period',
+            'period_code': 'UNKNOWN',
+            'fiscal_month': '01'
+        }
 
 @router.post("/processes/{process_id}/data-input/{data_type}")
 async def create_data_input(
@@ -1450,65 +1611,164 @@ async def create_data_input(
     data: dict = Body(...),
     company_name: str = Query(...)
 ):
-    """Create a new data input entry (entity amounts, IC amounts, or other amounts)"""
+    """Create a new data input entry with process-specific table and proper data handling"""
     try:
         print(f"💾 Creating {data_type} entry for process {process_id}")
+        print(f"📥 Data received: {data}")
         
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Get process information
+            cur.execute("SELECT name FROM financial_processes WHERE id = %s", (process_id,))
+            process_result = cur.fetchone()
+            process_name = process_result['name'] if process_result else f"process_{process_id[:8]}"
+            
+            # Create process-specific table
+            table_name = create_process_table(conn, process_id, process_name, data_type)
+            
+            # Convert transaction date to period information
+            period_info = convert_date_to_period(data.get('transaction_date'), conn, company_name)
+            
+            # Get entity information
+            entity_info = {}
+            if data.get('entity_id'):
+                cur.execute("""
+                    SELECT entity_code, entity_name 
+                    FROM entities 
+                    WHERE id = %s OR entity_code = %s
+                """, (data.get('entity_id'), data.get('entity_id')))
+                entity_result = cur.fetchone()
+                if entity_result:
+                    entity_info = {
+                        'entity_code': entity_result['entity_code'],
+                        'entity_name': entity_result['entity_name']
+                    }
+            
+            # Get account information
+            account_info = {}
+            if data.get('account_id'):
+                cur.execute("""
+                    SELECT account_code, account_name 
+                    FROM accounts 
+                    WHERE id = %s OR account_code = %s
+                """, (data.get('account_id'), data.get('account_id')))
+                account_result = cur.fetchone()
+                if account_result:
+                    account_info = {
+                        'account_code': account_result['account_code'],
+                        'account_name': account_result['account_name']
+                    }
+            
             entry_id = str(uuid.uuid4())
             
+            # Insert data based on type
             if data_type == 'entity_amounts':
-                cur.execute("""
-                    INSERT INTO entity_amounts 
-                    (id, process_id, entity_code, period_code, period_date, account_code, 
-                     amount, currency, scenario_code, description, origin, custom_fields, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                cur.execute(f"""
+                    INSERT INTO {table_name} 
+                    (id, process_id, entity_id, entity_code, entity_name, account_id, account_code, account_name,
+                     period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
+                     amount, currency, scenario_id, scenario_code, description, reference_id, custom_fields, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                 """, (
-                    entry_id, process_id, data.get('entity_code'), data.get('period_code'),
-                    data.get('period_date'), data.get('account_code'), data.get('amount'),
-                    data.get('currency', 'USD'), data.get('scenario_code'), data.get('description'),
-                    data.get('origin', 'web_input'), json.dumps(data.get('custom_fields', {})),
-                    data.get('created_by')
+                    entry_id, process_id, 
+                    data.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
+                    data.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
+                    period_info['period_id'], period_info['period_code'], period_info['period_name'],
+                    period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
+                    data.get('amount'), data.get('currency_code', 'USD'),
+                    data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
+                    data.get('reference_id'), json.dumps(data.get('custom_fields', {})), data.get('created_by')
                 ))
             
             elif data_type == 'ic_amounts':
-                cur.execute("""
-                    INSERT INTO ic_amounts 
-                    (id, process_id, entity_code, counterparty_entity_code, period_code, period_date, 
-                     account_code, amount, currency, scenario_code, description, ic_reason, origin, custom_fields, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                # Get from/to entity information
+                from_entity_info = {}
+                to_entity_info = {}
+                from_account_info = {}
+                to_account_info = {}
+                
+                if data.get('from_entity_id'):
+                    cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
+                              (data.get('from_entity_id'), data.get('from_entity_id')))
+                    result = cur.fetchone()
+                    if result:
+                        from_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
+                
+                if data.get('to_entity_id'):
+                    cur.execute("SELECT entity_code, entity_name FROM entities WHERE id = %s OR entity_code = %s", 
+                              (data.get('to_entity_id'), data.get('to_entity_id')))
+                    result = cur.fetchone()
+                    if result:
+                        to_entity_info = {'entity_code': result['entity_code'], 'entity_name': result['entity_name']}
+                
+                if data.get('from_account_id'):
+                    cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
+                              (data.get('from_account_id'), data.get('from_account_id')))
+                    result = cur.fetchone()
+                    if result:
+                        from_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
+                
+                if data.get('to_account_id'):
+                    cur.execute("SELECT account_code, account_name FROM accounts WHERE id = %s OR account_code = %s", 
+                              (data.get('to_account_id'), data.get('to_account_id')))
+                    result = cur.fetchone()
+                    if result:
+                        to_account_info = {'account_code': result['account_code'], 'account_name': result['account_name']}
+                
+                cur.execute(f"""
+                    INSERT INTO {table_name} 
+                    (id, process_id, from_entity_id, from_entity_code, from_entity_name, to_entity_id, to_entity_code, to_entity_name,
+                     from_account_id, from_account_code, from_account_name, to_account_id, to_account_code, to_account_name,
+                     period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
+                     amount, currency, scenario_id, scenario_code, description, reference_id, transaction_type, fx_rate, custom_fields, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                 """, (
-                    entry_id, process_id, data.get('entity_code'), data.get('counterparty_entity_code'),
-                    data.get('period_code'), data.get('period_date'), data.get('account_code'),
-                    data.get('amount'), data.get('currency', 'USD'), data.get('scenario_code'),
-                    data.get('description'), data.get('ic_reason'), data.get('origin', 'web_input'),
+                    entry_id, process_id,
+                    data.get('from_entity_id'), from_entity_info.get('entity_code'), from_entity_info.get('entity_name'),
+                    data.get('to_entity_id'), to_entity_info.get('entity_code'), to_entity_info.get('entity_name'),
+                    data.get('from_account_id'), from_account_info.get('account_code'), from_account_info.get('account_name'),
+                    data.get('to_account_id'), to_account_info.get('account_code'), to_account_info.get('account_name'),
+                    period_info['period_id'], period_info['period_code'], period_info['period_name'],
+                    period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
+                    data.get('amount'), data.get('currency_code', 'USD'),
+                    data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
+                    data.get('reference_id'), data.get('transaction_type'), data.get('fx_rate', 1.0),
                     json.dumps(data.get('custom_fields', {})), data.get('created_by')
                 ))
             
             elif data_type == 'other_amounts':
-                cur.execute("""
-                    INSERT INTO other_amounts 
-                    (id, process_id, entity_code, period_code, period_date, account_code, 
-                     amount, currency, scenario_code, description, adjustment_type, origin, custom_fields, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                cur.execute(f"""
+                    INSERT INTO {table_name} 
+                    (id, process_id, entity_id, entity_code, entity_name, account_id, account_code, account_name,
+                     period_id, period_code, period_name, fiscal_year, fiscal_month, transaction_date,
+                     amount, currency, scenario_id, scenario_code, description, reference_id, 
+                     adjustment_type, custom_transaction_type, custom_fields, created_by)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                 """, (
-                    entry_id, process_id, data.get('entity_code'), data.get('period_code'),
-                    data.get('period_date'), data.get('account_code'), data.get('amount'),
-                    data.get('currency', 'USD'), data.get('scenario_code'), data.get('description'),
-                    data.get('adjustment_type'), data.get('origin', 'web_input'),
+                    entry_id, process_id,
+                    data.get('entity_id'), entity_info.get('entity_code'), entity_info.get('entity_name'),
+                    data.get('account_id'), account_info.get('account_code'), account_info.get('account_name'),
+                    period_info['period_id'], period_info['period_code'], period_info['period_name'],
+                    period_info['fiscal_year'], period_info['fiscal_month'], data.get('transaction_date'),
+                    data.get('amount'), data.get('currency_code', 'USD'),
+                    data.get('scenario_id'), data.get('scenario_code'), data.get('description'),
+                    data.get('reference_id'), data.get('adjustment_type'), data.get('custom_transaction_type'),
                     json.dumps(data.get('custom_fields', {})), data.get('created_by')
                 ))
-            else:
-                raise HTTPException(status_code=400, detail=f"Invalid data_type: {data_type}")
             
             result = cur.fetchone()
             conn.commit()
-            print(f"✅ Created {data_type} entry: {result['id']}")
-            return result
+            
+            print(f"✅ Created {data_type} entry in table {table_name}: {result}")
+            return {
+                "entry": dict(result), 
+                "table_name": table_name,
+                "message": f"{data_type.replace('_', ' ').title()} entry created successfully"
+            }
             
     except Exception as e:
         print(f"❌ Error creating {data_type}: {str(e)}")
@@ -1525,12 +1785,44 @@ async def get_data_input(
     year_id: Optional[str] = Query(None, description="Filter by fiscal year"),
     scenario_id: Optional[str] = Query(None, description="Filter by scenario")
 ):
-    """Get all data input entries for a specific type with optional filtering"""
+    """Get all data input entries for a specific type with optional filtering from process-specific tables"""
     try:
         with company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             
-            table_name = data_type  # entity_amounts, ic_amounts, or other_amounts
+            # Get process information to determine table name
+            cur.execute("SELECT name FROM financial_processes WHERE id = %s", (process_id,))
+            process_result = cur.fetchone()
+            process_name = process_result['name'] if process_result else f"process_{process_id[:8]}"
+            
+            # Generate process-specific table name
+            safe_process_name = re.sub(r'[^a-zA-Z0-9_]', '_', process_name.lower())
+            table_name = f"{safe_process_name}_{data_type}_entries"
+            
+            # Check if table exists
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = %s
+                )
+            """, (table_name,))
+            
+            table_exists = cur.fetchone()[0]
+            
+            if not table_exists:
+                print(f"⚠️ Table {table_name} does not exist, returning empty results")
+                return {
+                    "entries": [],
+                    "filters": {
+                        "entity_filter": entity_filter,
+                        "year_id": year_id,
+                        "scenario_id": scenario_id,
+                        "data_type": data_type
+                    },
+                    "total_count": 0,
+                    "table_name": table_name,
+                    "table_exists": False
+                }
             
             # Build dynamic WHERE clause based on filters
             where_conditions = ["process_id = %s"]
@@ -1550,7 +1842,7 @@ async def get_data_input(
             
             # Add year filter if provided
             if year_id:
-                where_conditions.append("fiscal_year_id = %s")
+                where_conditions.append("fiscal_year = %s")
                 params.append(year_id)
             
             # Add scenario filter if provided
@@ -1579,6 +1871,8 @@ async def get_data_input(
                         entry_dict[key] = float(value)
                 entries_list.append(entry_dict)
             
+            print(f"✅ Retrieved {len(entries_list)} entries from table {table_name}")
+            
             return {
                 "entries": entries_list,
                 "filters": {
@@ -1587,7 +1881,9 @@ async def get_data_input(
                     "scenario_id": scenario_id,
                     "data_type": data_type
                 },
-                "total_count": len(entries_list)
+                "total_count": len(entries_list),
+                "table_name": table_name,
+                "table_exists": True
             }
             
     except Exception as e:
