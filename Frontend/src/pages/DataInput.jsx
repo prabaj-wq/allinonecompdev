@@ -18,6 +18,9 @@ const DataInput = () => {
   const searchParams = new URLSearchParams(location.search)
   const processId = searchParams.get('processId')
   const processName = searchParams.get('processName') || 'Data Input'
+  const yearId = searchParams.get('year')
+  const scenarioId = searchParams.get('scenario')
+  const entitiesParam = searchParams.get('entities')
 
   // State management
   const [activeCard, setActiveCard] = useState('entity_amounts')
@@ -116,14 +119,33 @@ const DataInput = () => {
         setEntities(Array.isArray(data) ? data : [])
       }
 
-      // Fetch accounts
+      // Fetch accounts - use the same endpoint as AxesAccounts.jsx
       const accountsRes = await fetch(
-        `/api/axes-account/elements?company_name=${encodeURIComponent(selectedCompany)}`,
+        `/api/axes-account/accounts?company_name=${encodeURIComponent(selectedCompany)}`,
         { credentials: 'include', headers: { ...getAuthHeaders() } }
       )
       if (accountsRes.ok) {
         const accountsData = await accountsRes.json()
-        setAccounts(Array.isArray(accountsData) ? accountsData : [])
+        console.log('📊 Fetched accounts data:', accountsData)
+        
+        // Handle the response structure from the API
+        const accountsList = accountsData.accounts || accountsData || []
+        
+        // Transform accounts to ensure consistent structure
+        const transformedAccounts = Array.isArray(accountsList) ? accountsList.map(account => ({
+          id: account.id,
+          account_code: account.account_code || account.code,
+          account_name: account.account_name || account.name,
+          account_type: account.account_type || account.type,
+          currency: account.currency || 'USD',
+          balance: account.balance || 0
+        })) : []
+        
+        setAccounts(transformedAccounts)
+        console.log('✅ Loaded accounts for data input:', transformedAccounts.length)
+      } else {
+        console.error('❌ Failed to fetch accounts:', accountsRes.status)
+        setAccounts([])
       }
 
       // Fetch periods for the selected year
@@ -619,12 +641,21 @@ const DataInput = () => {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select Account</option>
-                      {accounts.map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </option>
-                      ))}
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
                     </select>
+                    {accounts.length === 0 && (
+                      <p className="text-xs text-red-500 mt-1">
+                        No accounts found. Please check Axes Account Management.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -722,11 +753,15 @@ const DataInput = () => {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select From Account</option>
-                      {accounts.map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </option>
-                      ))}
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
                     </select>
                   </div>
 
@@ -740,11 +775,15 @@ const DataInput = () => {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select To Account</option>
-                      {accounts.map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </option>
-                      ))}
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
                     </select>
                   </div>
 
@@ -911,11 +950,15 @@ const DataInput = () => {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                     >
                       <option value="">Select Account</option>
-                      {accounts.map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.account_code} - {account.account_name}
-                        </option>
-                      ))}
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
                     </select>
                   </div>
 
