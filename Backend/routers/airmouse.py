@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 import cv2
 import mediapipe as mp
-import autopy
+from pynput.mouse import Button, Listener as MouseListener
+from pynput import mouse
 import numpy as np
 import threading
 import time
@@ -88,18 +89,20 @@ class AirMouseController:
                 if self.active:
                     # Get coordinates of the index finger tip
                     x, y = hand_landmarks.landmark[8].x, hand_landmarks.landmark[8].y
-                    screen_x, screen_y = autopy.screen.size()
+                    
+                    # Get screen size (using a reasonable default)
+                    screen_width, screen_height = 1920, 1080  # Default screen size
                     
                     # Map coordinates to screen
-                    screen_x = min(max(screen_x * x, 0), screen_x - 1)
-                    screen_y = min(max(screen_y * y, 0), screen_y - 1)
+                    screen_x = min(max(screen_width * x, 0), screen_width - 1)
+                    screen_y = min(max(screen_height * y, 0), screen_height - 1)
                     
                     # Smooth the mouse movement
                     smooth_x = self.prev_x + (screen_x - self.prev_x) * self.smooth_factor
                     smooth_y = self.prev_y + (screen_y - self.prev_y) * self.smooth_factor
                     
                     try:
-                        autopy.mouse.move(smooth_x, smooth_y)
+                        mouse.Controller().position = (smooth_x, smooth_y)
                     except:
                         pass  # Ignore mouse movement errors
                     
@@ -119,10 +122,11 @@ class AirMouseController:
                     
                     # Perform clicks
                     try:
+                        mouse_controller = mouse.Controller()
                         if distance_index_thumb < click_threshold:
-                            autopy.mouse.click(autopy.mouse.Button.LEFT)
+                            mouse_controller.click(Button.left)
                         if distance_middle_thumb < click_threshold:
-                            autopy.mouse.click(autopy.mouse.Button.RIGHT)
+                            mouse_controller.click(Button.right)
                     except:
                         pass  # Ignore click errors
         
