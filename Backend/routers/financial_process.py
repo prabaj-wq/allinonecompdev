@@ -1657,14 +1657,16 @@ async def create_data_input(
                 
                 # Get entity information - handle both entity_id and entity_code
                 entity_info = {}
-                entity_identifier = data.get('entity_id') or data.get('entity_code')
-                if entity_identifier:
-                    print(f"🔍 Looking up entity with identifier: {entity_identifier}")
-                    cur.execute("""
-                        SELECT id, code, name 
-                        FROM axes_entities 
-                        WHERE id = %s OR code = %s::text
-                    """, (entity_identifier, str(entity_identifier)))
+                entity_id_value = data.get('entity_id')
+                entity_code_value = data.get('entity_code')
+                if entity_id_value or entity_code_value:
+                    if entity_id_value:
+                        print(f"🔍 Looking up entity by id: {entity_id_value}")
+                        cur.execute("SELECT id, code, name FROM axes_entities WHERE id = %s", (entity_id_value,))
+                    else:
+                        print(f"🔍 Looking up entity by code: {entity_code_value}")
+                        cur.execute("SELECT id, code, name FROM axes_entities WHERE code = %s", (str(entity_code_value),))
+
                     entity_result = cur.fetchone()
                     if entity_result:
                         entity_info = {
@@ -1674,20 +1676,22 @@ async def create_data_input(
                         }
                         print(f"✅ Found entity: {entity_info}")
                     else:
-                        print(f"⚠️ Entity not found for identifier: {entity_identifier}")
+                        print("⚠️ Entity not found for provided identifier")
                 else:
                     print("⚠️ No entity identifier provided")
                 
                 # Get account information - handle both account_id and account_code
                 account_info = {}
-                account_identifier = data.get('account_id') or data.get('account_code')
-                if account_identifier:
-                    print(f"🔍 Looking up account with identifier: {account_identifier}")
-                    cur.execute("""
-                        SELECT id, code, name 
-                        FROM axes_accounts 
-                        WHERE id = %s OR code = %s::text
-                    """, (account_identifier, str(account_identifier)))
+                account_id_value = data.get('account_id')
+                account_code_value = data.get('account_code')
+                if account_id_value or account_code_value:
+                    if account_id_value:
+                        print(f"🔍 Looking up account by id: {account_id_value}")
+                        cur.execute("SELECT id, code, name FROM axes_accounts WHERE id = %s", (account_id_value,))
+                    else:
+                        print(f"🔍 Looking up account by code: {account_code_value}")
+                        cur.execute("SELECT id, code, name FROM axes_accounts WHERE code = %s", (str(account_code_value),))
+
                     account_result = cur.fetchone()
                     if account_result:
                         account_info = {
@@ -1697,7 +1701,7 @@ async def create_data_input(
                         }
                         print(f"✅ Found account: {account_info}")
                     else:
-                        print(f"⚠️ Account not found for identifier: {account_identifier}")
+                        print("⚠️ Account not found for provided identifier")
                 else:
                     print("⚠️ No account identifier provided")
                 
@@ -1731,32 +1735,88 @@ async def create_data_input(
                     to_account_info = {}
                 
                     if data.get('from_entity_id'):
-                        cur.execute("SELECT code, name FROM axes_entities WHERE id = %s OR code = %s::text", 
-                                  (data.get('from_entity_id'), str(data.get('from_entity_id'))))
+                        cur.execute("SELECT id, code, name FROM axes_entities WHERE id = %s", 
+                                  (data.get('from_entity_id'),))
                         result = cur.fetchone()
                         if result:
-                            from_entity_info = {'entity_code': result['code'], 'entity_name': result['name']}
+                            from_entity_info = {
+                                'entity_id': result['id'],
+                                'entity_code': result['code'],
+                                'entity_name': result['name']
+                            }
+                    elif data.get('from_entity_code'):
+                        cur.execute("SELECT id, code, name FROM axes_entities WHERE code = %s", 
+                                  (str(data.get('from_entity_code')),))
+                        result = cur.fetchone()
+                        if result:
+                            from_entity_info = {
+                                'entity_id': result['id'],
+                                'entity_code': result['code'],
+                                'entity_name': result['name']
+                            }
                     
                     if data.get('to_entity_id'):
-                        cur.execute("SELECT code, name FROM axes_entities WHERE id = %s OR code = %s::text", 
-                                  (data.get('to_entity_id'), str(data.get('to_entity_id'))))
+                        cur.execute("SELECT id, code, name FROM axes_entities WHERE id = %s", 
+                                  (data.get('to_entity_id'),))
                         result = cur.fetchone()
                         if result:
-                            to_entity_info = {'entity_code': result['code'], 'entity_name': result['name']}
+                            to_entity_info = {
+                                'entity_id': result['id'],
+                                'entity_code': result['code'],
+                                'entity_name': result['name']
+                            }
+                    elif data.get('to_entity_code'):
+                        cur.execute("SELECT id, code, name FROM axes_entities WHERE code = %s", 
+                                  (str(data.get('to_entity_code')),))
+                        result = cur.fetchone()
+                        if result:
+                            to_entity_info = {
+                                'entity_id': result['id'],
+                                'entity_code': result['code'],
+                                'entity_name': result['name']
+                            }
                     
                     if data.get('from_account_id'):
-                        cur.execute("SELECT code, name FROM axes_accounts WHERE id = %s OR code = %s::text", 
-                                  (data.get('from_account_id'), str(data.get('from_account_id'))))
+                        cur.execute("SELECT id, code, name FROM axes_accounts WHERE id = %s", 
+                                  (data.get('from_account_id'),))
                         result = cur.fetchone()
                         if result:
-                            from_account_info = {'account_code': result['code'], 'account_name': result['name']}
+                            from_account_info = {
+                                'account_id': result['id'],
+                                'account_code': result['code'],
+                                'account_name': result['name']
+                            }
+                    elif data.get('from_account_code'):
+                        cur.execute("SELECT id, code, name FROM axes_accounts WHERE code = %s", 
+                                  (str(data.get('from_account_code')),))
+                        result = cur.fetchone()
+                        if result:
+                            from_account_info = {
+                                'account_id': result['id'],
+                                'account_code': result['code'],
+                                'account_name': result['name']
+                            }
                     
                     if data.get('to_account_id'):
-                        cur.execute("SELECT code, name FROM axes_accounts WHERE id = %s OR code = %s::text", 
-                                  (data.get('to_account_id'), str(data.get('to_account_id'))))
+                        cur.execute("SELECT id, code, name FROM axes_accounts WHERE id = %s", 
+                                  (data.get('to_account_id'),))
                         result = cur.fetchone()
                         if result:
-                            to_account_info = {'account_code': result['code'], 'account_name': result['name']}
+                            to_account_info = {
+                                'account_id': result['id'],
+                                'account_code': result['code'],
+                                'account_name': result['name']
+                            }
+                    elif data.get('to_account_code'):
+                        cur.execute("SELECT id, code, name FROM axes_accounts WHERE code = %s", 
+                                  (str(data.get('to_account_code')),))
+                        result = cur.fetchone()
+                        if result:
+                            to_account_info = {
+                                'account_id': result['id'],
+                                'account_code': result['code'],
+                                'account_name': result['name']
+                            }
                     
                     cur.execute(f"""
                         INSERT INTO {table_name} 
