@@ -1568,7 +1568,7 @@ def convert_date_to_period(transaction_date: str, conn, company_name: str):
         
         # Find the appropriate fiscal year and period
         cur.execute("""
-            SELECT fy.id as fiscal_year_id, fy.fiscal_year as fiscal_year,
+            SELECT fy.id as fiscal_year_id, fy.year_name as fiscal_year,
                    p.id as period_id, p.period_name, p.period_code,
                    p.start_date, p.end_date
             FROM fiscal_years fy
@@ -1590,6 +1590,15 @@ def convert_date_to_period(transaction_date: str, conn, company_name: str):
                 'fiscal_month': str(date_obj.month).zfill(2)
             }
         else:
+            # Check if any fiscal years exist at all
+            cur.execute("SELECT COUNT(*) as count FROM fiscal_years")
+            fy_count = cur.fetchone()['count']
+            
+            if fy_count == 0:
+                print(f"⚠️ No fiscal years found in database. Please set up fiscal years first.")
+            else:
+                print(f"⚠️ No period found for date {date_obj}. Available fiscal years: {fy_count}")
+            
             # Fallback: create basic period info from date
             return {
                 'fiscal_year_id': None,
@@ -2843,3 +2852,42 @@ async def get_csv_export_history(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching export history: {str(e)}")
+
+@router.get("/debug/fiscal-years")
+async def debug_fiscal_years(company_name: str = Query(...)):
+    """Debug endpoint to check fiscal years setup"""
+    try:
+        with company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            # Check fiscal years
+            cur.execute("SELECT COUNT(*) as count FROM fiscal_years")
+            fy_count = cur.fetchone()['count']
+            
+            # Check periods
+            cur.execute("SELECT COUNT(*) as count FROM periods")
+            period_count = cur.fetchone()['count']
+            
+            # Get sample fiscal years
+            cur.execute("SELECT id, year_name, start_date, end_date FROM fiscal_years LIMIT 5")
+            sample_fy = cur.fetchall()
+            
+            # Get sample periods
+            cur.execute("SELECT id, period_name, start_date, end_date FROM periods LIMIT 5")
+            sample_periods = cur.fetchall()
+            
+            return {
+                "fiscal_years_count": fy_count,
+                "periods_count": period_count,
+                "sample_fiscal_years": [dict(fy) for fy in sample_fy],
+                "sample_periods": [dict(p) for p in sample_periods],
+                "message": f"Found {fy_count} fiscal years and {period_count} periods"
+            }
+            
+    except Exception as e:
+        return {
+            "error": str(e),
+            "fiscal_years_count": 0,
+            "periods_count": 0,
+            "message": "Error checking fiscal years - they may not be set up yet"
+        }
