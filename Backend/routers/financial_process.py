@@ -1465,7 +1465,7 @@ def create_process_table(conn, process_id: str, process_name: str, data_type: st
                 period_id VARCHAR(36),
                 period_code VARCHAR(50),
                 period_name VARCHAR(255),
-                fiscal_year VARCHAR(10),
+                fiscal_year VARCHAR(100),
                 fiscal_month VARCHAR(10),
                 transaction_date DATE,
                 amount DECIMAL(18,2),
@@ -1500,7 +1500,7 @@ def create_process_table(conn, process_id: str, process_name: str, data_type: st
                 period_id VARCHAR(36),
                 period_code VARCHAR(50),
                 period_name VARCHAR(255),
-                fiscal_year VARCHAR(10),
+                fiscal_year VARCHAR(100),
                 fiscal_month VARCHAR(10),
                 transaction_date DATE,
                 amount DECIMAL(18,2),
@@ -1531,7 +1531,7 @@ def create_process_table(conn, process_id: str, process_name: str, data_type: st
                 period_id VARCHAR(36),
                 period_code VARCHAR(50),
                 period_name VARCHAR(255),
-                fiscal_year VARCHAR(10),
+                fiscal_year VARCHAR(100),
                 fiscal_month VARCHAR(10),
                 transaction_date DATE,
                 amount DECIMAL(18,2),
@@ -1548,6 +1548,14 @@ def create_process_table(conn, process_id: str, process_name: str, data_type: st
                 created_by VARCHAR(100)
             )
         """)
+    
+    # Update existing tables to fix column size issues
+    try:
+        cur.execute(f"ALTER TABLE {table_name} ALTER COLUMN fiscal_year TYPE VARCHAR(100)")
+        print(f"✅ Updated fiscal_year column size in {table_name}")
+    except Exception as e:
+        # Column might already be the right size or table might not exist yet
+        print(f"ℹ️ Fiscal year column update for {table_name}: {e}")
     
     conn.commit()
     return table_name
@@ -1651,6 +1659,7 @@ async def create_data_input(
                 entity_info = {}
                 entity_identifier = data.get('entity_id') or data.get('entity_code')
                 if entity_identifier:
+                    print(f"🔍 Looking up entity with identifier: {entity_identifier}")
                     cur.execute("""
                         SELECT id, entity_code, entity_name 
                         FROM entities 
@@ -1663,11 +1672,17 @@ async def create_data_input(
                             'entity_code': entity_result['entity_code'],
                             'entity_name': entity_result['entity_name']
                         }
+                        print(f"✅ Found entity: {entity_info}")
+                    else:
+                        print(f"⚠️ Entity not found for identifier: {entity_identifier}")
+                else:
+                    print("⚠️ No entity identifier provided")
                 
                 # Get account information - handle both account_id and account_code
                 account_info = {}
                 account_identifier = data.get('account_id') or data.get('account_code')
                 if account_identifier:
+                    print(f"🔍 Looking up account with identifier: {account_identifier}")
                     cur.execute("""
                         SELECT id, account_code, account_name 
                         FROM accounts 
@@ -1680,6 +1695,11 @@ async def create_data_input(
                             'account_code': account_result['account_code'],
                             'account_name': account_result['account_name']
                         }
+                        print(f"✅ Found account: {account_info}")
+                    else:
+                        print(f"⚠️ Account not found for identifier: {account_identifier}")
+                else:
+                    print("⚠️ No account identifier provided")
                 
                 entry_id = str(uuid.uuid4())
                 
