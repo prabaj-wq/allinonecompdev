@@ -60,11 +60,49 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None, user_mess
         cur = conn.cursor(cursor_factory=RealDictCursor)
         system_data = {}
         
-        # Get recent data input entries if requested or if asking about entries
+        # Get targeted data based on user query
         if context.get('analyze_journals') or 'entry' in user_message.lower() or 'posted' in user_message.lower():
-            # Try multiple possible table names for data input, including process-specific tables
+            # Build smart query based on user message
+            query_conditions = []
+            query_params = []
+            
+            # Extract specific entity mentions
+            entity_keywords = ['backo', 'backooy', 'parent', 'subsidiary']
+            mentioned_entity = None
+            for keyword in entity_keywords:
+                if keyword in user_message.lower():
+                    mentioned_entity = keyword.upper()
+                    if keyword in ['backo', 'backooy']:
+                        mentioned_entity = 'BACKO'
+                    break
+            
+            # Extract specific account mentions
+            account_keywords = ['cash', 'revenue', 'expense', 'asset', 'liability', 'receivable', 'payable', 'inventory', 'equipment', 'goodwill', 'depreciation', 'amortization']
+            mentioned_account = None
+            for keyword in account_keywords:
+                if keyword in user_message.lower():
+                    mentioned_account = keyword.lower()
+                    break
+            
+            # Extract specific period mentions
+            period_keywords = ['january', 'february', 'march', 'april', 'may', 'june', 
+                             'july', 'august', 'september', 'october', 'november', 'december',
+                             '2024', '2025', '2026']
+            mentioned_period = None
+            for keyword in period_keywords:
+                if keyword in user_message.lower():
+                    mentioned_period = keyword.lower()
+                    break
+            
+            # Extract specific amount mentions (for precise targeting)
+            import re
+            amount_pattern = r'(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)'
+            mentioned_amounts = re.findall(amount_pattern, user_message)
+            mentioned_amount = mentioned_amounts[0] if mentioned_amounts else None
+            
+            # Try multiple possible table names for data input
             tables_to_try = [
-                'actuals_entity_amounts_entries',  # Process-specific table from logs
+                'actuals_entity_amounts_entries',
                 'entity_amounts', 
                 'data_input_entity_amounts', 
                 'journal_entries'
@@ -72,17 +110,61 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None, user_mess
             
             for table_name in tables_to_try:
                 try:
-                    cur.execute(f"""
-                        SELECT * FROM {table_name} 
-                        ORDER BY created_at DESC 
-                        LIMIT 10
-                    """)
+                    # Build targeted query
+                    base_query = f"SELECT * FROM {table_name} WHERE 1=1"
+                    
+                    # Add entity filter if mentioned
+                    if mentioned_entity:
+                        base_query += " AND (entity_code ILIKE %s OR entity_name ILIKE %s)"
+                        query_params.extend([f"%{mentioned_entity}%", f"%{mentioned_entity}%"])
+                    
+                    # Add account filter if mentioned
+                    if mentioned_account:
+                        base_query += " AND (account_code ILIKE %s OR account_name ILIKE %s)"
+                        query_params.extend([f"%{mentioned_account}%", f"%{mentioned_account}%"])
+                    
+                    # Add period filter if mentioned
+                    if mentioned_period:
+                        base_query += " AND (period_name ILIKE %s OR fiscal_year ILIKE %s)"
+                        query_params.extend([f"%{mentioned_period}%", f"%{mentioned_period}%"])
+                    
+                    # Add amount filter if mentioned (approximate match)
+                    if mentioned_amount:
+                        clean_amount = mentioned_amount.replace(',', '')
+                        base_query += " AND ABS(amount::numeric - %s) < 100"  # Within 100 units
+                        query_params.append(float(clean_amount))
+                    
+                    # Order and limit
+                    base_query += " ORDER BY created_at DESC LIMIT 5"
+                    
+                    cur.execute(base_query, query_params)
                     entries = [dict(row) for row in cur.fetchall()]
+                    
                     if entries:
                         system_data['recent_entries'] = entries
                         system_data['table_used'] = table_name
-                        logger.info(f"✅ Found {len(entries)} entries in table {table_name}")
+                        system_data['query_filters'] = {
+                            'entity': mentioned_entity,
+                            'account': mentioned_account,
+                            'period': mentioned_period,
+                            'amount': mentioned_amount
+                        }
+                        logger.info(f"✅ Found {len(entries)} targeted entries in table {table_name} with filters: entity={mentioned_entity}, account={mentioned_account}, period={mentioned_period}")
                         break
+                    else:
+                        # Fallback to general query if no targeted results
+                        cur.execute(f"""
+                            SELECT * FROM {table_name} 
+                            ORDER BY created_at DESC 
+                            LIMIT 3
+                        """)
+                        entries = [dict(row) for row in cur.fetchall()]
+                        if entries:
+                            system_data['recent_entries'] = entries
+                            system_data['table_used'] = table_name
+                            logger.info(f"✅ Found {len(entries)} general entries in table {table_name}")
+                            break
+                        
                 except Exception as e:
                     logger.debug(f"Table {table_name} not found or error: {e}")
                     continue
@@ -229,7 +311,13 @@ You have access to the user's financial system data and can analyze:
         base_prompt += "\n\n**ACTUAL SYSTEM DATA FOR ANALYSIS:**"
         
         if system_data.get('recent_entries'):
-            base_prompt += f"\n\n📊 **Recent Data Entries from {system_data.get('table_used', 'database')}:**"
+            filters_applied = system_data.get('query_filters', {})
+            filter_info = ""
+            if any(filters_applied.values()):
+                applied_filters = [f"{k}={v}" for k, v in filters_applied.items() if v]
+                filter_info = f" (Filtered by: {', '.join(applied_filters)})"
+            
+            base_prompt += f"\n📊 **Targeted Data Entries from {system_data.get('table_used', 'database')}{filter_info}:**"
             for i, entry in enumerate(system_data['recent_entries'][:5], 1):
                 base_prompt += f"\n{i}. Entry: {entry}"
         
