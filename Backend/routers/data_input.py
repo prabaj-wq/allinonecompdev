@@ -543,7 +543,7 @@ async def create_manual_entry(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Export Data Endpoint
+# Simple Export Data Endpoint
 @router.get("/export/{card_type}")
 async def export_data(
     card_type: str,
@@ -551,178 +551,97 @@ async def export_data(
     process_id: Optional[str] = Query(None),
     scenario_id: Optional[str] = Query(None)
 ):
-    """Export data as CSV for a specific card type"""
+    """Simple CSV export - just get the data and export it"""
     try:
+        print(f"🚀 Simple export: {card_type}, process: {process_id}, scenario: {scenario_id}")
+        
         if not process_id:
-            raise HTTPException(status_code=400, detail="process_id is required for export")
-
-        print(f"📤 Export request: card_type={card_type}, company={company_name}, process_id={process_id}, scenario_id={scenario_id}")
+            raise HTTPException(status_code=400, detail="process_id required")
 
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-            # Resolve process-specific table name used by financial_process data input
+            
+            # Get process name
             cur.execute("SELECT name FROM financial_processes WHERE id = %s", (process_id,))
             process_row = cur.fetchone()
             if not process_row:
                 raise HTTPException(status_code=404, detail="Process not found")
-
-            safe_process_name = re.sub(r'[^a-zA-Z0-9_]', '_', process_row['name'].lower())
-            table_name = f"{safe_process_name}_{card_type}_entries"
-
-            # Ensure table exists
-            cur.execute("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_name = %s
-                )
-            """, (table_name,))
-            if not cur.fetchone()[0]:
-                print(f"⚠️ Export table missing: {table_name}")
-                raise HTTPException(status_code=404, detail="No data available for export")
-
-            where_conditions = ["process_id = %s"]
-            params: List[Any] = [process_id]
-
-            if scenario_id is not None:
-                where_conditions.append("(scenario_id = %s OR scenario_id IS NULL)")
-                params.append(scenario_id)
-
-            where_clause = " AND ".join(where_conditions)
-
-            field_mapping: Dict[str, str]
-            headers: List[str]
-
-            if card_type == 'entity_amounts':
-                field_mapping = {
-                    'Entity Code': 'entity_code',
-                    'Entity Name': 'entity_name',
-                    'Account Code': 'account_code',
-                    'Account Name': 'account_name',
-                    'Period Code': 'period_code',
-                    'Period Name': 'period_name',
-                    'Fiscal Year': 'fiscal_year',
-                    'Fiscal Month': 'fiscal_month',
-                    'Transaction Date': 'transaction_date',
-                    'Amount': 'amount',
-                    'Currency': 'currency',
-                    'Scenario Code': 'scenario_code',
-                    'Description': 'description',
-                    'Reference ID': 'reference_id',
-                    'Custom Fields': 'custom_fields',
-                    'Created At': 'created_at'
-                }
-                headers = [
-                    'Entity Code', 'Entity Name', 'Account Code', 'Account Name',
-                    'Period Code', 'Period Name', 'Fiscal Year', 'Fiscal Month',
-                    'Transaction Date', 'Amount', 'Currency', 'Scenario Code',
-                    'Description', 'Reference ID', 'Custom Fields', 'Created At'
-                ]
-            elif card_type == 'ic_amounts':
-                field_mapping = {
-                    'From Entity Code': 'from_entity_code',
-                    'From Entity Name': 'from_entity_name',
-                    'To Entity Code': 'to_entity_code',
-                    'To Entity Name': 'to_entity_name',
-                    'From Account Code': 'from_account_code',
-                    'From Account Name': 'from_account_name',
-                    'To Account Code': 'to_account_code',
-                    'To Account Name': 'to_account_name',
-                    'Transaction Date': 'transaction_date',
-                    'Amount': 'amount',
-                    'Currency': 'currency',
-                    'Transaction Type': 'transaction_type',
-                    'FX Rate': 'fx_rate',
-                    'Description': 'description',
-                    'Reference ID': 'reference_id',
-                    'Custom Fields': 'custom_fields',
-                    'Created At': 'created_at'
-                }
-                headers = [
-                    'From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name',
-                    'From Account Code', 'From Account Name', 'To Account Code', 'To Account Name',
-                    'Transaction Date', 'Amount', 'Currency', 'Transaction Type', 'FX Rate',
-                    'Description', 'Reference ID', 'Custom Fields', 'Created At'
-                ]
-            elif card_type == 'other_amounts':
-                field_mapping = {
-                    'Entity Code': 'entity_code',
-                    'Entity Name': 'entity_name',
-                    'Account Code': 'account_code',
-                    'Account Name': 'account_name',
-                    'Period Code': 'period_code',
-                    'Period Name': 'period_name',
-                    'Fiscal Year': 'fiscal_year',
-                    'Fiscal Month': 'fiscal_month',
-                    'Transaction Date': 'transaction_date',
-                    'Amount': 'amount',
-                    'Currency': 'currency',
-                    'Scenario Code': 'scenario_code',
-                    'Description': 'description',
-                    'Reference ID': 'reference_id',
-                    'Custom Fields': 'custom_fields',
-                    'Created At': 'created_at'
-                }
-                headers = [
-                    'Entity Code', 'Entity Name', 'Account Code', 'Account Name',
-                    'Period Code', 'Period Name', 'Fiscal Year', 'Fiscal Month',
-                    'Transaction Date', 'Amount', 'Currency', 'Scenario Code',
-                    'Description', 'Reference ID', 'Custom Fields', 'Created At'
-                ]
-            else:
-                raise HTTPException(status_code=400, detail="Invalid card type")
-
-            query = f"""
-                SELECT *
-                FROM {table_name}
-                WHERE {where_clause}
-                ORDER BY created_at DESC
-            """
-
-            print(f"📄 Export query: {query}")
-            print(f"📄 Export params: {params}")
             
-            try:
-                cur.execute(query, params)
-                rows = cur.fetchall()
-                print(f"✅ Retrieved {len(rows)} rows for export")
-            except Exception as query_error:
-                print(f"❌ Export query failed: {query_error}")
-                raise HTTPException(status_code=500, detail=f"Export query failed: {str(query_error)}")
-
-            # Process the data inside the connection block
-            if not rows:
-                df = pd.DataFrame(columns=headers)
-            else:
-                data_for_df: List[List[Any]] = []
+            # Create table name
+            safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', process_row['name'].lower())
+            table_name = f"{safe_name}_{card_type}_entries"
+            
+            print(f"📋 Exporting from table: {table_name}")
+            
+            # Simple query - just get the data
+            where_parts = ["process_id = %s"]
+            params = [process_id]
+            
+            if scenario_id:
+                where_parts.append("(scenario_id = %s OR scenario_id IS NULL)")
+                params.append(scenario_id)
+            
+            where_clause = " AND ".join(where_parts)
+            
+            query = f"SELECT * FROM {table_name} WHERE {where_clause} ORDER BY created_at DESC"
+            
+            print(f"📄 Query: {query}")
+            print(f"📄 Params: {params}")
+            
+            cur.execute(query, params)
+            rows = cur.fetchall()
+            
+            print(f"✅ Got {len(rows)} rows")
+            
+            # Create simple CSV
+            output = io.StringIO()
+            
+            if rows:
+                # Get column names from first row
+                columns = list(rows[0].keys())
+                
+                # Write CSV manually
+                import csv
+                writer = csv.writer(output)
+                writer.writerow(columns)  # Header
+                
                 for row in rows:
-                    record: List[Any] = []
-                    for header in headers:
-                        source_key = field_mapping.get(header)
-                        value = row.get(source_key) if source_key else ''
-                        if source_key == 'custom_fields' and isinstance(value, (dict, list)):
+                    row_data = []
+                    for col in columns:
+                        value = row[col]
+                        if value is None:
+                            value = ''
+                        elif isinstance(value, (dict, list)):
                             value = json.dumps(value)
-                        record.append('' if value is None else value)
-                    data_for_df.append(record)
-
-                df = pd.DataFrame(data_for_df, columns=headers)
-
-            csv_buffer = io.StringIO()
-            df.to_csv(csv_buffer, index=False)
-            csv_data = csv_buffer.getvalue()
-
-        filename = f"{card_type}_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
-
-        return StreamingResponse(
-            iter([csv_data]),
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
+                        elif hasattr(value, 'isoformat'):  # datetime/date
+                            value = value.isoformat()
+                        row_data.append(str(value))
+                    writer.writerow(row_data)
+            else:
+                # Empty CSV with basic headers
+                writer = csv.writer(output)
+                writer.writerow(['No data available'])
+            
+            csv_content = output.getvalue()
+            output.close()
+            
+            # Return CSV
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            filename = f"{card_type}_export_{timestamp}.csv"
+            
+            print(f"✅ Export ready: {filename}")
+            
+            return StreamingResponse(
+                io.StringIO(csv_content),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+            
     except Exception as e:
-        print(f"❌ Export error: {str(e)}")
+        print(f"❌ Export failed: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Export error: {str(e)}")
 
 # Template Download Endpoint
 @router.get("/{card_type}/template")
