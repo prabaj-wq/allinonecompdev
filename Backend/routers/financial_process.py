@@ -610,8 +610,7 @@ async def get_process(
 async def create_node(
     process_id: str,
     company_name: str = Query(...),
-    node_data: Dict[str, Any] = Body(...),
-    current_user = Depends(get_current_active_user)
+    node_data: Dict[str, Any] = Body(...)
 ):
     """Create a new process node"""
     try:
@@ -2119,8 +2118,7 @@ async def get_data_input_summary(
 @router.get("/processes/{process_id}/configuration")
 async def get_process_configuration(
     process_id: str,
-    company_name: str = Query(...),
-    current_user = Depends(get_current_active_user)
+    company_name: str = Query(...)
 ):
     """Get process configuration including workflow nodes, settings, and fiscal parameters"""
     try:
@@ -2602,8 +2600,7 @@ def export_other_amounts_to_csv(conn, process_id: str, csv_dir: str) -> Dict[str
 async def save_entity_node_configurations(
     process_id: str,
     configs: List[EntityNodeConfig],
-    company_name: str = Query(...),
-    current_user = Depends(get_current_active_user)
+    company_name: str = Query(...)
 ):
     """Save entity-specific node configurations."""
     try:
@@ -2650,8 +2647,7 @@ async def save_entity_node_configurations(
 @router.get("/processes/{process_id}/entity-node-configs")
 async def get_entity_node_configurations(
     process_id: str,
-    company_name: str = Query(...),
-    current_user = Depends(get_current_active_user)
+    company_name: str = Query(...)
 ):
     """Get entity-specific node configurations."""
     try:

@@ -549,8 +549,7 @@ async def export_data(
     card_type: str,
     company_name: str = Query(...),
     process_id: Optional[str] = Query(None),
-    scenario_id: Optional[str] = Query(None),
-    current_user: dict = Depends(get_current_user)
+    scenario_id: Optional[str] = Query(None)
 ):
     """Export data as CSV for a specific card type"""
     try:
