@@ -208,8 +208,7 @@ def create_tables_if_not_exist(company_name: str):
 @router.get("/custom-fields/{card_type}")
 async def get_custom_fields(
     card_type: str,
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Get custom fields for a specific card type"""
     try:
@@ -238,8 +237,7 @@ async def get_entries(
     scenario_id: int = Query(...),
     company_name: str = Query(...),
     limit: int = Query(500),
-    offset: int = Query(0),
-    current_user: dict = Depends(get_current_user)
+    offset: int = Query(0)
 ):
     """Get entries for a specific card type filtered by process and scenario"""
     try:
@@ -274,8 +272,7 @@ async def get_entries(
 async def create_custom_field(
     card_type: str,
     field_data: dict,
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Create a new custom field"""
     try:
@@ -286,14 +283,98 @@ async def create_custom_field(
             cur.execute(
                 """INSERT INTO data_input_custom_fields 
                 (card_type, field_name, field_type, is_required, options, created_by, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (card_type, field_data['field_name'], field_data['field_type'], 
                  field_data.get('is_required', False), field_data.get('options', ''), 
-                 current_user.get('username', 'system'), datetime.utcnow())
+                 'system', datetime.utcnow())
+            )
+            field_id = cur.fetchone()[0]
+            conn.commit()
+            
+        return {"message": "Custom field created successfully", "id": field_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/custom-fields/{card_type}/{field_id}")
+async def update_custom_field(
+    card_type: str,
+    field_id: int,
+    field_data: dict,
+    company_name: str = Query(...)
+):
+    """Update an existing custom field"""
+    try:
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """UPDATE data_input_custom_fields 
+                SET field_name = %s, field_type = %s, is_required = %s, options = %s
+                WHERE id = %s AND card_type = %s""",
+                (field_data['field_name'], field_data['field_type'], 
+                 field_data.get('is_required', False), field_data.get('options', ''),
+                 field_id, card_type)
             )
             conn.commit()
             
-        return {"message": "Custom field created successfully"}
+        return {"message": "Custom field updated successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/custom-fields/{card_type}/bulk-save")
+async def bulk_save_custom_fields(
+    card_type: str,
+    fields_data: dict,
+    company_name: str = Query(...)
+):
+    """Bulk save custom fields for a card type"""
+    try:
+        create_tables_if_not_exist(company_name)
+        
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor()
+            
+            # Get existing fields
+            cur.execute(
+                "SELECT id, field_name FROM data_input_custom_fields WHERE card_type = %s",
+                (card_type,)
+            )
+            existing_fields = {row[1]: row[0] for row in cur.fetchall()}
+            
+            fields_to_save = fields_data.get('fields', [])
+            saved_field_names = set()
+            
+            for field in fields_to_save:
+                field_name = field['field_name']
+                saved_field_names.add(field_name)
+                
+                if field_name in existing_fields:
+                    # Update existing field
+                    cur.execute(
+                        """UPDATE data_input_custom_fields 
+                        SET field_type = %s, is_required = %s, options = %s
+                        WHERE id = %s""",
+                        (field['field_type'], field.get('is_required', False), 
+                         field.get('options', ''), existing_fields[field_name])
+                    )
+                else:
+                    # Create new field
+                    cur.execute(
+                        """INSERT INTO data_input_custom_fields 
+                        (card_type, field_name, field_type, is_required, options, created_by, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                        (card_type, field_name, field['field_type'], 
+                         field.get('is_required', False), field.get('options', ''), 
+                         'system', datetime.utcnow())
+                    )
+            
+            # Delete fields that are no longer needed
+            for field_name, field_id in existing_fields.items():
+                if field_name not in saved_field_names:
+                    cur.execute("DELETE FROM data_input_custom_fields WHERE id = %s", (field_id,))
+            
+            conn.commit()
+            
+        return {"message": f"Custom fields saved successfully for {card_type}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -301,8 +382,7 @@ async def create_custom_field(
 async def delete_custom_field(
     card_type: str,
     field_id: int,
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Delete a custom field"""
     try:
@@ -321,8 +401,7 @@ async def get_card_status(
     card_type: str,
     process_id: int = Query(...),
     scenario_id: int = Query(...),
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Get status for a specific card"""
     try:
@@ -388,8 +467,7 @@ async def upload_data(
     scenario_id: int = Form(...),
     year_id: int = Form(...),
     origin: str = Form(...),
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Upload CSV/Excel file for data input"""
     try:
@@ -449,8 +527,7 @@ async def upload_data(
 async def create_manual_entry(
     card_type: str,
     entry_data: dict,
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Create a manual entry"""
     try:
@@ -458,7 +535,7 @@ async def create_manual_entry(
         
         with get_company_connection(company_name) as conn:
             cur = conn.cursor()
-            username = current_user.get('username', 'system')
+            username = 'system'
             now = datetime.utcnow()
 
             table_map = {
@@ -543,7 +620,7 @@ async def create_manual_entry(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Simple Export Data Endpoint
+# Enhanced Export Data Endpoint - Only Important Fields
 @router.get("/export/{card_type}")
 async def export_data(
     card_type: str,
@@ -551,9 +628,9 @@ async def export_data(
     process_id: Optional[str] = Query(None),
     scenario_id: Optional[str] = Query(None)
 ):
-    """Simple CSV export - just get the data and export it"""
+    """Enhanced CSV export - only export important input fields and custom fields"""
     try:
-        print(f"🚀 Simple export: {card_type}, process: {process_id}, scenario: {scenario_id}")
+        print(f"🚀 Enhanced export: {card_type}, process: {process_id}, scenario: {scenario_id}")
         
         if not process_id:
             raise HTTPException(status_code=400, detail="process_id required")
@@ -573,7 +650,34 @@ async def export_data(
             
             print(f"📋 Exporting from table: {table_name}")
             
-            # Simple query - just get the data
+            # Define important fields for each card type (only what's needed for data input)
+            field_mappings = {
+                'entity_amounts': [
+                    'entity_code', 'entity_name', 'period_code', 'period_name', 
+                    'account_code', 'account_name', 'amount', 'currency', 
+                    'description', 'transaction_date', 'custom_fields'
+                ],
+                'ic_amounts': [
+                    'from_entity_code', 'from_entity_name', 'to_entity_code', 'to_entity_name',
+                    'from_account_code', 'from_account_name', 'to_account_code', 'to_account_name',
+                    'amount', 'currency', 'transaction_type', 'custom_transaction_type',
+                    'description', 'transaction_date', 'reference_id', 'custom_fields'
+                ],
+                'other_amounts': [
+                    'entity_code', 'entity_name', 'period_code', 'period_name',
+                    'account_code', 'account_name', 'amount', 'currency',
+                    'adjustment_type', 'description', 'transaction_date', 'custom_fields'
+                ]
+            }
+            
+            important_fields = field_mappings.get(card_type, ['*'])
+            
+            # Build query with only important fields
+            if important_fields == ['*']:
+                select_clause = "*"
+            else:
+                select_clause = ", ".join(important_fields)
+            
             where_parts = ["process_id = %s"]
             params = [process_id]
             
@@ -583,7 +687,7 @@ async def export_data(
             
             where_clause = " AND ".join(where_parts)
             
-            query = f"SELECT * FROM {table_name} WHERE {where_clause} ORDER BY created_at DESC"
+            query = f"SELECT {select_clause} FROM {table_name} WHERE {where_clause} ORDER BY created_at DESC"
             
             print(f"📄 Query: {query}")
             print(f"📄 Params: {params}")
@@ -593,43 +697,72 @@ async def export_data(
             
             print(f"✅ Got {len(rows)} rows")
             
-            # Create simple CSV
+            # Get custom fields for this card type
+            cur.execute(
+                "SELECT field_name, field_type FROM data_input_custom_fields WHERE card_type = %s ORDER BY created_at",
+                (card_type,)
+            )
+            custom_field_defs = cur.fetchall()
+            
+            # Create enhanced CSV with custom fields expanded
             output = io.StringIO()
             
             if rows:
-                # Get column names from first row
-                columns = list(rows[0].keys())
+                # Build header with custom fields expanded
+                base_headers = [field for field in important_fields if field != 'custom_fields']
+                custom_headers = [f"custom_{cf['field_name']}" for cf in custom_field_defs]
+                all_headers = base_headers + custom_headers
                 
-                # Write CSV manually
-                import csv
                 writer = csv.writer(output)
-                writer.writerow(columns)  # Header
+                writer.writerow(all_headers)  # Header
                 
                 for row in rows:
                     row_data = []
-                    for col in columns:
-                        value = row[col]
+                    
+                    # Add base field values
+                    for field in base_headers:
+                        value = row.get(field, '')
                         if value is None:
                             value = ''
-                        elif isinstance(value, (dict, list)):
+                        elif isinstance(value, (dict, list)) and field != 'custom_fields':
                             value = json.dumps(value)
                         elif hasattr(value, 'isoformat'):  # datetime/date
                             value = value.isoformat()
                         row_data.append(str(value))
+                    
+                    # Add custom field values
+                    custom_fields_data = row.get('custom_fields', {})
+                    if isinstance(custom_fields_data, str):
+                        try:
+                            custom_fields_data = json.loads(custom_fields_data)
+                        except:
+                            custom_fields_data = {}
+                    
+                    for cf in custom_field_defs:
+                        field_name = cf['field_name']
+                        custom_value = custom_fields_data.get(field_name, '')
+                        row_data.append(str(custom_value))
+                    
                     writer.writerow(row_data)
             else:
-                # Empty CSV with basic headers
+                # Empty CSV with headers
                 writer = csv.writer(output)
-                writer.writerow(['No data available'])
+                headers = field_mappings.get(card_type, ['No data available'])
+                if headers != ['No data available']:
+                    # Add custom field headers even for empty export
+                    base_headers = [field for field in headers if field != 'custom_fields']
+                    custom_headers = [f"custom_{cf['field_name']}" for cf in custom_field_defs]
+                    headers = base_headers + custom_headers
+                writer.writerow(headers)
             
             csv_content = output.getvalue()
             output.close()
             
             # Return CSV
             timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-            filename = f"{card_type}_export_{timestamp}.csv"
+            filename = f"{card_type}_data_input_export_{timestamp}.csv"
             
-            print(f"✅ Export ready: {filename}")
+            print(f"✅ Enhanced export ready: {filename}")
             
             return StreamingResponse(
                 io.StringIO(csv_content),
@@ -647,8 +780,7 @@ async def export_data(
 @router.get("/{card_type}/template")
 async def download_template(
     card_type: str,
-    company_name: str = Query(...),
-    current_user: dict = Depends(get_current_user)
+    company_name: str = Query(...)
 ):
     """Download template CSV for data upload"""
     try:

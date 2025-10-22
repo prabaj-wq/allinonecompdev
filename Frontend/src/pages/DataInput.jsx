@@ -5,8 +5,9 @@ import { useAuth } from '../hooks/useAuth'
 import {
   ChevronLeft, Calendar, FileSpreadsheet, Building2, Plus,
   Users, TrendingUp, Calculator, Upload, Download, Link,
-  Edit, Trash2, RefreshCw, DollarSign, X, Loader2, Filter
+  Edit, Trash2, RefreshCw, DollarSign, X, Loader2, Filter, Settings
 } from 'lucide-react'
+import DataInputCustomFields from '../components/DataInputCustomFields'
 
 const DataInput = () => {
   const { selectedCompany } = useCompany()
@@ -32,6 +33,7 @@ const DataInput = () => {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notification, setNotification] = useState(null)
+  const [showCustomFieldsSettings, setShowCustomFieldsSettings] = useState(false)
   
   // Custom fields configuration from process
   const [customFieldsConfig, setCustomFieldsConfig] = useState({
@@ -169,25 +171,38 @@ const DataInput = () => {
 
   const fetchProcessConfig = async () => {
     try {
-      const response = await fetch(
-        `/api/financial-process/processes/${processId}/configuration?company_name=${encodeURIComponent(selectedCompany)}`,
-        {
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
-        }
-      )
-      if (response.ok) {
-        const config = await response.json()
-        const customFields = config.configuration?.settings?.data_input_custom_fields || {
-          entity_amounts: [],
-          ic_amounts: [],
-          other_amounts: []
-        }
-        setCustomFieldsConfig(customFields)
-        console.log('📋 Custom fields loaded:', customFields)
-      }
+      // Load custom fields from data-input API
+      await fetchCustomFields()
     } catch (error) {
       console.error('Error fetching process config:', error)
+    }
+  }
+
+  const fetchCustomFields = async () => {
+    try {
+      const customFields = {}
+      const cardTypes = ['entity_amounts', 'ic_amounts', 'other_amounts']
+      
+      for (const cardType of cardTypes) {
+        const response = await fetch(
+          `/api/data-input/custom-fields/${cardType}?company_name=${encodeURIComponent(selectedCompany)}`,
+          {
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+          }
+        )
+        if (response.ok) {
+          const data = await response.json()
+          customFields[cardType] = data.fields || []
+        } else {
+          customFields[cardType] = []
+        }
+      }
+      
+      setCustomFieldsConfig(customFields)
+      console.log('📋 Custom fields loaded:', customFields)
+    } catch (error) {
+      console.error('Error fetching custom fields:', error)
     }
   }
 
@@ -340,8 +355,9 @@ const DataInput = () => {
       const customFields = {}
       const customFieldDefs = customFieldsConfig[activeCard] || []
       customFieldDefs.forEach(field => {
-        if (formData[field.name]) {
-          customFields[field.name] = formData[field.name]
+        const fieldName = field.field_name
+        if (formData[fieldName] !== undefined && formData[fieldName] !== '') {
+          customFields[fieldName] = formData[fieldName]
         }
       })
 
@@ -594,6 +610,14 @@ const DataInput = () => {
             >
               <Filter className="h-4 w-4" />
               Filters
+            </button>
+            <button
+              onClick={() => setShowCustomFieldsSettings(true)}
+              className="btn-secondary inline-flex items-center gap-2"
+              title="Configure custom fields"
+            >
+              <Settings className="h-4 w-4" />
+              Custom Fields
             </button>
             <button
               onClick={() => setShowManualEntry(true)}
@@ -980,6 +1004,87 @@ const DataInput = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                   />
                 </div>
+
+                {/* Custom Fields for Entity Amounts */}
+                {customFieldsConfig[activeCard] && customFieldsConfig[activeCard].length > 0 && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      Custom Fields
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {customFieldsConfig[activeCard].map((field) => (
+                        <div key={field.id}>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            {field.field_name} {field.is_required && '*'}
+                          </label>
+                          {field.field_type === 'text' && (
+                            <input
+                              type="text"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'textarea' && (
+                            <textarea
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              rows={2}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'number' && (
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'date' && (
+                            <input
+                              type="date"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'dropdown' && (
+                            <select
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            >
+                              <option value="">Select {field.field_name}</option>
+                              {(field.options || '').split(',').map((option, idx) => (
+                                <option key={idx} value={option.trim()}>
+                                  {option.trim()}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {field.field_type === 'checkbox' && (
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={formData[field.field_name] || false}
+                                onChange={(e) => setFormData({...formData, [field.field_name]: e.target.checked})}
+                                className="mr-2"
+                              />
+                              <span className="text-sm">Yes</span>
+                            </label>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -1181,6 +1286,87 @@ const DataInput = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                   />
                 </div>
+
+                {/* Custom Fields for IC Amounts */}
+                {customFieldsConfig[activeCard] && customFieldsConfig[activeCard].length > 0 && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      Custom Fields
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {customFieldsConfig[activeCard].map((field) => (
+                        <div key={field.id}>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            {field.field_name} {field.is_required && '*'}
+                          </label>
+                          {field.field_type === 'text' && (
+                            <input
+                              type="text"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'textarea' && (
+                            <textarea
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              rows={2}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'number' && (
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'date' && (
+                            <input
+                              type="date"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'dropdown' && (
+                            <select
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            >
+                              <option value="">Select {field.field_name}</option>
+                              {(field.options || '').split(',').map((option, idx) => (
+                                <option key={idx} value={option.trim()}>
+                                  {option.trim()}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {field.field_type === 'checkbox' && (
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={formData[field.field_name] || false}
+                                onChange={(e) => setFormData({...formData, [field.field_name]: e.target.checked})}
+                                className="mr-2"
+                              />
+                              <span className="text-sm">Yes</span>
+                            </label>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -1299,6 +1485,87 @@ const DataInput = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
                   />
                 </div>
+
+                {/* Custom Fields for Other Amounts */}
+                {customFieldsConfig[activeCard] && customFieldsConfig[activeCard].length > 0 && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                      Custom Fields
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      {customFieldsConfig[activeCard].map((field) => (
+                        <div key={field.id}>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            {field.field_name} {field.is_required && '*'}
+                          </label>
+                          {field.field_type === 'text' && (
+                            <input
+                              type="text"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'textarea' && (
+                            <textarea
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              rows={2}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'number' && (
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'date' && (
+                            <input
+                              type="date"
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            />
+                          )}
+                          {field.field_type === 'dropdown' && (
+                            <select
+                              value={formData[field.field_name] || ''}
+                              onChange={(e) => setFormData({...formData, [field.field_name]: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                              required={field.is_required}
+                            >
+                              <option value="">Select {field.field_name}</option>
+                              {(field.options || '').split(',').map((option, idx) => (
+                                <option key={idx} value={option.trim()}>
+                                  {option.trim()}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {field.field_type === 'checkbox' && (
+                            <label className="flex items-center">
+                              <input
+                                type="checkbox"
+                                checked={formData[field.field_name] || false}
+                                onChange={(e) => setFormData({...formData, [field.field_name]: e.target.checked})}
+                                className="mr-2"
+                              />
+                              <span className="text-sm">Yes</span>
+                            </label>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -1425,6 +1692,17 @@ const DataInput = () => {
 
       {/* Manual Entry Modal */}
       {renderManualEntryModal()}
+
+      {/* Custom Fields Settings Modal */}
+      <DataInputCustomFields
+        cardType={activeCard}
+        isVisible={showCustomFieldsSettings}
+        onClose={() => setShowCustomFieldsSettings(false)}
+        onSave={() => {
+          fetchCustomFields() // Reload custom fields after save
+          setShowCustomFieldsSettings(false)
+        }}
+      />
     </div>
   )
 }
