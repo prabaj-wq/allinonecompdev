@@ -690,25 +690,26 @@ async def export_data(
                 print(f"❌ Export query failed: {query_error}")
                 raise HTTPException(status_code=500, detail=f"Export query failed: {str(query_error)}")
 
-        if not rows:
-            df = pd.DataFrame(columns=headers)
-        else:
-            data_for_df: List[List[Any]] = []
-            for row in rows:
-                record: List[Any] = []
-                for header in headers:
-                    source_key = field_mapping.get(header)
-                    value = row.get(source_key) if source_key else ''
-                    if source_key == 'custom_fields' and isinstance(value, (dict, list)):
-                        value = json.dumps(value)
-                    record.append('' if value is None else value)
-                data_for_df.append(record)
+            # Process the data inside the connection block
+            if not rows:
+                df = pd.DataFrame(columns=headers)
+            else:
+                data_for_df: List[List[Any]] = []
+                for row in rows:
+                    record: List[Any] = []
+                    for header in headers:
+                        source_key = field_mapping.get(header)
+                        value = row.get(source_key) if source_key else ''
+                        if source_key == 'custom_fields' and isinstance(value, (dict, list)):
+                            value = json.dumps(value)
+                        record.append('' if value is None else value)
+                    data_for_df.append(record)
 
-            df = pd.DataFrame(data_for_df, columns=headers)
+                df = pd.DataFrame(data_for_df, columns=headers)
 
-        csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
-        csv_data = csv_buffer.getvalue()
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            csv_data = csv_buffer.getvalue()
 
         filename = f"{card_type}_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
 
@@ -718,7 +719,10 @@ async def export_data(
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Export error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 # Template Download Endpoint
 @router.get("/{card_type}/template")
