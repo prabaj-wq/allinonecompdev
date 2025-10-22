@@ -394,8 +394,34 @@ async def ai_chat_query(request: ChatRequest):
                 "content": msg.content
             })
         
-        # Send input to model
-        output, error = model.run(messages)
+        # Send input to model with timeout handling
+        try:
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("AI model timeout")
+            
+            # Set timeout to 30 seconds
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(30)
+            
+            output, error = model.run(messages)
+            
+            # Clear timeout
+            signal.alarm(0)
+            
+        except TimeoutError:
+            logger.error("AI model timeout after 30 seconds")
+            return ChatResponse(
+                output="I'm taking longer than usual to process your request. Please try a simpler question or try again later.",
+                error="Request timeout"
+            )
+        except Exception as model_error:
+            logger.error(f"AI model error: {model_error}")
+            return ChatResponse(
+                output="I'm having trouble with the AI service right now. Please try again in a moment.",
+                error=str(model_error)
+            )
         
         # Handle the response
         if error:

@@ -10,8 +10,12 @@ import psycopg2.extras
 import os
 import csv
 import re
+import logging
 from contextlib import contextmanager
 from auth.dependencies import get_current_user
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/data-input", tags=["data-input"])
 
@@ -212,6 +216,12 @@ async def get_custom_fields(
 ):
     """Get custom fields for a specific card type"""
     try:
+        # Validate card type
+        valid_card_types = ['entity_amounts', 'ic_amounts', 'other_amounts']
+        if card_type not in valid_card_types:
+            return {"fields": []}  # Return empty instead of error for invalid types
+        
+        # Ensure tables exist
         create_tables_if_not_exist(company_name)
         
         with get_company_connection(company_name) as conn:
@@ -223,11 +233,15 @@ async def get_custom_fields(
             fields = cur.fetchall()
             
         return {"fields": fields}
+    except psycopg2.Error as db_error:
+        logger.error(f"Database error for custom fields {card_type}: {db_error}")
+        return {"fields": []}  # Return empty fields on DB error instead of 500
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        print(f"❌ Export error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_details = traceback.format_exc()
+        logger.error(f"❌ Custom fields error for {card_type}: {e}")
+        logger.error(f"❌ Full traceback: {error_details}")
+        return {"fields": []}  # Return empty fields instead of 500 error
 
 # Entries Endpoints
 @router.get("/{card_type}/entries")
