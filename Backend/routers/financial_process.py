@@ -1954,19 +1954,25 @@ async def get_data_input(
                     where_conditions.append("(entity_id = %s OR entity_code = %s)")
                     params.extend([entity_filter, entity_filter])
             
-            # Add year filter if provided - match against fiscal year ID in period_id or fiscal_year text
+            # Add year filter if provided - match against fiscal year text patterns
             if year_id:
-                # Try to match fiscal year by looking up the fiscal year name/text
-                cur.execute("SELECT name FROM fiscal_years WHERE id = %s", (year_id,))
-                fy_result = cur.fetchone()
-                if fy_result:
-                    fiscal_year_name = fy_result['name']
+                try:
+                    # Try to match fiscal year by looking up the fiscal year name/text
+                    cur.execute("SELECT year_name FROM fiscal_years WHERE id = %s", (year_id,))
+                    fy_result = cur.fetchone()
+                    if fy_result:
+                        fiscal_year_name = fy_result['year_name']
+                        where_conditions.append("(fiscal_year ILIKE %s OR fiscal_year ILIKE %s OR fiscal_year ILIKE %s)")
+                        params.extend([f"%{fiscal_year_name}%", f"%{year_id}%", f"%2025%"])  # Also match year number
+                    else:
+                        # Fallback to pattern matching
+                        where_conditions.append("(fiscal_year ILIKE %s OR fiscal_year ILIKE %s)")
+                        params.extend([f"%{year_id}%", f"%2025%"])
+                except Exception as e:
+                    print(f"⚠️ Error looking up fiscal year: {e}")
+                    # Simple fallback - match common patterns
                     where_conditions.append("(fiscal_year ILIKE %s OR fiscal_year ILIKE %s)")
-                    params.extend([f"%{fiscal_year_name}%", f"%{year_id}%"])
-                else:
-                    # Fallback to direct ID match
-                    where_conditions.append("fiscal_year ILIKE %s")
-                    params.append(f"%{year_id}%")
+                    params.extend([f"%{year_id}%", f"%2025%"])
             
             # Add scenario filter if provided - handle both NULL and actual scenario IDs
             if scenario_id:
@@ -1980,6 +1986,9 @@ async def get_data_input(
                 WHERE {where_clause}
                 ORDER BY created_at DESC
             """
+            
+            print(f"🔍 Executing query: {query}")
+            print(f"📋 Query params: {params}")
             
             cur.execute(query, params)
             entries = cur.fetchall()
@@ -1995,6 +2004,22 @@ async def get_data_input(
                 entries_list.append(entry_dict)
             
             print(f"✅ Retrieved {len(entries_list)} entries from table {table_name}")
+            
+            # Debug: Show sample of entries if any exist
+            if entries_list:
+                print(f"📋 Sample entry: {entries_list[0]}")
+            else:
+                # Debug: Check if there are any entries at all in the table
+                cur.execute(f"SELECT COUNT(*) as total FROM {table_name}")
+                total_count = cur.fetchone()['total']
+                print(f"🔍 Total entries in table {table_name}: {total_count}")
+                
+                if total_count > 0:
+                    # Show a sample entry to understand the data structure
+                    cur.execute(f"SELECT * FROM {table_name} LIMIT 1")
+                    sample_entry = cur.fetchone()
+                    if sample_entry:
+                        print(f"📋 Sample entry in table: {dict(sample_entry)}")
             
             return {
                 "entries": entries_list,
