@@ -1179,7 +1179,9 @@ const Process = () => {
     try {
       const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/entity-node-configs?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'GET',
+        credentials: 'include',
         headers: {
+          'Content-Type': 'application/json',
           ...getAuthHeaders()
         }
       })
@@ -1240,6 +1242,7 @@ const Process = () => {
 
       const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/entity-node-configs?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
@@ -1502,6 +1505,7 @@ const Process = () => {
     try {
       const response = await fetch(`/api/financial-process/processes/${selectedProcess.id}/nodes?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders()

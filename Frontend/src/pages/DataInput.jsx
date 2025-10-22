@@ -77,44 +77,355 @@ const DataInput = () => {
   const fileInputRef = useRef(null)
 
   const showToast = (message, type = 'success') => {
+    // Use built-in notification system
     setNotification({ message, type })
     setTimeout(() => setNotification(null), 4000)
   }
 
-  // Calculate balances and totals for each card type
-  const calculateCardStats = (cardType) => {
-    const cardEntries = entries.filter(entry => {
-      if (cardType === 'entity_amounts') return entry.type === 'entity' || !entry.type
-      if (cardType === 'ic_amounts') return entry.type === 'intercompany'
-      if (cardType === 'other_amounts') return entry.type === 'other'
-      return true
-    })
-
-    const totalBalance = cardEntries.reduce((sum, entry) => {
-      const amount = parseFloat(entry.amount) || 0
-      return sum + amount
-    }, 0)
-
-    const filteredCardEntries = filteredEntries.filter(entry => {
-      if (cardType === 'entity_amounts') return entry.type === 'entity' || !entry.type
-      if (cardType === 'ic_amounts') return entry.type === 'intercompany'
-      if (cardType === 'other_amounts') return entry.type === 'other'
-      return true
-    })
-
-    const filteredBalance = filteredCardEntries.reduce((sum, entry) => {
-      const amount = parseFloat(entry.amount) || 0
-      return sum + amount
-    }, 0)
-
-    return {
-      totalCount: cardEntries.length,
-      filteredCount: filteredCardEntries.length,
-      totalBalance,
-      filteredBalance,
-      isBalanced: Math.abs(totalBalance) < 0.01, // Consider balanced if within 1 cent
-      isFilteredBalanced: Math.abs(filteredBalance) < 0.01
+  // Fetch process configuration and custom fields
+  useEffect(() => {
+    if (processId && selectedCompany) {
+      fetchProcessConfig()
+      fetchReferenceData()
     }
+  }, [processId, selectedCompany])
+
+  useEffect(() => {
+    if (processId && selectedCompany) {
+      fetchEntries()
+    }
+  }, [processId, selectedCompany, activeCard, selectedEntityFilter, selectedICEntityFilter, selectedOtherEntityFilter])
+
+  // Initialize entity context and form defaults
+  useEffect(() => {
+    if (defaultEntity && entities.length > 0) {
+      // Find entity by ID or code
+      const entity = entities.find(e => e.id === defaultEntity || e.entity_code === defaultEntity)
+      
+      if (entity) {
+        // Set default entity in form data using the actual entity ID
+        setFormData(prev => ({
+          ...prev,
+          entity_id: entity.id,
+          entity_code: entity.entity_code,
+          from_entity_id: entity.id,
+          from_entity_code: entity.entity_code
+        }))
+        
+        // Also set the filter to this entity so entries are visible
+        setSelectedEntityFilter(entity.id)
+        setSelectedICEntityFilter(entity.id)
+        setSelectedOtherEntityFilter(entity.id)
+        
+        // Show context notification
+        if (defaultEntity !== 'all') {
+          showToast(`Filtered for entity: ${entity.entity_name || entity.name}`, 'info')
+        }
+      }
+    }
+  }, [defaultEntity, entities])
+
+  // Filter entries based on selected filters
+  useEffect(() => {
+    let filtered = [...entries]
+    
+    console.log('🔍 Filtering entries:', {
+      totalEntries: entries.length,
+      activeCard,
+      selectedEntityFilter,
+      selectedICEntityFilter,
+      selectedOtherEntityFilter
+    })
+    
+    // Apply entity filter based on active card
+    if (activeCard === 'entity_amounts' && selectedEntityFilter !== 'all') {
+      filtered = filtered.filter(entry => {
+        const matches = entry.entity_id == selectedEntityFilter || entry.entity_code === selectedEntityFilter
+        console.log('🔍 Entity filter check:', {
+          entry_entity_id: entry.entity_id,
+          entry_entity_code: entry.entity_code,
+          selectedEntityFilter,
+          matches
+        })
+        return matches
+      })
+    } else if (activeCard === 'ic_amounts' && selectedICEntityFilter !== 'all') {
+      filtered = filtered.filter(entry => 
+        entry.from_entity_id == selectedICEntityFilter || 
+        entry.to_entity_id == selectedICEntityFilter ||
+        entry.from_entity_code === selectedICEntityFilter ||
+        entry.to_entity_code === selectedICEntityFilter
+      )
+    } else if (activeCard === 'other_amounts' && selectedOtherEntityFilter !== 'all') {
+      filtered = filtered.filter(entry => 
+        entry.entity_id == selectedOtherEntityFilter || 
+        entry.entity_code === selectedOtherEntityFilter
+      )
+    }
+    
+    console.log('✅ Filtered entries result:', filtered.length)
+    setFilteredEntries(filtered)
+  }, [entries, selectedEntityFilter, selectedICEntityFilter, selectedOtherEntityFilter, activeCard])
+
+  const fetchProcessConfig = async () => {
+    try {
+      const response = await fetch(
+        `/api/financial-process/processes/${processId}/configuration?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+        }
+      )
+      if (response.ok) {
+        const config = await response.json()
+        const customFields = config.configuration?.settings?.data_input_custom_fields || {
+          entity_amounts: [],
+          ic_amounts: [],
+          other_amounts: []
+        }
+        setCustomFieldsConfig(customFields)
+        console.log('📋 Custom fields loaded:', customFields)
+      }
+    } catch (error) {
+      console.error('Error fetching process config:', error)
+    }
+  }
+
+  const fetchReferenceData = async () => {
+    try {
+      // Fetch entities
+      const entitiesRes = await fetch(
+        `/api/axes-entity/elements?company_name=${encodeURIComponent(selectedCompany)}`,
+        { credentials: 'include', headers: { ...getAuthHeaders() } }
+      )
+      if (entitiesRes.ok) {
+        const data = await entitiesRes.json()
+        setEntities(Array.isArray(data) ? data : [])
+      }
+
+      // Fetch accounts - use the same endpoint as AxesAccounts.jsx
+      const accountsRes = await fetch(
+        `/api/axes-account/accounts?company_name=${encodeURIComponent(selectedCompany)}`,
+        { credentials: 'include', headers: { ...getAuthHeaders() } }
+      )
+      if (accountsRes.ok) {
+        const accountsData = await accountsRes.json()
+        console.log('📊 Fetched accounts data:', accountsData)
+        
+        // Handle the response structure from the API
+        const accountsList = accountsData.accounts || accountsData || []
+        
+        // Transform accounts to ensure consistent structure
+        const transformedAccounts = Array.isArray(accountsList) ? accountsList.map(account => ({
+          id: account.id,
+          account_code: account.account_code || account.code,
+          account_name: account.account_name || account.name,
+          account_type: account.account_type || account.type,
+          currency: account.currency || 'USD',
+          balance: account.balance || 0
+        })) : []
+        
+        setAccounts(transformedAccounts)
+        console.log('✅ Loaded accounts for data input:', transformedAccounts.length)
+      } else {
+        console.error('❌ Failed to fetch accounts:', accountsRes.status)
+        setAccounts([])
+      }
+
+      // Fetch periods for the selected year
+      if (yearId) {
+        const periodsResponse = await fetch(`/api/fiscal-management/fiscal-years/${yearId}/periods`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Company-Database': selectedCompany,
+            ...getAuthHeaders()
+          }
+        })
+        if (periodsResponse.ok) {
+          const periodsData = await periodsResponse.json()
+          setPeriods(periodsData?.periods || [])
+        }
+      }
+
+      // Fetch scenarios for the selected year
+      if (yearId) {
+        const scenariosResponse = await fetch(`/api/fiscal-management/fiscal-years/${yearId}/scenarios`, {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Company-Database': selectedCompany,
+            ...getAuthHeaders()
+          }
+        })
+        if (scenariosResponse.ok) {
+          const scenariosData = await scenariosResponse.json()
+          setScenarios(scenariosData?.scenarios || [])
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching reference data:', error)
+    }
+  }
+
+  const fetchEntries = async () => {
+    if (!selectedCompany || !processId) return
+
+    setLoading(true)
+    try {
+      // Build URL with filtering parameters
+      const params = new URLSearchParams({
+        company_name: selectedCompany
+      })
+      
+      // Add entity filter based on active card
+      let entityFilter = 'all'
+      if (activeCard === 'entity_amounts' && selectedEntityFilter !== 'all') {
+        entityFilter = selectedEntityFilter
+      } else if (activeCard === 'ic_amounts' && selectedICEntityFilter !== 'all') {
+        entityFilter = selectedICEntityFilter
+      } else if (activeCard === 'other_amounts' && selectedOtherEntityFilter !== 'all') {
+        entityFilter = selectedOtherEntityFilter
+      }
+      
+      if (entityFilter !== 'all') {
+        params.append('entity_filter', entityFilter)
+      }
+      
+      if (yearId) {
+        params.append('year_id', yearId)
+      }
+      
+      if (scenarioId) {
+        params.append('scenario_id', scenarioId)
+      }
+
+      const url = `/api/financial-process/processes/${processId}/data-input/${activeCard}?${params.toString()}`
+      console.log('🔍 Fetching entries from:', url)
+      
+      const response = await fetch(url, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        console.log('✅ Fetched entries data:', data)
+        console.log('📊 Entries count:', data.entries?.length || 0)
+        setEntries(data.entries || [])
+      } else {
+        console.error('Failed to fetch entries:', response.status)
+        setEntries([])
+      }
+    } catch (error) {
+      console.error('Error fetching entries:', error)
+      showToast('Failed to load entries', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+// ...
+  const saveEntry = async () => {
+    if (!selectedCompany || !processId) {
+      showToast('Missing required context data', 'error')
+      return
+    }
+
+    setSaving(true)
+    try {
+      // Build entry data with custom fields
+      const customFields = {}
+      const customFieldDefs = customFieldsConfig[activeCard] || []
+      customFieldDefs.forEach(field => {
+        if (formData[field.name]) {
+          customFields[field.name] = formData[field.name]
+        }
+      })
+
+      const entryData = {
+        entity_id: formData.entity_id,
+        entity_code: formData.entity_code,
+        period_id: formData.period_id,
+        period_code: formData.period_code,
+        transaction_date: formData.transaction_date,
+        account_id: formData.account_id,
+        account_code: formData.account_code,
+        amount: parseFloat(formData.amount) || 0,
+        currency: formData.currency_code || 'USD',
+        description: formData.description,
+        reference_id: formData.reference_id,
+        scenario_id: formData.scenario_id,
+        scenario_code: formData.scenario_code,
+        origin: 'web_input',
+        custom_fields: customFields
+      }
+
+      // Add type-specific fields
+      if (activeCard === 'ic_amounts') {
+        entryData.from_entity_id = formData.from_entity_id || formData.entity_id
+        entryData.from_entity_code = formData.from_entity_code || formData.entity_code
+        entryData.to_entity_id = formData.to_entity_id
+        entryData.to_entity_code = formData.to_entity_code
+        entryData.from_account_id = formData.from_account_id || formData.account_id
+        entryData.from_account_code = formData.from_account_code || formData.account_code
+        entryData.to_account_id = formData.to_account_id
+        entryData.to_account_code = formData.to_account_code
+        entryData.transaction_type = formData.transaction_type
+        entryData.fx_rate = formData.fx_rate || 1.0
+      } else if (activeCard === 'other_amounts') {
+        entryData.adjustment_type = formData.adjustment_type
+        entryData.custom_transaction_type = formData.custom_transaction_type
+      }
+
+      const response = await fetch(
+        `/api/financial-process/processes/${processId}/data-input/${activeCard}?company_name=${encodeURIComponent(selectedCompany)}`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify(entryData)
+        }
+      )
+
+      if (response.ok) {
+        showToast('Entry saved successfully!', 'success')
+        setShowManualEntry(false)
+        resetForm()
+        fetchEntries()
+      } else {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to save entry')
+      }
+    } catch (error) {
+      console.error('Error saving entry:', error)
+      showToast(error.message || 'Failed to save entry', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resetForm = () => {
+    setFormData({
+      entity_id: '',
+      period_id: '',
+      account_id: '',
+      amount: '',
+      currency_code: 'USD',
+      description: '',
+      transaction_date: '',
+      from_entity_id: '',
+      to_entity_id: '',
+      from_account_id: '',
+      to_account_id: '',
+      fx_rate: '',
+      transaction_type: '',
+      reference_id: '',
+      adjustment_type: '',
+      custom_transaction_type: ''
+    })
   }
 
   // Export functionality
@@ -161,33 +472,22 @@ const DataInput = () => {
   const handleImport = async (event, cardType) => {
     const file = event.target.files[0]
     if (!file) return
-
-    if (!file.name.endsWith('.csv')) {
-      showToast('Please select a CSV file', 'error')
-      return
-    }
-
+    
     const formData = new FormData()
     formData.append('file', file)
     formData.append('card_type', cardType)
-    formData.append('company_name', selectedCompany)
-    if (processId) formData.append('process_id', processId)
-    if (scenarioId) formData.append('scenario_id', scenarioId)
-
+    
     try {
-      const response = await fetch('/api/data-input/import', {
+      const response = await fetch(`/api/data-input/import?company_name=${encodeURIComponent(selectedCompany)}`, {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          ...getAuthHeaders()
-        },
         body: formData
       })
-
+      
       if (response.ok) {
         const result = await response.json()
-        showToast(`Imported ${result.imported_count} entries successfully`, 'success')
-        fetchEntries() // Refresh the entries
+        showToast(`Import completed: ${result.imported} records imported, ${result.updated} updated`, 'success')
+        // Refresh data here if needed
       } else {
         const error = await response.json()
         throw new Error(error.detail || 'Import failed')
@@ -201,7 +501,7 @@ const DataInput = () => {
     }
   }
 
-  // Card configuration with balance calculations
+  // Card configuration
   const cards = [
     {
       id: 'entity_amounts',
@@ -209,7 +509,8 @@ const DataInput = () => {
       description: 'Financial data for individual entities',
       icon: Building2,
       color: 'bg-blue-500',
-      ...calculateCardStats('entity_amounts')
+      count: activeCard === 'entity_amounts' ? filteredEntries.length : entries.length,
+      totalCount: entries.length
     },
     {
       id: 'ic_amounts',
@@ -217,7 +518,8 @@ const DataInput = () => {
       description: 'Intercompany transactions',
       icon: Users,
       color: 'bg-purple-500',
-      ...calculateCardStats('ic_amounts')
+      count: activeCard === 'ic_amounts' ? filteredEntries.length : 0,
+      totalCount: 0 // Would need separate fetch for IC amounts
     },
     {
       id: 'other_amounts',
@@ -225,29 +527,47 @@ const DataInput = () => {
       description: 'Adjustments and additional data',
       icon: Calculator,
       color: 'bg-green-500',
-      ...calculateCardStats('other_amounts')
+      count: activeCard === 'other_amounts' ? filteredEntries.length : 0,
+      totalCount: 0 // Would need separate fetch for Other amounts
     }
   ]
 
-  // Fetch entries (placeholder - you'll need to implement this)
-  const fetchEntries = async () => {
-    setLoading(true)
-    try {
-      // Implement your fetch logic here
-      setEntries([])
-      setFilteredEntries([])
-    } catch (error) {
-      console.error('Error fetching entries:', error)
-    } finally {
-      setLoading(false)
+  // Calculate balance and totals for each card type
+  const calculateCardStats = (cardType) => {
+    const cardEntries = entries.filter(entry => {
+      if (cardType === 'entity_amounts') return entry.type === 'entity' || !entry.type
+      if (cardType === 'ic_amounts') return entry.type === 'intercompany'
+      if (cardType === 'other_amounts') return entry.type === 'other'
+      return false
+    })
+
+    const totalAmount = cardEntries.reduce((sum, entry) => {
+      const amount = parseFloat(entry.amount) || 0
+      return sum + amount
+    }, 0)
+
+    const entryCount = cardEntries.length
+    const isBalanced = Math.abs(totalAmount) < 0.01 // Consider balanced if within 1 cent
+
+    return {
+      totalAmount,
+      entryCount,
+      isBalanced,
+      entries: cardEntries
     }
   }
 
-  useEffect(() => {
-    if (processId && selectedCompany) {
-      fetchEntries()
+  // Update cards with calculated stats
+  const cardsWithStats = cards.map(card => {
+    const stats = calculateCardStats(card.id)
+    return {
+      ...card,
+      count: stats.entryCount,
+      totalAmount: stats.totalAmount,
+      isBalanced: stats.isBalanced,
+      totalCount: stats.entryCount
     }
-  }, [processId, selectedCompany, activeCard])
+  })
 
   const renderCardContent = () => {
     const activeCardData = cards.find(card => card.id === activeCard)
@@ -267,22 +587,6 @@ const DataInput = () => {
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 {activeCardData.description}
               </p>
-              {/* Balance and Count Info */}
-              <div className="flex items-center gap-4 mt-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Total: {activeCardData.totalCount} entries
-                  </span>
-                  <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                    activeCardData.isBalanced 
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-                  }`}>
-                    Balance: {activeCardData.totalBalance?.toFixed(2) || '0.00'}
-                    {activeCardData.isBalanced ? ' ✓' : ' ⚠️'}
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -325,13 +629,117 @@ const DataInput = () => {
           </div>
         </div>
 
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">
+                Filter Options
+              </h4>
+              <button
+                onClick={() => {
+                  // Reset filters to default entity or 'all'
+                  if (activeCard === 'entity_amounts') {
+                    setSelectedEntityFilter(defaultEntity || 'all')
+                  } else if (activeCard === 'ic_amounts') {
+                    setSelectedICEntityFilter(defaultEntity || 'all')
+                  } else if (activeCard === 'other_amounts') {
+                    setSelectedOtherEntityFilter(defaultEntity || 'all')
+                  }
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                Reset Filters
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Entity Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {activeCard === 'ic_amounts' ? 'Entity (From/To)' : 'Entity'}
+                </label>
+                <select
+                  value={
+                    activeCard === 'entity_amounts' ? selectedEntityFilter :
+                    activeCard === 'ic_amounts' ? selectedICEntityFilter :
+                    selectedOtherEntityFilter
+                  }
+                  onChange={(e) => {
+                    if (activeCard === 'entity_amounts') {
+                      setSelectedEntityFilter(e.target.value)
+                    } else if (activeCard === 'ic_amounts') {
+                      setSelectedICEntityFilter(e.target.value)
+                    } else {
+                      setSelectedOtherEntityFilter(e.target.value)
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-900"
+                >
+                  <option value="all">All Entities</option>
+                  {entities.map(entity => (
+                    <option key={entity.id} value={entity.id}>
+                      {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Context Info */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Current Context
+                </label>
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm text-blue-900 dark:text-blue-100">
+                      {entityContext !== 'all' 
+                        ? `Accessed from: ${entities.find(e => e.id === defaultEntity || e.entity_code === defaultEntity)?.entity_name || defaultEntity || 'Unknown Entity'}`
+                        : 'Accessed from: All Entities'
+                      }
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                    You can change the filter above to view data from other entities
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Data Table */}
         <div className="overflow-hidden">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entry</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Amount</th>
+                {activeCard === 'entity_amounts' && (
+                  <>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Period</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Account</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Currency</th>
+                  </>
+                )}
+                {activeCard === 'ic_amounts' && (
+                  <>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">From Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">To Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                  </>
+                )}
+                {activeCard === 'other_amounts' && (
+                  <>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entity</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Period</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Account</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Amount</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                  </>
+                )}
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Description</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
               </tr>
@@ -339,34 +747,85 @@ const DataInput = () => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
-                  <td colSpan="4" className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
                     Loading entries...
                   </td>
                 </tr>
               ) : filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="px-4 py-8 text-center text-gray-500">
-                    No entries found. Click "Add Entry" to create your first entry.
+                  <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
+                    {entries.length === 0 
+                      ? 'No entries found. Click "Add Entry" to create your first entry.'
+                      : 'No entries match the current filter. Try adjusting your filter settings.'
+                    }
                   </td>
                 </tr>
               ) : (
                 filteredEntries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                      {entry.entity_name || entry.entity_code || 'Unknown'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                      {entry.amount || '0.00'} {entry.currency_code || 'USD'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
-                      {entry.description || 'No description'}
+                    {activeCard === 'entity_amounts' && (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.entity_name || entry.entity_code || 'Unknown Entity'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.period_name || entry.period_code || 'Unknown Period'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.account_name || entry.account_code || 'Unknown Account'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.amount?.toLocaleString() || '0'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.currency || 'USD'}
+                        </td>
+                      </>
+                    )}
+                    {activeCard === 'ic_amounts' && (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.from_entity_name || entry.from_entity_code || 'Unknown From Entity'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.to_entity_name || entry.to_entity_code || 'Unknown To Entity'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.amount?.toLocaleString() || '0'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.transaction_type || 'Standard'}
+                        </td>
+                      </>
+                    )}
+                    {activeCard === 'other_amounts' && (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.entity_name || entry.entity_code || 'Global'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.period_name || entry.period_code || 'Unknown Period'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.account_name || entry.account_code || 'Unknown Account'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.amount?.toLocaleString() || '0'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                          {entry.adjustment_type}
+                        </td>
+                      </>
+                    )}
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                      {entry.description}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex gap-2">
-                        <button className="text-blue-600 hover:text-blue-700">
+                        <button className="p-1 text-blue-600 hover:bg-blue-50 rounded">
                           <Edit className="h-4 w-4" />
                         </button>
-                        <button className="text-red-600 hover:text-red-700">
+                        <button className="p-1 text-red-600 hover:bg-red-50 rounded">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -381,29 +840,520 @@ const DataInput = () => {
     )
   }
 
+  const renderManualEntryModal = () => {
+    if (!showManualEntry) return null
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 w-full max-w-2xl max-h-[90vh] overflow-auto">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Add New Entry - {cards.find(c => c.id === activeCard)?.title}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowManualEntry(false)
+                  resetForm()
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {activeCard === 'entity_amounts' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Entity *
+                    </label>
+                    <select
+                      value={formData.entity_id}
+                      onChange={(e) => {
+                        const selectedEntity = entities.find(ent => ent.id === e.target.value)
+                        setFormData({
+                          ...formData, 
+                          entity_id: e.target.value,
+                          entity_code: selectedEntity?.entity_code || selectedEntity?.code || ''
+                        })
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Entity</option>
+                      {entities.map(entity => (
+                        <option key={entity.id} value={entity.id}>
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Transaction Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.transaction_date}
+                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Year and period will be automatically calculated</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Account *
+                    </label>
+                    <select
+                      value={formData.account_id}
+                      onChange={(e) => {
+                        const selectedAccount = accounts.find(acc => acc.id === e.target.value)
+                        setFormData({
+                          ...formData, 
+                          account_id: e.target.value,
+                          account_code: selectedAccount?.account_code || selectedAccount?.code || ''
+                        })
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Account</option>
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
+                    </select>
+                    {accounts.length === 0 && (
+                      <p className="text-xs text-red-500 mt-1">
+                        No accounts found. Please check Axes Account Management.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Amount *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Currency *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.currency_code || ''}
+                      onChange={(e) => setFormData({...formData, currency_code: e.target.value.toUpperCase()})}
+                      placeholder="USD, EUR, GBP, etc."
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      maxLength={3}
+                      required
+                    />
+                  </div>
+
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    rows={3}
+                    placeholder="Optional description or notes"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                  />
+                </div>
+              </>
+            )}
+
+            {activeCard === 'ic_amounts' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Entity *
+                    </label>
+                    <select
+                      value={formData.from_entity_id}
+                      onChange={(e) => setFormData({...formData, from_entity_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select From Entity</option>
+                      {entities.map(entity => (
+                        <option key={entity.id} value={entity.id}>
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Counterparty *
+                    </label>
+                    <select
+                      value={formData.to_entity_id}
+                      onChange={(e) => setFormData({...formData, to_entity_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select To Entity</option>
+                      {entities.map(entity => (
+                        <option key={entity.id} value={entity.id}>
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Account *
+                    </label>
+                    <select
+                      value={formData.from_account_id}
+                      onChange={(e) => setFormData({...formData, from_account_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select From Account</option>
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Counterparty Account *
+                    </label>
+                    <select
+                      value={formData.to_account_id}
+                      onChange={(e) => setFormData({...formData, to_account_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select To Account</option>
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Amount *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Transaction Type *
+                    </label>
+                    <select
+                      value={formData.transaction_type}
+                      onChange={(e) => setFormData({...formData, transaction_type: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Type</option>
+                      <option value="sale_goods">Sale of goods or inventory</option>
+                      <option value="provision_services">Provision of services (shared services)</option>
+                      <option value="licences_royalties">Licences / Royalties / IP transfers</option>
+                      <option value="loans_advances">Loans / Advances / Finance charges</option>
+                      <option value="dividends">Dividends / Capital distributions</option>
+                      <option value="asset_transfers">Asset transfers (fixed assets, inter-company disposals)</option>
+                      <option value="cost_allocations">Cost allocations / cost recharges</option>
+                      <option value="clearing_settlement">Intercompany clearing/settlement of bank/cash flows</option>
+                      <option value="inventory_unrealised">Intercompany inventory transfers with unrealised profit</option>
+                      <option value="investment_equity">Inter-entity investment or equity transactions</option>
+                      <option value="service_reimbursement">Service fee reimbursement / cost sharing</option>
+                      <option value="lease_rental">Intercompany lease / rental transactions</option>
+                      <option value="upstream_downstream">Upstream/downstream asset or equity flows</option>
+                      <option value="lateral">Lateral transactions</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  
+                  {/* Show custom field when 'Other' is selected */}
+                  {formData.transaction_type === 'other' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Specify Transaction Type *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.custom_transaction_type || ''}
+                        onChange={(e) => setFormData({...formData, custom_transaction_type: e.target.value})}
+                        placeholder="Enter custom transaction type"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Currency
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.currency_code || ''}
+                      onChange={(e) => setFormData({...formData, currency_code: e.target.value.toUpperCase()})}
+                      placeholder="USD, EUR, GBP, etc."
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      maxLength={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Transaction Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.transaction_date}
+                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Reference ID
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.reference_id}
+                    onChange={(e) => setFormData({...formData, reference_id: e.target.value})}
+                    placeholder="Invoice or reference number"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Year and period will be automatically calculated from transaction date</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    rows={2}
+                    placeholder="Transaction description"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                  />
+                </div>
+              </>
+            )}
+
+            {activeCard === 'other_amounts' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Entity
+                    </label>
+                    <select
+                      value={formData.entity_id}
+                      onChange={(e) => setFormData({...formData, entity_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Entity (or leave blank for Global)</option>
+                      {entities.map(entity => (
+                        <option key={entity.id} value={entity.id}>
+                          {entity.entity_code || entity.code} - {entity.entity_name || entity.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Transaction Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.transaction_date}
+                      onChange={(e) => setFormData({...formData, transaction_date: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      required
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Year and period will be automatically calculated</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Account *
+                    </label>
+                    <select
+                      value={formData.account_id}
+                      onChange={(e) => setFormData({...formData, account_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Account</option>
+                      {accounts.length > 0 ? (
+                        accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.account_code || account.code || 'N/A'} - {account.account_name || account.name || 'Unnamed Account'}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="" disabled>No accounts available</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Amount *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Adjustment Type *
+                    </label>
+                    <select
+                      value={formData.adjustment_type}
+                      onChange={(e) => setFormData({...formData, adjustment_type: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                    >
+                      <option value="">Select Type</option>
+                      <option value="manual">Manual</option>
+                      <option value="one_off">One-off</option>
+                      <option value="reclassification">Reclassification</option>
+                      <option value="correction">Correction</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Currency
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.currency_code || ''}
+                      onChange={(e) => setFormData({...formData, currency_code: e.target.value.toUpperCase()})}
+                      placeholder="USD, EUR, GBP, etc."
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                      maxLength={3}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Description *
+                  </label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    rows={3}
+                    placeholder="Reason for adjustment"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-800"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={() => {
+                  setShowManualEntry(false)
+                  resetForm()
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEntry}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+              >
+                Save Entry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800">
+      <div className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shadow-sm">
         <div className="px-6 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => navigate('/process')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {processName}
-              </h1>
-              <div className="flex items-center gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
-                <span className="flex items-center gap-1">
-                  <Building2 className="h-4 w-4" />
-                  {selectedCompany || 'No Company'}
-                </span>
-                <span className="text-gray-400">•</span>
-                <span>Process Data Input</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => navigate('/process')}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {processName}
+                </h1>
+                <div className="flex items-center gap-4 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-4 w-4" />
+                    {selectedCompany || 'No Company'}
+                  </span>
+                  <span className="text-gray-400">•</span>
+                  <span>Process Data Input</span>
+                </div>
               </div>
             </div>
           </div>
@@ -426,7 +1376,7 @@ const DataInput = () => {
       <div className="p-6">
         {/* Card Selection */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {cards.map((card) => (
+          {cardsWithStats.map((card) => (
             <div
               key={card.id}
               onClick={() => setActiveCard(card.id)}
@@ -440,24 +1390,31 @@ const DataInput = () => {
                 <div className={`w-12 h-12 rounded-lg ${card.color} flex items-center justify-center`}>
                   <card.icon className="h-6 w-6 text-white" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className={`font-semibold ${activeCard === card.id ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
                     {card.title}
                   </h3>
                   <p className={`text-sm ${activeCard === card.id ? 'text-white/80' : 'text-gray-600 dark:text-gray-400'}`}>
                     {card.description}
                   </p>
-                  <div className={`text-xs mt-1 ${activeCard === card.id ? 'text-white/60' : 'text-gray-500 dark:text-gray-500'}`}>
+                  
+                  {/* Stats Row */}
+                  <div className={`flex items-center justify-between mt-2 text-xs ${activeCard === card.id ? 'text-white/80' : 'text-gray-500 dark:text-gray-500'}`}>
+                    <span>{card.count} entries</span>
                     <div className="flex items-center gap-2">
-                      <span>{card.totalCount} entries</span>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        card.isBalanced 
-                          ? activeCard === card.id ? 'bg-white/20 text-white' : 'bg-green-100 text-green-800'
-                          : activeCard === card.id ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {card.totalBalance?.toFixed(2) || '0.00'} {card.isBalanced ? '✓' : '⚠️'}
-                      </span>
+                      <span>Total: {card.totalAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</span>
+                      <div className={`w-2 h-2 rounded-full ${card.isBalanced ? 'bg-green-500' : 'bg-red-500'}`} 
+                           title={card.isBalanced ? 'Balanced (sum = 0)' : 'Unbalanced (sum ≠ 0)'}></div>
                     </div>
+                  </div>
+                  
+                  {/* Balance Status */}
+                  <div className={`text-xs mt-1 font-medium ${
+                    card.isBalanced 
+                      ? (activeCard === card.id ? 'text-green-200' : 'text-green-600 dark:text-green-400')
+                      : (activeCard === card.id ? 'text-red-200' : 'text-red-600 dark:text-red-400')
+                  }`}>
+                    {card.isBalanced ? '✓ Balanced' : '⚠ Unbalanced'}
                   </div>
                 </div>
               </div>
@@ -468,6 +1425,9 @@ const DataInput = () => {
         {/* Active Card Content */}
         {renderCardContent()}
       </div>
+
+      {/* Manual Entry Modal */}
+      {renderManualEntryModal()}
     </div>
   )
 }
