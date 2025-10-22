@@ -81,6 +81,69 @@ const ChatAssistant = () => {
     return hasIFRSKeyword || isComplexQuery;
   };
 
+  // Clean AI response text
+  const cleanAIResponse = (text) => {
+    if (!text) return '';
+    
+    // Handle if text is an object with content property
+    if (typeof text === 'object' && text.content) {
+      text = text.content;
+    }
+    
+    // Convert to string if not already
+    text = String(text);
+    
+    // Remove escape characters and clean formatting
+    return text
+      .replace(/\\n/g, '\n')           // Replace \n with actual newlines
+      .replace(/\\'/g, "'")           // Replace \' with '
+      .replace(/\\"/g, '"')           // Replace \" with "
+      .replace(/\\t/g, ' ')           // Replace \t with space
+      .replace(/\s+/g, ' ')           // Replace multiple spaces with single space
+      .replace(/\n\s*\n/g, '\n\n')     // Clean up multiple newlines
+      .trim();                        // Remove leading/trailing whitespace
+  };
+
+  // Generate follow-up options for AI responses
+  const generateAIFollowUps = (query, response) => {
+    const queryLower = query.toLowerCase();
+    const followUps = [];
+    
+    // IFRS-specific follow-ups
+    if (queryLower.includes('ifrs 15') || queryLower.includes('revenue')) {
+      followUps.push(
+        'Tell me about the 5 steps of IFRS 15',
+        'How to handle contract modifications?',
+        'What about variable consideration?',
+        'Go to IFRS Templates'
+      );
+    } else if (queryLower.includes('consolidation')) {
+      followUps.push(
+        'How to handle intercompany eliminations?',
+        'What about NCI calculations?',
+        'Tell me about goodwill impairment',
+        'Go to Consolidation module'
+      );
+    } else if (queryLower.includes('lease') || queryLower.includes('ifrs 16')) {
+      followUps.push(
+        'How to calculate lease liability?',
+        'What about right-of-use assets?',
+        'Tell me about lease modifications',
+        'Go to IFRS Templates'
+      );
+    } else {
+      // General follow-ups
+      followUps.push(
+        'Can you explain this in more detail?',
+        'What are the practical implications?',
+        'Are there any exceptions to this rule?',
+        'Show me related modules'
+      );
+    }
+    
+    return followUps.slice(0, 4); // Limit to 4 options
+  };
+
   // Get AI response from backend API
   const getAIResponse = async (query) => {
     try {
@@ -106,10 +169,14 @@ const ChatAssistant = () => {
         };
       }
       
+      const cleanedResponse = cleanAIResponse(output);
+      const followUpOptions = generateAIFollowUps(query, cleanedResponse);
+      
       return {
         type: 'ai_response',
-        message: output || 'I received your question but couldn\'t generate a response. Please try asking in a different way.',
+        message: cleanedResponse || 'I received your question but couldn\'t generate a response. Please try asking in a different way.',
         query: query,
+        followUpOptions: followUpOptions,
         timestamp: new Date()
       };
     } catch (error) {
@@ -487,6 +554,15 @@ const ChatAssistant = () => {
     }
   };
 
+  // Handle follow-up button clicks
+  const handleFollowUpClick = async (followUpText) => {
+    setInputValue(followUpText);
+    // Small delay to show the input, then send
+    setTimeout(async () => {
+      await handleSendMessage();
+    }, 100);
+  };
+
   // Quick action buttons
   const quickActions = [
     { label: "What does consolidation do?", action: "What does consolidation tab do?" },
@@ -496,7 +572,7 @@ const ChatAssistant = () => {
     { label: "Go to consolidation", action: "Go to consolidation" },
     { label: "Financial ratios", action: "What are financial ratios?" },
     { label: "Reset Chat", action: "reset_chat", isReset: true },
-    { label: "Bytez AI IFRS Help", action: "Bytez AI IFRS Help" }
+    { label: "IFRS Standards Help", action: "Tell me about IFRS standards" }
   ];
 
   const handleQuickAction = async (action, isReset = false) => {
@@ -505,7 +581,10 @@ const ChatAssistant = () => {
       return;
     }
     setInputValue(action);
-    await handleSendMessage();
+    // Small delay to show the input, then send
+    setTimeout(async () => {
+      await handleSendMessage();
+    }, 100);
   };
 
   // Render message content based on type
@@ -569,20 +648,40 @@ const ChatAssistant = () => {
             </div>
           </div>
           <div className="flex-1">
-            <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3 max-w-xs lg:max-w-md">
+            <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3 max-w-sm lg:max-w-lg xl:max-w-xl">
               <div className="flex items-center space-x-2 mb-2">
                 <Sparkles className="h-4 w-4 text-purple-500" />
                 <span className="text-sm font-medium text-slate-900 dark:text-white">
                   AI Assistant
                 </span>
               </div>
-              <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
-                {message.content.message}
-              </p>
-              <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 mt-2">
-                <ArrowRight className="h-3 w-3 mr-1" />
-                Powered by Schematron-3B
+              <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                {message.content.message.split('\n').map((paragraph, index) => (
+                  paragraph.trim() ? (
+                    <p key={index} className="mb-2 last:mb-0">
+                      {paragraph.trim()}
+                    </p>
+                  ) : (
+                    <br key={index} />
+                  )
+                ))}
               </div>
+              {message.content.followUpOptions && message.content.followUpOptions.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-600">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Follow-up questions:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {message.content.followUpOptions.map((option, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleFollowUpClick(option)}
+                        className="text-xs bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 px-2 py-1 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               {message.timestamp.toLocaleTimeString()}
