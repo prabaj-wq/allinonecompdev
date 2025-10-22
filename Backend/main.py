@@ -583,7 +583,7 @@ from routers import (
     ifrs_accounts, custom_axes, hierarchies, database_management, database_info,
     upload, financial_statements, assets, audit, 
     budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal_management,
-    workflow_builder, process_builder_enhanced, financial_process, data_input
+    workflow_builder, process_builder_enhanced, financial_process, data_input, simple_export
 )
 
 # Include all routers with /api prefix
@@ -619,6 +619,7 @@ app.include_router(workflow_builder.router, prefix="/api")
 app.include_router(process_builder_enhanced.router, prefix="/api")
 app.include_router(financial_process.router, prefix="/api")
 app.include_router(data_input.router, prefix="/api")
+app.include_router(simple_export.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status

@@ -438,7 +438,7 @@ const DataInput = () => {
         if (trimmedScenario) params.append('scenario_id', trimmedScenario)
       }
 
-      const response = await fetch(`/api/data-input/export/${cardType}?${params.toString()}`, {
+      const response = await fetch(`/api/simple-export/${cardType}?${params.toString()}`, {
         method: 'GET',
         credentials: 'include',
         headers: {
