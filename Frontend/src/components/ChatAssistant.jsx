@@ -1,11 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw, Sparkles } from 'lucide-react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw, Sparkles, Maximize2, Minimize2, Move, Database, Settings } from 'lucide-react';
 import { SearchEngine } from '../data/searchData';
+import { CompanyContext } from '../context/CompanyContext';
 import axios from 'axios';
 
 const ChatAssistant = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [chatSize, setChatSize] = useState({ width: 400, height: 600 });
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [industryContext, setIndustryContext] = useState('');
+  const [currentPage, setCurrentPage] = useState('');
+  const { selectedCompany } = useContext(CompanyContext);
+  const location = useLocation();
   const [messages, setMessages] = useState([
     {
       id: 1,
@@ -24,6 +32,8 @@ const ChatAssistant = () => {
   const searchEngine = useRef(new SearchEngine());
   const navigate = useNavigate();
   const [isAIProcessing, setIsAIProcessing] = useState(false);
+  const chatRef = useRef(null);
+  const resizeRef = useRef(null);
 
   // Reset chat function
   const resetChat = () => {
@@ -48,6 +58,43 @@ const ChatAssistant = () => {
 
   useEffect(() => {
     scrollToBottom();
+  }, [messages]);
+
+  // Track current page for context
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.includes('/process')) setCurrentPage('process');
+    else if (path.includes('/data-input')) setCurrentPage('data-input');
+    else if (path.includes('/consolidation')) setCurrentPage('consolidation');
+    else if (path.includes('/journal-entries')) setCurrentPage('journal-entries');
+    else setCurrentPage(path.replace('/', '') || 'dashboard');
+  }, [location]);
+
+  // Auto-detect industry context from conversations
+  useEffect(() => {
+    const detectIndustry = () => {
+      const recentMessages = messages.slice(-5).map(m => m.content.toLowerCase?.() || '').join(' ');
+      
+      if (recentMessages.includes('manufacturing') || recentMessages.includes('automotive')) {
+        setIndustryContext('Manufacturing & Automotive');
+      } else if (recentMessages.includes('technology') || recentMessages.includes('software') || recentMessages.includes('saas')) {
+        setIndustryContext('Technology & Software');
+      } else if (recentMessages.includes('real estate') || recentMessages.includes('construction')) {
+        setIndustryContext('Real Estate & Construction');
+      } else if (recentMessages.includes('banking') || recentMessages.includes('financial services')) {
+        setIndustryContext('Financial Services & Banking');
+      } else if (recentMessages.includes('retail') || recentMessages.includes('consumer goods')) {
+        setIndustryContext('Retail & Consumer Goods');
+      } else if (recentMessages.includes('oil') || recentMessages.includes('gas') || recentMessages.includes('mining')) {
+        setIndustryContext('Oil & Gas / Mining');
+      } else if (recentMessages.includes('healthcare') || recentMessages.includes('pharmaceutical')) {
+        setIndustryContext('Healthcare & Pharmaceuticals');
+      }
+    };
+    
+    if (messages.length > 2) {
+      detectIndustry();
+    }
   }, [messages]);
 
   // Focus input when chat opens
@@ -144,10 +191,18 @@ const ChatAssistant = () => {
     return followUps.slice(0, 4); // Limit to 4 options
   };
 
-  // Get AI response from backend API
+  // Get AI response from backend API with enhanced context
   const getAIResponse = async (query) => {
     try {
       setIsAIProcessing(true);
+      
+      // Build user context for system integration
+      const userContext = {
+        current_page: currentPage,
+        analyze_journals: query.toLowerCase().includes('journal') || query.toLowerCase().includes('entry'),
+        analyze_entities: query.toLowerCase().includes('entity') || query.toLowerCase().includes('consolidation'),
+        analyze_processes: currentPage === 'process' || query.toLowerCase().includes('process')
+      };
       
       const response = await axios.post('/api/ai-chat/query', {
         messages: [
@@ -155,10 +210,14 @@ const ChatAssistant = () => {
             role: "user",
             content: query
           }
-        ]
+        ],
+        industry_context: industryContext,
+        company_name: selectedCompany,
+        current_page: currentPage,
+        user_context: userContext
       });
       
-      const { output, error } = response.data;
+      const { output, error, system_data, suggestions } = response.data;
       
       if (error) {
         console.error('AI API Error:', error);
@@ -176,7 +235,9 @@ const ChatAssistant = () => {
         type: 'ai_response',
         message: cleanedResponse || 'I received your question but couldn\'t generate a response. Please try asking in a different way.',
         query: query,
-        followUpOptions: followUpOptions,
+        followUpOptions: suggestions || followUpOptions,
+        systemData: system_data,
+        industryContext: industryContext,
         timestamp: new Date()
       };
     } catch (error) {
@@ -563,6 +624,52 @@ const ChatAssistant = () => {
     }, 100);
   };
 
+  // Resizing functionality
+  const handleMouseDown = (e) => {
+    setIsResizing(true);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isResizing) return;
+    
+    const newWidth = Math.max(350, Math.min(800, window.innerWidth - e.clientX + 20));
+    const newHeight = Math.max(400, Math.min(window.innerHeight - 100, window.innerHeight - e.clientY + 20));
+    
+    setChatSize({ width: newWidth, height: newHeight });
+  };
+
+  const handleMouseUp = () => {
+    setIsResizing(false);
+  };
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isResizing]);
+
+  // Toggle maximize/minimize
+  const toggleMaximize = () => {
+    setIsMaximized(!isMaximized);
+  };
+
+  // Industry context selector
+  const industryOptions = [
+    'Manufacturing & Automotive',
+    'Technology & Software', 
+    'Real Estate & Construction',
+    'Financial Services & Banking',
+    'Retail & Consumer Goods',
+    'Oil & Gas / Mining',
+    'Healthcare & Pharmaceuticals'
+  ];
+
   // Quick action buttons
   const quickActions = [
     { label: "What does consolidation do?", action: "What does consolidation tab do?" },
@@ -649,11 +756,21 @@ const ChatAssistant = () => {
           </div>
           <div className="flex-1">
             <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3 max-w-sm lg:max-w-lg xl:max-w-xl">
-              <div className="flex items-center space-x-2 mb-2">
-                <Sparkles className="h-4 w-4 text-purple-500" />
-                <span className="text-sm font-medium text-slate-900 dark:text-white">
-                  AI Assistant
-                </span>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  <span className="text-sm font-medium text-slate-900 dark:text-white">
+                    IFRS Expert
+                  </span>
+                  {message.content.industryContext && (
+                    <span className="text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 px-2 py-1 rounded-full">
+                      {message.content.industryContext}
+                    </span>
+                  )}
+                </div>
+                {message.content.systemData && (
+                  <Database className="h-4 w-4 text-green-500" title="System data analyzed" />
+                )}
               </div>
               <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                 {message.content.message.split('\n').map((paragraph, index) => (
@@ -941,7 +1058,31 @@ const ChatAssistant = () => {
 
       {/* Chat Window */}
       {isOpen && (
-        <div className="fixed bottom-6 right-6 z-50 w-80 lg:w-96 h-96 lg:h-[500px] bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+        <div 
+          ref={chatRef}
+          className={`fixed z-50 bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col ${
+            isMaximized 
+              ? 'inset-4' 
+              : 'bottom-6 right-6'
+          }`}
+          style={
+            isMaximized 
+              ? {} 
+              : { 
+                  width: `${chatSize.width}px`, 
+                  height: `${chatSize.height}px` 
+                }
+          }
+        >
+          {/* Resize Handle */}
+          {!isMaximized && (
+            <div
+              className="absolute -top-2 -left-2 w-4 h-4 cursor-nw-resize opacity-50 hover:opacity-100 transition-opacity"
+              onMouseDown={handleMouseDown}
+            >
+              <Move className="h-4 w-4 text-slate-400" />
+            </div>
+          )}
           {/* Chat Header */}
           <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50 rounded-t-lg">
             <div className="flex items-center space-x-3">
@@ -958,6 +1099,27 @@ const ChatAssistant = () => {
               </div>
             </div>
             <div className="flex items-center space-x-2">
+              {/* Industry Context Selector */}
+              <select
+                value={industryContext}
+                onChange={(e) => setIndustryContext(e.target.value)}
+                className="text-xs bg-transparent border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-slate-600 dark:text-slate-300"
+                title="Industry Context"
+              >
+                <option value="">Auto-detect Industry</option>
+                {industryOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              
+              <button
+                onClick={toggleMaximize}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                title={isMaximized ? "Minimize" : "Maximize"}
+              >
+                {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+              
               <button
                 onClick={resetChat}
                 className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -965,6 +1127,7 @@ const ChatAssistant = () => {
               >
                 <RefreshCw className="h-4 w-4" />
               </button>
+              
               <button
                 onClick={() => setIsOpen(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
