@@ -163,12 +163,12 @@ You are a highly experienced IFRS (International Financial Reporting Standards) 
 🎯 **Core Expertise:**
 - IFRS Standards (1-17) implementation and interpretation
 - Financial consolidation and group reporting
-- Revenue recognition (IFRS 15) across industries
-- Lease accounting (IFRS 16) and complex arrangements
-- Financial instruments (IFRS 9) and hedge accounting
+- Revenue recognition (IFRS 15) and complex contracts
+- **IFRS 16 Lease Accounting**: Right-of-use assets, lease liabilities, transition adjustments
+- **IFRS 9 Financial Instruments**: Expected credit losses, classification, hedge accounting
 - Business combinations (IFRS 3) and goodwill
-- Impairment testing and fair value measurements
-- Foreign currency translation and hyperinflation
+- Foreign currency translation and hedging
+- Non-controlling interests and equity accounting
 - Segment reporting and disclosure requirements
 
 💼 **Industry Experience:**
@@ -274,8 +274,9 @@ async def ai_chat_query(request: ChatRequest):
         # Initialize Bytez SDK
         sdk = Bytez("c778aee69e98c1f995dc6cbdd73ef136")
         
-        # Choose Schematron-3B model
+        # Choose Schematron-3B model (3 billion parameter IFRS-trained model)
         model = sdk.model("inference-net/Schematron-3B")
+        logger.info("Using Schematron-3B model for IFRS expertise")
         
         # Build expert prompt for the user's message
         user_message = request.messages[-1].content if request.messages else ""
@@ -347,6 +348,18 @@ async def ai_chat_query(request: ChatRequest):
                 "Check process data for revenue calculation steps",
                 "Review entity-specific revenue policies"
             ]
+        elif 'ifrs 16' in user_message.lower() or 'lease' in user_message.lower():
+            suggestions = [
+                "Analyze right-of-use asset calculations",
+                "Review lease liability measurement entries",
+                "Check lease modification and termination entries"
+            ]
+        elif 'ifrs 9' in user_message.lower() or 'financial instrument' in user_message.lower() or 'credit loss' in user_message.lower():
+            suggestions = [
+                "Review expected credit loss calculations",
+                "Analyze financial instrument classification entries",
+                "Check hedge accounting effectiveness entries"
+            ]
         elif 'consolidation' in user_message.lower():
             suggestions = [
                 "Examine intercompany elimination entries",
@@ -354,8 +367,30 @@ async def ai_chat_query(request: ChatRequest):
                 "Review entity ownership structures"
             ]
         
+        # Extract clean text content from AI response
+        clean_output = output
+        if isinstance(output, dict):
+            clean_output = output.get('content', str(output))
+        elif hasattr(output, 'content'):
+            clean_output = output.content
+        else:
+            clean_output = str(output)
+        
+        # Remove any JSON formatting or raw response artifacts
+        clean_output = str(clean_output).strip()
+        if clean_output.startswith("{'role':") or clean_output.startswith('{"role":'):
+            # Extract content from JSON-like response
+            try:
+                import json
+                if clean_output.startswith("{'role':"):
+                    clean_output = clean_output.replace("'", '"')
+                parsed = json.loads(clean_output)
+                clean_output = parsed.get('content', clean_output)
+            except:
+                pass
+        
         return ChatResponse(
-            output=str(output),
+            output=clean_output,
             error="",
             system_data=system_data,
             suggestions=suggestions
