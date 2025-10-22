@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw, Sparkles } from 'lucide-react';
 import { SearchEngine } from '../data/searchData';
-import Bytez from 'bytez.js';
+import axios from 'axios';
 
 const ChatAssistant = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -23,7 +23,6 @@ const ChatAssistant = () => {
   const inputRef = useRef(null);
   const searchEngine = useRef(new SearchEngine());
   const navigate = useNavigate();
-  const bytezSDK = useRef(new Bytez("c778aee69e98c1f995dc6cbdd73ef136"));
   const [isAIProcessing, setIsAIProcessing] = useState(false);
 
   // Reset chat function
@@ -76,27 +75,30 @@ const ChatAssistant = () => {
     const ifrsKeywords = ['ifrs', 'accounting', 'financial', 'revenue', 'consolidation', 'standard', 'recognition', 'measurement', 'disclosure', 'impairment', 'lease', 'instrument', 'asset', 'liability', 'equity', 'income', 'expense', 'statement', 'reporting'];
     const hasIFRSKeyword = ifrsKeywords.some(keyword => queryLower.includes(keyword));
     
-    // Use AI for longer, complex questions (more than 10 words)
-    const isComplexQuery = query.trim().split(' ').length > 10;
+    // Use AI for longer, complex questions (more than 8 words)
+    const isComplexQuery = query.trim().split(' ').length > 8;
     
     return hasIFRSKeyword || isComplexQuery;
   };
 
-  // Get AI response from Bytez API
+  // Get AI response from backend API
   const getAIResponse = async (query) => {
     try {
       setIsAIProcessing(true);
-      const model = bytezSDK.current.model("inference-net/Schematron-3B");
       
-      const { error, output } = await model.run([
-        {
-          "role": "user",
-          "content": query
-        }
-      ]);
+      const response = await axios.post('/api/ai-chat/query', {
+        messages: [
+          {
+            role: "user",
+            content: query
+          }
+        ]
+      });
+      
+      const { output, error } = response.data;
       
       if (error) {
-        console.error('Bytez API Error:', error);
+        console.error('AI API Error:', error);
         return {
           type: 'ai_error',
           message: 'I apologize, but I encountered an issue processing your question. Please try rephrasing or ask about a specific module.',
