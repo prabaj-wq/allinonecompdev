@@ -199,8 +199,8 @@ const ChatAssistant = () => {
       // Build user context for system integration
       const userContext = {
         current_page: currentPage,
-        analyze_journals: query.toLowerCase().includes('journal') || query.toLowerCase().includes('entry'),
-        analyze_entities: query.toLowerCase().includes('entity') || query.toLowerCase().includes('consolidation'),
+        analyze_journals: query.toLowerCase().includes('journal') || query.toLowerCase().includes('entry') || query.toLowerCase().includes('posted') || query.toLowerCase().includes('backooy'),
+        analyze_entities: query.toLowerCase().includes('entity') || query.toLowerCase().includes('consolidation') || query.toLowerCase().includes('backooy'),
         analyze_processes: currentPage === 'process' || query.toLowerCase().includes('process')
       };
       

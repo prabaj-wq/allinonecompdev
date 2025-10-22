@@ -30,7 +30,7 @@ class ChatResponse(BaseModel):
     system_data: Optional[Dict[str, Any]] = None
     suggestions: Optional[List[str]] = None
 
-def get_system_data(company_name: str, context: Dict[str, Any] = None):
+def get_system_data(company_name: str, context: Dict[str, Any] = None, user_message: str = ""):
     """Fetch relevant system data based on context"""
     try:
         if not company_name or not context:
@@ -60,18 +60,55 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None):
         cur = conn.cursor(cursor_factory=RealDictCursor)
         system_data = {}
         
-        # Get recent journal entries if requested
-        if context.get('analyze_journals'):
-            cur.execute("""
-                SELECT entry_id, description, debit_account, credit_account, amount, currency, entry_date
-                FROM journal_entries 
-                ORDER BY entry_date DESC 
-                LIMIT 10
-            """)
-            system_data['recent_journals'] = [dict(row) for row in cur.fetchall()]
+        # Get recent data input entries if requested or if asking about entries
+        if context.get('analyze_journals') or 'entry' in user_message.lower() or 'posted' in user_message.lower():
+            # Try multiple possible table names for data input
+            tables_to_try = ['entity_amounts', 'data_input_entity_amounts', 'journal_entries']
+            
+            for table_name in tables_to_try:
+                try:
+                    cur.execute(f"""
+                        SELECT * FROM {table_name} 
+                        ORDER BY created_at DESC 
+                        LIMIT 10
+                    """)
+                    entries = [dict(row) for row in cur.fetchall()]
+                    if entries:
+                        system_data['recent_entries'] = entries
+                        system_data['table_used'] = table_name
+                        break
+                except Exception as e:
+                    logger.debug(f"Table {table_name} not found or error: {e}")
+                    continue
+            
+            # Also try to get intercompany entries
+            try:
+                cur.execute("""
+                    SELECT * FROM ic_amounts 
+                    ORDER BY created_at DESC 
+                    LIMIT 5
+                """)
+                ic_entries = [dict(row) for row in cur.fetchall()]
+                if ic_entries:
+                    system_data['ic_entries'] = ic_entries
+            except Exception as e:
+                logger.debug(f"IC amounts table not found: {e}")
+            
+            # Try to get other amounts
+            try:
+                cur.execute("""
+                    SELECT * FROM other_amounts 
+                    ORDER BY created_at DESC 
+                    LIMIT 5
+                """)
+                other_entries = [dict(row) for row in cur.fetchall()]
+                if other_entries:
+                    system_data['other_entries'] = other_entries
+            except Exception as e:
+                logger.debug(f"Other amounts table not found: {e}")
         
         # Get process data if on process page
-        if context.get('current_page') == 'process':
+        if context.get('analyze_processes'):
             cur.execute("""
                 SELECT process_name, status, last_run_date, entity_count
                 FROM financial_processes 
@@ -80,15 +117,26 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None):
             """)
             system_data['recent_processes'] = [dict(row) for row in cur.fetchall()]
         
-        # Get entity data if requested
-        if context.get('analyze_entities'):
-            cur.execute("""
-                SELECT entity_code, entity_name, entity_type, status
-                FROM entities 
-                ORDER BY entity_code 
-                LIMIT 20
-            """)
-            system_data['entities'] = [dict(row) for row in cur.fetchall()]
+        # Get entity data if requested or if asking about specific entities
+        if context.get('analyze_entities') or any(entity_word in user_message.lower() for entity_word in ['entity', 'backooy', 'company']):
+            # Try different possible entity table names
+            entity_tables = ['entities', 'axes_entities', 'entity_structure']
+            
+            for table_name in entity_tables:
+                try:
+                    cur.execute(f"""
+                        SELECT * FROM {table_name} 
+                        ORDER BY entity_code 
+                        LIMIT 20
+                    """)
+                    entities = [dict(row) for row in cur.fetchall()]
+                    if entities:
+                        system_data['entities'] = entities
+                        system_data['entity_table_used'] = table_name
+                        break
+                except Exception as e:
+                    logger.debug(f"Entity table {table_name} not found: {e}")
+                    continue
         
         cur.close()
         conn.close()
@@ -155,8 +203,12 @@ You have access to the user's financial system data and can analyze:
     
     if system_data:
         base_prompt += "\n\n📋 **Available System Data:**"
-        if system_data.get('recent_journals'):
-            base_prompt += f"\n- Recent journal entries ({len(system_data['recent_journals'])} entries available for analysis)"
+        if system_data.get('recent_entries'):
+            base_prompt += f"\n- Recent data entries ({len(system_data['recent_entries'])} entries from {system_data.get('table_used', 'database')} available for analysis)"
+        if system_data.get('ic_entries'):
+            base_prompt += f"\n- Intercompany entries ({len(system_data['ic_entries'])} IC entries available)"
+        if system_data.get('other_entries'):
+            base_prompt += f"\n- Other amount entries ({len(system_data['other_entries'])} other entries available)"
         if system_data.get('recent_processes'):
             base_prompt += f"\n- Process execution data ({len(system_data['recent_processes'])} recent processes)"
         if system_data.get('entities'):
@@ -164,6 +216,27 @@ You have access to the user's financial system data and can analyze:
         base_prompt += "\nUse this data to provide specific, contextual analysis when relevant to the user's question."
     
     base_prompt += f"\n\n**User Question:** {user_message}"
+    
+    # Add actual system data to the prompt for analysis
+    if system_data:
+        base_prompt += "\n\n**ACTUAL SYSTEM DATA FOR ANALYSIS:**"
+        
+        if system_data.get('recent_entries'):
+            base_prompt += f"\n\n📊 **Recent Data Entries from {system_data.get('table_used', 'database')}:**"
+            for i, entry in enumerate(system_data['recent_entries'][:5], 1):
+                base_prompt += f"\n{i}. Entry: {entry}"
+        
+        if system_data.get('ic_entries'):
+            base_prompt += "\n\n🔄 **Intercompany Entries:**"
+            for i, entry in enumerate(system_data['ic_entries'][:3], 1):
+                base_prompt += f"\n{i}. IC Entry: {entry}"
+        
+        if system_data.get('entities'):
+            base_prompt += "\n\n🏢 **Entity Information:**"
+            for i, entity in enumerate(system_data['entities'][:5], 1):
+                base_prompt += f"\n{i}. Entity: {entity}"
+        
+        base_prompt += "\n\n**IMPORTANT:** Analyze the ACTUAL data above to answer the user's question. Reference specific entries, amounts, dates, and entity codes from the real system data."
     
     return base_prompt
 
@@ -189,13 +262,13 @@ async def ai_chat_query(request: ChatRequest):
         # Choose Schematron-3B model
         model = sdk.model("inference-net/Schematron-3B")
         
+        # Build expert prompt for the user's message
+        user_message = request.messages[-1].content if request.messages else ""
+        
         # Get system data if context provided
         system_data = None
         if request.company_name and request.user_context:
-            system_data = get_system_data(request.company_name, request.user_context)
-        
-        # Build expert prompt for the user's message
-        user_message = request.messages[-1].content if request.messages else ""
+            system_data = get_system_data(request.company_name, request.user_context, user_message)
         expert_prompt = build_expert_prompt(
             user_message, 
             request.industry_context, 
