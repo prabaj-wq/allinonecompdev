@@ -62,8 +62,13 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None, user_mess
         
         # Get recent data input entries if requested or if asking about entries
         if context.get('analyze_journals') or 'entry' in user_message.lower() or 'posted' in user_message.lower():
-            # Try multiple possible table names for data input
-            tables_to_try = ['entity_amounts', 'data_input_entity_amounts', 'journal_entries']
+            # Try multiple possible table names for data input, including process-specific tables
+            tables_to_try = [
+                'actuals_entity_amounts_entries',  # Process-specific table from logs
+                'entity_amounts', 
+                'data_input_entity_amounts', 
+                'journal_entries'
+            ]
             
             for table_name in tables_to_try:
                 try:
@@ -76,6 +81,7 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None, user_mess
                     if entries:
                         system_data['recent_entries'] = entries
                         system_data['table_used'] = table_name
+                        logger.info(f"✅ Found {len(entries)} entries in table {table_name}")
                         break
                 except Exception as e:
                     logger.debug(f"Table {table_name} not found or error: {e}")
@@ -119,8 +125,8 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None, user_mess
         
         # Get entity data if requested or if asking about specific entities
         if context.get('analyze_entities') or any(entity_word in user_message.lower() for entity_word in ['entity', 'backooy', 'company']):
-            # Try different possible entity table names
-            entity_tables = ['entities', 'axes_entities', 'entity_structure']
+            # Try different possible entity table names, avoiding problematic ones
+            entity_tables = ['axes_entity_elements', 'entities']
             
             for table_name in entity_tables:
                 try:
@@ -133,6 +139,7 @@ def get_system_data(company_name: str, context: Dict[str, Any] = None, user_mess
                     if entities:
                         system_data['entities'] = entities
                         system_data['entity_table_used'] = table_name
+                        logger.info(f"✅ Found {len(entities)} entities in table {table_name}")
                         break
                 except Exception as e:
                     logger.debug(f"Entity table {table_name} not found: {e}")
@@ -236,7 +243,13 @@ You have access to the user's financial system data and can analyze:
             for i, entity in enumerate(system_data['entities'][:5], 1):
                 base_prompt += f"\n{i}. Entity: {entity}"
         
-        base_prompt += "\n\n**IMPORTANT:** Analyze the ACTUAL data above to answer the user's question. Reference specific entries, amounts, dates, and entity codes from the real system data."
+        base_prompt += \"\"\"\n\n**CRITICAL INSTRUCTIONS FOR DATA ANALYSIS:**
+1. You MUST analyze the ACTUAL system data provided above
+2. Reference SPECIFIC entries, amounts, dates, and entity codes from the real data
+3. If the user asks about a specific entry (like BackoOy cash entry), find it in the data and explain it
+4. DO NOT give generic responses - use the actual numbers, dates, and descriptions from the system
+5. For accounting questions, explain WHY the entry was posted based on the actual data shown
+6. Always cite the specific entry details when answering (entity code, account, amount, date, description)\"\"\"
     
     return base_prompt
 
