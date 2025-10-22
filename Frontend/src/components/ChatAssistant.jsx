@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw, Sparkles, Maximize2, Minimize2, Move, Database, Settings } from 'lucide-react';
 import { SearchEngine } from '../data/searchData';
-import { CompanyContext } from '../context/CompanyContext';
+import { CompanyContext } from '../contexts/CompanyContext';
 import axios from 'axios';
 
 const ChatAssistant = () => {
