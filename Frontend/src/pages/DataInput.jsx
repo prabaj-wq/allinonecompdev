@@ -357,7 +357,7 @@ const DataInput = () => {
         currency: formData.currency_code || 'USD',
         description: formData.description,
         reference_id: formData.reference_id,
-        scenario_id: formData.scenario_id,
+        scenario_id: scenarioId || formData.scenario_id,
         scenario_code: formData.scenario_code,
         origin: 'web_input',
         custom_fields: customFields

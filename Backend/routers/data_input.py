@@ -585,7 +585,7 @@ async def export_data(
             params: List[Any] = [process_id]
 
             if scenario_id is not None:
-                where_conditions.append("scenario_id = %s")
+                where_conditions.append("(scenario_id = %s OR scenario_id IS NULL)")
                 params.append(scenario_id)
 
             where_clause = " AND ".join(where_conditions)

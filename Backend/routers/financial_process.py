@@ -1954,14 +1954,23 @@ async def get_data_input(
                     where_conditions.append("(entity_id = %s OR entity_code = %s)")
                     params.extend([entity_filter, entity_filter])
             
-            # Add year filter if provided
+            # Add year filter if provided - match against fiscal year ID in period_id or fiscal_year text
             if year_id:
-                where_conditions.append("fiscal_year = %s")
-                params.append(year_id)
+                # Try to match fiscal year by looking up the fiscal year name/text
+                cur.execute("SELECT name FROM fiscal_years WHERE id = %s", (year_id,))
+                fy_result = cur.fetchone()
+                if fy_result:
+                    fiscal_year_name = fy_result['name']
+                    where_conditions.append("(fiscal_year ILIKE %s OR fiscal_year ILIKE %s)")
+                    params.extend([f"%{fiscal_year_name}%", f"%{year_id}%"])
+                else:
+                    # Fallback to direct ID match
+                    where_conditions.append("fiscal_year ILIKE %s")
+                    params.append(f"%{year_id}%")
             
-            # Add scenario filter if provided
+            # Add scenario filter if provided - handle both NULL and actual scenario IDs
             if scenario_id:
-                where_conditions.append("scenario_id = %s")
+                where_conditions.append("(scenario_id = %s OR scenario_id IS NULL)")
                 params.append(scenario_id)
             
             where_clause = " AND ".join(where_conditions)
