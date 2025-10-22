@@ -72,6 +72,9 @@ const DataInput = () => {
   const [selectedOtherEntityFilter, setSelectedOtherEntityFilter] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
   const [filteredEntries, setFilteredEntries] = useState([])
+  
+  // File upload ref
+  const fileInputRef = useRef(null)
 
   const showToast = (message, type = 'success') => {
     // Use built-in notification system
@@ -530,6 +533,157 @@ const DataInput = () => {
       totalCount: 0 // Would need separate fetch for Other amounts
     }
   ]
+
+  // Export functionality
+  const handleExport = (cardType) => {
+    try {
+      // Get data to export based on card type
+      const dataToExport = filteredEntries.length > 0 ? filteredEntries : entries.filter(entry => {
+        if (cardType === 'entity_amounts') return entry.type === 'entity' || !entry.type
+        if (cardType === 'ic_amounts') return entry.type === 'intercompany'
+        if (cardType === 'other_amounts') return entry.type === 'other'
+        return true
+      })
+
+      if (dataToExport.length === 0) {
+        showToast('No data to export', 'warning')
+        return
+      }
+
+      // Define CSV headers based on card type
+      let headers = []
+      let csvData = []
+
+      if (cardType === 'entity_amounts') {
+        headers = ['Entity Code', 'Entity Name', 'Account Code', 'Account Name', 'Amount', 'Currency', 'Period', 'Transaction Date', 'Description']
+        csvData = dataToExport.map(entry => [
+          entry.entity_code || '',
+          entry.entity_name || '',
+          entry.account_code || '',
+          entry.account_name || '',
+          entry.amount || 0,
+          entry.currency_code || 'USD',
+          entry.period_name || '',
+          entry.transaction_date || '',
+          entry.description || ''
+        ])
+      } else if (cardType === 'ic_amounts') {
+        headers = ['From Entity Code', 'From Entity Name', 'To Entity Code', 'To Entity Name', 'From Account', 'To Account', 'Amount', 'Currency', 'Transaction Type', 'Description']
+        csvData = dataToExport.map(entry => [
+          entry.from_entity_code || '',
+          entry.from_entity_name || '',
+          entry.to_entity_code || '',
+          entry.to_entity_name || '',
+          entry.from_account_code || '',
+          entry.to_account_code || '',
+          entry.amount || 0,
+          entry.currency_code || 'USD',
+          entry.transaction_type || '',
+          entry.description || ''
+        ])
+      } else if (cardType === 'other_amounts') {
+        headers = ['Entity Code', 'Entity Name', 'Account Code', 'Account Name', 'Amount', 'Currency', 'Adjustment Type', 'Period', 'Description']
+        csvData = dataToExport.map(entry => [
+          entry.entity_code || '',
+          entry.entity_name || '',
+          entry.account_code || '',
+          entry.account_name || '',
+          entry.amount || 0,
+          entry.currency_code || 'USD',
+          entry.adjustment_type || '',
+          entry.period_name || '',
+          entry.description || ''
+        ])
+      }
+
+      // Create CSV content
+      const csvContent = [
+        headers.join(','),
+        ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n')
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `${cardType}_${new Date().toISOString().split('T')[0]}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      showToast(`Exported ${dataToExport.length} entries to CSV`, 'success')
+    } catch (error) {
+      console.error('Export error:', error)
+      showToast('Failed to export data', 'error')
+    }
+  }
+
+  // Import functionality
+  const handleImport = (event, cardType) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    if (!file.name.endsWith('.csv')) {
+      showToast('Please select a CSV file', 'error')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const csv = e.target.result
+        const lines = csv.split('\n')
+        const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim())
+        
+        if (lines.length < 2) {
+          showToast('CSV file appears to be empty', 'error')
+          return
+        }
+
+        const importedData = []
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim()
+          if (!line) continue
+
+          const values = line.split(',').map(v => v.replace(/"/g, '').trim())
+          if (values.length !== headers.length) continue
+
+          const entry = {}
+          headers.forEach((header, index) => {
+            entry[header.toLowerCase().replace(/\s+/g, '_')] = values[index]
+          })
+
+          // Add metadata
+          entry.type = cardType === 'entity_amounts' ? 'entity' : 
+                     cardType === 'ic_amounts' ? 'intercompany' : 'other'
+          entry.id = `import_${Date.now()}_${i}`
+          entry.imported = true
+          entry.import_date = new Date().toISOString()
+
+          importedData.push(entry)
+        }
+
+        if (importedData.length === 0) {
+          showToast('No valid data found in CSV file', 'error')
+          return
+        }
+
+        // Add imported data to entries
+        setEntries(prev => [...prev, ...importedData])
+        showToast(`Imported ${importedData.length} entries from CSV`, 'success')
+
+        // Reset file input
+        event.target.value = ''
+      } catch (error) {
+        console.error('Import error:', error)
+        showToast('Failed to import CSV file', 'error')
+      }
+    }
+
+    reader.readAsText(file)
+  }
 
   const renderCardContent = () => {
     const activeCardData = cards.find(card => card.id === activeCard)

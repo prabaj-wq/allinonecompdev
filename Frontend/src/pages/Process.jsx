@@ -855,6 +855,14 @@ const Process = () => {
     }
   }, [flowMode, availableEntities, getEntityIdentifier])
 
+  // Load process configuration when selectedProcess changes
+  useEffect(() => {
+    if (selectedProcess?.id && selectedCompany) {
+      console.log('🔄 Loading configuration for process:', selectedProcess.name)
+      loadProcessConfiguration(selectedProcess.id)
+    }
+  }, [selectedProcess?.id, selectedCompany])
+
   // Fetch entities from AxesEntity - with fallback data for development/testing when API is unavailable
   const fetchEntities = async () => {
     if (!selectedCompany) return
@@ -1725,20 +1733,30 @@ const Process = () => {
                   <Plus className="h-4 w-4" />
                   Add Node
                 </button>
-                <button 
+                <button
                   onClick={async () => {
                     try {
+                      setSavingConfig(true)
+                      // Save both main configuration and entity-specific configurations
                       await saveProcessConfiguration()
+                      await saveEntityConfigurations()
                       showNotification('✅ Process flow saved successfully!', 'success')
                     } catch (error) {
                       console.error('❌ Error saving process flow:', error)
                       showNotification('❌ Failed to save process flow. Please try again.', 'error')
+                    } finally {
+                      setSavingConfig(false)
                     }
                   }}
-                  className="btn-success inline-flex items-center gap-2 text-sm"
+                  disabled={savingConfig}
+                  className="btn-success inline-flex items-center gap-2 text-sm disabled:opacity-50"
                 >
-                  <CheckCircle className="h-4 w-4" />
-                  Save Flow
+                  {savingConfig ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  {savingConfig ? 'Saving...' : 'Save Flow'}
                 </button>
                 <button 
                   onClick={() => setCurrentView('settings')}
