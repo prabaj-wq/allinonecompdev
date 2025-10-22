@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw, Sparkles, Maximize2, Minimize2, Move, Database, Settings } from 'lucide-react';
 import { SearchEngine } from '../data/searchData';
-import { CompanyContext } from '../contexts/CompanyContext';
+import { useCompany } from '../contexts/CompanyContext';
 import axios from 'axios';
 
 const ChatAssistant = () => {
@@ -12,7 +12,7 @@ const ChatAssistant = () => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [industryContext, setIndustryContext] = useState('');
   const [currentPage, setCurrentPage] = useState('');
-  const { selectedCompany } = useContext(CompanyContext);
+  const { selectedCompany } = useCompany();
   const location = useLocation();
   const [messages, setMessages] = useState([
     {
