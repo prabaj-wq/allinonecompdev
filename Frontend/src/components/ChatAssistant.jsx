@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw } from 'lucide-react';
+import { MessageCircle, X, Send, Bot, User, HelpCircle, ArrowRight, ExternalLink, BookOpen, RefreshCw, Sparkles } from 'lucide-react';
 import { SearchEngine } from '../data/searchData';
+import Bytez from 'bytez.js';
 
 const ChatAssistant = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -22,6 +23,8 @@ const ChatAssistant = () => {
   const inputRef = useRef(null);
   const searchEngine = useRef(new SearchEngine());
   const navigate = useNavigate();
+  const bytezSDK = useRef(new Bytez("c778aee69e98c1f995dc6cbdd73ef136"));
+  const [isAIProcessing, setIsAIProcessing] = useState(false);
 
   // Reset chat function
   const resetChat = () => {
@@ -55,9 +58,78 @@ const ChatAssistant = () => {
     }
   }, [isOpen]);
 
-  // Enhanced chat response with better context understanding
-  const getEnhancedChatResponse = (query) => {
+  // Check if query should be handled by AI (IFRS-related without navigation keywords)
+  const shouldUseAI = (query) => {
     const queryLower = query.toLowerCase();
+    
+    // Don't use AI for navigation commands
+    if (queryLower.includes('go to') || queryLower.includes('navigate to') || queryLower.includes('open')) {
+      return false;
+    }
+    
+    // Don't use AI for reset commands
+    if (queryLower.includes('reset') || queryLower.includes('clear') || queryLower.includes('start over')) {
+      return false;
+    }
+    
+    // Use AI for IFRS-related questions or complex queries
+    const ifrsKeywords = ['ifrs', 'accounting', 'financial', 'revenue', 'consolidation', 'standard', 'recognition', 'measurement', 'disclosure', 'impairment', 'lease', 'instrument', 'asset', 'liability', 'equity', 'income', 'expense', 'statement', 'reporting'];
+    const hasIFRSKeyword = ifrsKeywords.some(keyword => queryLower.includes(keyword));
+    
+    // Use AI for longer, complex questions (more than 10 words)
+    const isComplexQuery = query.trim().split(' ').length > 10;
+    
+    return hasIFRSKeyword || isComplexQuery;
+  };
+
+  // Get AI response from Bytez API
+  const getAIResponse = async (query) => {
+    try {
+      setIsAIProcessing(true);
+      const model = bytezSDK.current.model("inference-net/Schematron-3B");
+      
+      const { error, output } = await model.run([
+        {
+          "role": "user",
+          "content": query
+        }
+      ]);
+      
+      if (error) {
+        console.error('Bytez API Error:', error);
+        return {
+          type: 'ai_error',
+          message: 'I apologize, but I encountered an issue processing your question. Please try rephrasing or ask about a specific module.',
+          timestamp: new Date()
+        };
+      }
+      
+      return {
+        type: 'ai_response',
+        message: output || 'I received your question but couldn\'t generate a response. Please try asking in a different way.',
+        query: query,
+        timestamp: new Date()
+      };
+    } catch (error) {
+      console.error('AI Processing Error:', error);
+      return {
+        type: 'ai_error',
+        message: 'I\'m having trouble connecting to the AI service. Let me help you with navigation or basic questions instead.',
+        timestamp: new Date()
+      };
+    } finally {
+      setIsAIProcessing(false);
+    }
+  };
+
+  // Enhanced chat response with better context understanding
+  const getEnhancedChatResponse = async (query) => {
+    const queryLower = query.toLowerCase();
+    
+    // Check if should use AI first
+    if (shouldUseAI(query)) {
+      return await getAIResponse(query);
+    }
     
     // Handle reset command
     if (queryLower.includes('reset') || queryLower.includes('clear') || queryLower.includes('start over')) {
@@ -374,9 +446,9 @@ const ChatAssistant = () => {
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate typing delay
-    setTimeout(() => {
-      const response = getEnhancedChatResponse(currentQuery);
+    try {
+      // Get response (could be AI or traditional)
+      const response = await getEnhancedChatResponse(currentQuery);
       const botMessage = {
         id: Date.now() + 1,
         type: 'bot',
@@ -387,8 +459,22 @@ const ChatAssistant = () => {
       setMessages(prev => [...prev, botMessage]);
       setIsTyping(false);
       
-      // Navigation is now handled automatically in getEnhancedChatResponse
-    }, 1000);
+      // Navigation is handled automatically in getEnhancedChatResponse
+    } catch (error) {
+      console.error('Message handling error:', error);
+      const errorMessage = {
+        id: Date.now() + 1,
+        type: 'bot',
+        content: {
+          type: 'error',
+          message: 'I encountered an error processing your message. Please try again.',
+          timestamp: new Date()
+        },
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      setIsTyping(false);
+    }
   };
 
   // Handle Enter key press
@@ -407,16 +493,17 @@ const ChatAssistant = () => {
     { label: "ETL pipeline help", action: "What is the ETL pipeline?" },
     { label: "Go to consolidation", action: "Go to consolidation" },
     { label: "Financial ratios", action: "What are financial ratios?" },
-    { label: "Reset Chat", action: "reset_chat", isReset: true }
+    { label: "Reset Chat", action: "reset_chat", isReset: true },
+    { label: "Bytez AI IFRS Help", action: "Bytez AI IFRS Help" }
   ];
 
-  const handleQuickAction = (action, isReset = false) => {
+  const handleQuickAction = async (action, isReset = false) => {
     if (isReset) {
       resetChat();
       return;
     }
     setInputValue(action);
-    handleSendMessage();
+    await handleSendMessage();
   };
 
   // Render message content based on type
@@ -456,6 +543,67 @@ const ChatAssistant = () => {
                 <RefreshCw className="h-4 w-4 text-green-500" />
                 <span className="text-sm font-medium text-slate-900 dark:text-white">
                   Chat Reset
+                </span>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {message.content.message}
+              </p>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {message.timestamp.toLocaleTimeString()}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // AI Response message
+    if (message.content.type === 'ai_response') {
+      return (
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <div className="h-8 w-8 rounded-full bg-purple-500 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+          </div>
+          <div className="flex-1">
+            <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3 max-w-xs lg:max-w-md">
+              <div className="flex items-center space-x-2 mb-2">
+                <Sparkles className="h-4 w-4 text-purple-500" />
+                <span className="text-sm font-medium text-slate-900 dark:text-white">
+                  AI Assistant
+                </span>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+                {message.content.message}
+              </p>
+              <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 mt-2">
+                <ArrowRight className="h-3 w-3 mr-1" />
+                Powered by Schematron-3B
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              {message.timestamp.toLocaleTimeString()}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // AI Error message
+    if (message.content.type === 'ai_error') {
+      return (
+        <div className="flex items-start space-x-3">
+          <div className="flex-shrink-0">
+            <div className="h-8 w-8 rounded-full bg-red-500 flex items-center justify-center">
+              <Bot className="h-4 w-4 text-white" />
+            </div>
+          </div>
+          <div className="flex-1">
+            <div className="bg-white dark:bg-slate-700 border border-red-200 dark:border-red-600 rounded-lg px-4 py-3 max-w-xs lg:max-w-md">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                  AI Service Issue
                 </span>
               </div>
               <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -734,7 +882,7 @@ const ChatAssistant = () => {
             ))}
             
             {/* Typing indicator */}
-            {isTyping && (
+            {(isTyping || isAIProcessing) && (
               <div className="flex items-start space-x-3">
                 <div className="flex-shrink-0">
                   <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center">
@@ -742,10 +890,18 @@ const ChatAssistant = () => {
                   </div>
                 </div>
                 <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="flex items-center space-x-2">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                    {isAIProcessing && (
+                      <div className="flex items-center space-x-1">
+                        <Sparkles className="h-3 w-3 text-purple-500 animate-pulse" />
+                        <span className="text-xs text-purple-500">AI thinking...</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -790,7 +946,7 @@ const ChatAssistant = () => {
               />
               <button
                 onClick={handleSendMessage}
-                disabled={!inputValue.trim() || isTyping}
+                disabled={!inputValue.trim() || isTyping || isAIProcessing}
                 className="px-3 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
               >
                 <Send className="h-4 w-4" />
