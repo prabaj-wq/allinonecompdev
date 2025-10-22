@@ -243,13 +243,15 @@ You have access to the user's financial system data and can analyze:
             for i, entity in enumerate(system_data['entities'][:5], 1):
                 base_prompt += f"\n{i}. Entity: {entity}"
         
-        base_prompt += \"\"\"\n\n**CRITICAL INSTRUCTIONS FOR DATA ANALYSIS:**
+        base_prompt += """
+
+**CRITICAL INSTRUCTIONS FOR DATA ANALYSIS:**
 1. You MUST analyze the ACTUAL system data provided above
 2. Reference SPECIFIC entries, amounts, dates, and entity codes from the real data
 3. If the user asks about a specific entry (like BackoOy cash entry), find it in the data and explain it
 4. DO NOT give generic responses - use the actual numbers, dates, and descriptions from the system
 5. For accounting questions, explain WHY the entry was posted based on the actual data shown
-6. Always cite the specific entry details when answering (entity code, account, amount, date, description)\"\"\"
+6. Always cite the specific entry details when answering (entity code, account, amount, date, description)"""
     
     return base_prompt
 
