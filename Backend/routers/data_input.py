@@ -681,9 +681,14 @@ async def export_data(
 
             print(f"📄 Export query: {query}")
             print(f"📄 Export params: {params}")
-            cur.execute(query, params)
-            rows = cur.fetchall()
-            print(f"✅ Retrieved {len(rows)} rows for export")
+            
+            try:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                print(f"✅ Retrieved {len(rows)} rows for export")
+            except Exception as query_error:
+                print(f"❌ Export query failed: {query_error}")
+                raise HTTPException(status_code=500, detail=f"Export query failed: {str(query_error)}")
 
         if not rows:
             df = pd.DataFrame(columns=headers)

@@ -509,8 +509,8 @@ const DataInput = () => {
       description: 'Financial data for individual entities',
       icon: Building2,
       color: 'bg-blue-500',
-      count: activeCard === 'entity_amounts' ? filteredEntries.length : entries.length,
-      totalCount: entries.length
+      count: activeCard === 'entity_amounts' ? filteredEntries.length : 0,
+      totalCount: activeCard === 'entity_amounts' ? entries.length : 0
     },
     {
       id: 'ic_amounts',
@@ -534,12 +534,9 @@ const DataInput = () => {
 
   // Calculate balance and totals for each card type
   const calculateCardStats = (cardType) => {
-    const cardEntries = entries.filter(entry => {
-      if (cardType === 'entity_amounts') return entry.type === 'entity' || !entry.type
-      if (cardType === 'ic_amounts') return entry.type === 'intercompany'
-      if (cardType === 'other_amounts') return entry.type === 'other'
-      return false
-    })
+    // Since we're fetching entries specific to the active card type,
+    // all entries should belong to the current card type
+    const cardEntries = cardType === activeCard ? entries : []
 
     const totalAmount = cardEntries.reduce((sum, entry) => {
       const amount = parseFloat(entry.amount) || 0
