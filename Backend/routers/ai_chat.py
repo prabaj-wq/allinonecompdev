@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     output: str
-    error: str = None
+    error: str = ""
 
 @router.post("/query", response_model=ChatResponse)
 async def ai_chat_query(request: ChatRequest):
@@ -64,12 +64,12 @@ async def ai_chat_query(request: ChatRequest):
         if not output:
             return ChatResponse(
                 output="I received your question but couldn't generate a response. Please try asking in a different way.",
-                error=None
+                error=""
             )
         
         return ChatResponse(
             output=str(output),
-            error=None
+            error=""
         )
         
     except Exception as e:
