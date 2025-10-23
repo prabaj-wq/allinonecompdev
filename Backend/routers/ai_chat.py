@@ -343,6 +343,178 @@ You have access to the user's financial system data and can analyze:
     
     return base_prompt
 
+def get_fallback_response(user_message: str, system_data: Dict = None):
+    """Provide fallback IFRS guidance when AI service is unavailable"""
+    user_lower = user_message.lower()
+    
+    # Analyze actual data if available
+    if system_data and system_data.get('recent_entries'):
+        entries = system_data['recent_entries']
+        if entries:
+            entry = entries[0]  # Get first entry for analysis
+            
+            # Specific analysis for IFRS 16 questions
+            if 'ifrs 16' in user_lower or 'lease' in user_lower or 'right of use' in user_lower:
+                if 'right' in str(entry.get('account_name', '')).lower() or 'lease' in str(entry.get('account_name', '')).lower():
+                    return ChatResponse(
+                        output=f"""**IFRS 16 Lease Accounting Analysis**
+
+Based on your data, I can see an entry in {entry.get('entity_name', 'the entity')} for {entry.get('account_name', 'the account')} with amount {entry.get('currency', '')} {entry.get('amount', '')}.
+
+**IFRS 16 requires these key entries for lease recognition:**
+
+1. **Initial Recognition:**
+   - Dr. Right-of-Use Asset
+   - Cr. Lease Liability
+
+2. **Subsequent Measurement:**
+   - Dr. Depreciation Expense (ROU Asset)
+   - Cr. Accumulated Depreciation - ROU Asset
+   - Dr. Interest Expense
+   - Cr. Lease Liability
+
+**Your entry appears to be:** {entry.get('description', 'A lease-related transaction')}
+
+**Common IFRS 16 entries you should consider:**
+- Lease commencement recognition
+- Monthly depreciation of ROU asset
+- Interest expense on lease liability
+- Lease payments reducing liability""",
+                        error="",
+                        system_data=system_data,
+                        suggestions=[
+                            "Review lease liability calculation",
+                            "Check ROU asset depreciation schedule",
+                            "Analyze lease payment allocations"
+                        ]
+                    )
+            
+            # General entry analysis
+            return ChatResponse(
+                output=f"""**Entry Analysis for {entry.get('entity_name', 'Entity')}**
+
+I can see an entry with the following details:
+- **Entity:** {entry.get('entity_name', 'N/A')} ({entry.get('entity_code', 'N/A')})
+- **Account:** {entry.get('account_name', 'N/A')} ({entry.get('account_code', 'N/A')})
+- **Amount:** {entry.get('currency', '')} {entry.get('amount', '')}
+- **Period:** {entry.get('period_name', 'N/A')}
+- **Date:** {entry.get('transaction_date', 'N/A')}
+- **Description:** {entry.get('description', 'N/A')}
+
+**Possible reasons for this entry:**
+1. **Opening Balance:** If this is a period opening entry
+2. **Operational Transaction:** Regular business activity
+3. **Adjustment Entry:** Correction or reclassification
+4. **IFRS Compliance:** Meeting specific reporting requirements
+
+**To better understand this entry, consider:**
+- The business context and transaction nature
+- Whether it's part of a larger transaction set
+- Compliance with relevant IFRS standards""",
+                error="",
+                system_data=system_data,
+                suggestions=[
+                    "Review related journal entries",
+                    "Check supporting documentation",
+                    "Verify IFRS compliance"
+                ]
+            )
+    
+    # General IFRS guidance when no specific data
+    if 'ifrs 16' in user_lower or 'lease' in user_lower:
+        return ChatResponse(
+            output="""**IFRS 16 Lease Accounting Overview**
+
+IFRS 16 requires lessees to recognize most leases on the balance sheet:
+
+**Key Recognition Requirements:**
+1. **Right-of-Use Asset** = Lease liability + prepaid lease payments + initial direct costs
+2. **Lease Liability** = Present value of unpaid lease payments
+
+**Common Journal Entries:**
+```
+Initial Recognition:
+Dr. Right-of-Use Asset          XXX
+    Cr. Lease Liability             XXX
+
+Monthly Depreciation:
+Dr. Depreciation Expense        XXX
+    Cr. Accumulated Depreciation    XXX
+
+Interest Expense:
+Dr. Interest Expense            XXX
+    Cr. Lease Liability             XXX
+```
+
+**Implementation Steps:**
+1. Identify lease contracts
+2. Calculate lease liability (PV of payments)
+3. Measure ROU asset
+4. Set up depreciation schedule
+5. Calculate interest expense""",
+            error="AI service temporarily unavailable",
+            suggestions=[
+                "Review your lease contracts",
+                "Calculate present value of lease payments",
+                "Set up ROU asset depreciation schedule"
+            ]
+        )
+    
+    elif 'ifrs 9' in user_lower or 'financial instrument' in user_lower:
+        return ChatResponse(
+            output="""**IFRS 9 Financial Instruments Overview**
+
+IFRS 9 covers classification, measurement, and impairment of financial instruments:
+
+**Classification Categories:**
+1. **Amortized Cost** - Hold to collect contractual cash flows
+2. **FVOCI** - Hold to collect and sell
+3. **FVTPL** - All others
+
+**Expected Credit Loss Model:**
+- **12-month ECL** - Stage 1 (no significant increase in credit risk)
+- **Lifetime ECL** - Stage 2 (significant increase) & Stage 3 (credit-impaired)
+
+**Key Implementation Areas:**
+1. Business model assessment
+2. Contractual cash flow characteristics (SPPI test)
+3. ECL calculation and measurement
+4. Hedge accounting (if applicable)""",
+            error="AI service temporarily unavailable",
+            suggestions=[
+                "Assess your business model for financial instruments",
+                "Perform SPPI test on contractual cash flows",
+                "Calculate expected credit losses"
+            ]
+        )
+    
+    # Default fallback
+    return ChatResponse(
+        output="""**IFRS Consolidation Assistant**
+
+I'm currently experiencing technical difficulties with the AI service, but I can still help with basic IFRS guidance:
+
+**Common IFRS Areas:**
+- **IFRS 15**: Revenue Recognition
+- **IFRS 16**: Lease Accounting  
+- **IFRS 9**: Financial Instruments
+- **IFRS 3**: Business Combinations
+- **IAS 1**: Presentation of Financial Statements
+
+**For specific questions about your data entries, please try:**
+1. Refreshing the page
+2. Asking about specific IFRS standards
+3. Checking your internet connection
+
+I'll be back to full functionality shortly!""",
+        error="AI service temporarily unavailable",
+        suggestions=[
+            "Ask about specific IFRS standards",
+            "Review your journal entries manually", 
+            "Check system connectivity"
+        ]
+    )
+
 @router.post("/query", response_model=ChatResponse)
 async def ai_chat_query(request: ChatRequest):
     """
@@ -394,34 +566,31 @@ async def ai_chat_query(request: ChatRequest):
                 "content": msg.content
             })
         
-        # Send input to model with timeout handling
+        # Send input to model with better error handling
         try:
-            import signal
-            
-            def timeout_handler(signum, frame):
-                raise TimeoutError("AI model timeout")
-            
-            # Set timeout to 30 seconds
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(30)
-            
+            logger.info("Sending request to AI model...")
             output, error = model.run(messages)
+            logger.info(f"AI model response received. Output length: {len(str(output)) if output else 0}")
             
-            # Clear timeout
-            signal.alarm(0)
-            
-        except TimeoutError:
-            logger.error("AI model timeout after 30 seconds")
-            return ChatResponse(
-                output="I'm taking longer than usual to process your request. Please try a simpler question or try again later.",
-                error="Request timeout"
-            )
         except Exception as model_error:
             logger.error(f"AI model error: {model_error}")
-            return ChatResponse(
-                output="I'm having trouble with the AI service right now. Please try again in a moment.",
-                error=str(model_error)
-            )
+            # Check if it's a timeout or connection error
+            error_str = str(model_error).lower()
+            if 'timeout' in error_str or 'time out' in error_str:
+                return ChatResponse(
+                    output="I'm taking longer than usual to process your request. Please try a simpler question or try again later.",
+                    error="Request timeout"
+                )
+            elif 'connection' in error_str or 'network' in error_str:
+                return ChatResponse(
+                    output="I'm having trouble connecting to the AI service. Please check your internet connection and try again.",
+                    error="Connection error"
+                )
+            else:
+                return ChatResponse(
+                    output="I'm experiencing technical difficulties. Please try again in a moment.",
+                    error=str(model_error)
+                )
         
         # Handle the response
         if error:
@@ -432,27 +601,31 @@ async def ai_chat_query(request: ChatRequest):
             )
         
         if not output:
-            # Generate contextual suggestions
-            suggestions = []
-            if 'ifrs 15' in user_message.lower() or 'revenue' in user_message.lower():
-                suggestions = [
-                    "Analyze journal entries for revenue recognition patterns",
-                    "Check process data for revenue calculation steps",
-                    "Review entity-specific revenue policies"
-                ]
-            elif 'consolidation' in user_message.lower():
-                suggestions = [
-                    "Examine intercompany elimination entries",
-                    "Analyze NCI calculation processes",
-                    "Review entity ownership structures"
-                ]
-            
-            return ChatResponse(
-                output="I received your question but couldn't generate a response. Please try asking in a different way.",
-                error="",
-                system_data=system_data,
-                suggestions=suggestions
-            )
+            # Provide fallback IFRS guidance when AI service is unavailable
+            fallback_response = get_fallback_response(user_message, system_data)
+            return fallback_response
+        
+        # Extract clean text content from AI response
+        clean_output = output
+        if isinstance(output, dict):
+            clean_output = output.get('content', str(output))
+        elif hasattr(output, 'content'):
+            clean_output = output.content
+        else:
+            clean_output = str(output)
+        
+        # Remove any JSON formatting or raw response artifacts
+        clean_output = str(clean_output).strip()
+        if clean_output.startswith("{'role':") or clean_output.startswith('{"role":'):
+            # Extract content from JSON-like response
+            try:
+                import json
+                if clean_output.startswith("{'role':"):
+                    clean_output = clean_output.replace("'", '"')
+                parsed = json.loads(clean_output)
+                clean_output = parsed.get('content', clean_output)
+            except:
+                pass
         
         # Generate contextual suggestions
         suggestions = []
@@ -480,28 +653,6 @@ async def ai_chat_query(request: ChatRequest):
                 "Analyze NCI calculation processes",
                 "Review entity ownership structures"
             ]
-        
-        # Extract clean text content from AI response
-        clean_output = output
-        if isinstance(output, dict):
-            clean_output = output.get('content', str(output))
-        elif hasattr(output, 'content'):
-            clean_output = output.content
-        else:
-            clean_output = str(output)
-        
-        # Remove any JSON formatting or raw response artifacts
-        clean_output = str(clean_output).strip()
-        if clean_output.startswith("{'role':") or clean_output.startswith('{"role":'):
-            # Extract content from JSON-like response
-            try:
-                import json
-                if clean_output.startswith("{'role':"):
-                    clean_output = clean_output.replace("'", '"')
-                parsed = json.loads(clean_output)
-                clean_output = parsed.get('content', clean_output)
-            except:
-                pass
         
         return ChatResponse(
             output=clean_output,
