@@ -440,6 +440,11 @@ def get_document_context(user_message: str):
 def get_fallback_response(user_message: str, system_data: Dict = None):
     """Provide fallback IFRS guidance when AI service is unavailable"""
     user_lower = user_message.lower()
+    logger.info(f"Using fallback response for: {user_message[:100]}")
+    
+    # Check if we have system data to analyze
+    if system_data and system_data.get('recent_entries'):
+        logger.info(f"Fallback has system data with {len(system_data['recent_entries'])} entries")
     
     # Special handling for BackoOy entry questions
     if "backo" in user_lower and "entry" in user_lower and "1000" in user_message:
@@ -535,6 +540,7 @@ Company X recognizes revenue immediately when selling to Bank Y, unless buyback 
         entries = system_data['recent_entries']
         if entries:
             entry = entries[0]  # Get first entry for analysis
+            logger.info(f"Fallback using system data with {len(entries)} entries")
             
             # Specific analysis for IFRS 16 questions
             if 'ifrs 16' in user_lower or 'lease' in user_lower or 'right of use' in user_lower:
@@ -572,11 +578,13 @@ Based on your data, I can see an entry in {entry.get('entity_name', 'the entity'
                         ]
                     )
             
-            # Enhanced entry analysis with IFRS guidance
+            # Enhanced entry analysis with IFRS guidance for any data entry question
             return ChatResponse(
-                output=f"""**Detailed Entry Analysis for {entry.get('entity_name', 'BackoOy')}**
+                output=f"""**Data Entry Analysis - {entry.get('entity_name', 'Entity')}**
 
-Based on your system data, I can see an entry with the following details:
+**Your Question:** {user_message}
+
+**Entry Found in System:**
 
 **Entry Details:**
 - **Entity:** {entry.get('entity_name', 'BackoOy')} ({entry.get('entity_code', 'BACKO')})
@@ -894,6 +902,10 @@ async def ai_chat_query(request: ChatRequest):
         if request.company_name and request.user_context:
             try:
                 system_data = get_system_data(request.company_name, request.user_context, user_message)
+                if system_data and system_data.get('recent_entries'):
+                    logger.info(f"Retrieved {len(system_data['recent_entries'])} entries for user question: {user_message[:100]}")
+                else:
+                    logger.info(f"No system data found for question: {user_message[:100]}")
             except Exception as data_error:
                 logger.error(f"Error getting system data: {data_error}")
                 # Continue without system data
