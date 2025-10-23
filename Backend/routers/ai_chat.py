@@ -321,11 +321,17 @@ You have access to real financial system data and can analyze:
 
 **Response Quality Standards:**
 - Reference specific IFRS paragraphs (e.g., IFRS 15.31, IAS 36.6)
-- Provide industry benchmarking examples
+- Provide industry benchmarking examples with real company names and annual report citations
 - Explain the economic substance behind accounting treatments
-- Offer practical implementation guidance
+- Offer practical implementation guidance with step-by-step procedures
 - Suggest verification and validation procedures
 - Consider materiality and disclosure requirements
+- Include Big 4 accounting firm guidance and interpretations
+- Reference regulatory precedents and compliance considerations
+- Provide professional judgment frameworks for decision-making
+- Ensure responses help professionals make informed decisions
+- Always maintain professional credibility and accuracy
+- Include risk mitigation strategies and audit considerations
 """
     
     if industry_context:

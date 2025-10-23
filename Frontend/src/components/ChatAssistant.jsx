@@ -622,24 +622,59 @@ const ChatAssistant = () => {
       };
     } catch (error) {
       console.error('AI Processing Error:', error);
-      
-      // If we have an error response with actual content, use it
-      if (error.response && error.response.data && error.response.data.output) {
+        
+        // If we have an error response with actual content, use it
+        if (error.response && error.response.data && error.response.data.output) {
+          return {
+            type: 'ai_response',
+            message: error.response.data.output,
+            query: query,
+            followUpOptions: error.response.data.suggestions || [],
+            systemData: error.response.data.system_data,
+            industryContext: industryContext,
+            timestamp: new Date()
+          };
+        }
+        
+        // Try fallback only for general questions - specific questions should always use AI
+        const fallbackResponse = getLocalFallbackResponse(query);
+        if (fallbackResponse) {
+          return fallbackResponse;
+        }
+        
+        // If no fallback available, return error message encouraging backend AI usage
         return {
           type: 'ai_response',
-          message: error.response.data.output,
+          message: `**Professional IFRS Analysis Required**
+
+I need to provide you with professional-grade analysis for your question, but I'm currently experiencing connectivity issues with the advanced AI service.
+
+**Your Question:** "${query}"
+
+**For Professional Analysis:**
+- This question requires dynamic analysis with industry references
+- Professional judgment considerations need to be evaluated
+- Real company examples and regulatory precedents should be included
+- Big 4 accounting firm guidance should be referenced
+
+**Please try again in a moment for comprehensive professional analysis.**
+
+**Alternative Actions:**
+- Check your system's Data Input module for specific entry details
+- Consult your organization's IFRS implementation guidelines
+- Review relevant annual reports from industry peers
+- Consider consultation with external accounting advisors`,
           query: query,
-          followUpOptions: error.response.data.suggestions || [],
-          systemData: error.response.data.system_data,
-          industryContext: industryContext,
+          followUpOptions: [
+            "Try AI analysis again",
+            "Navigate to Data Input module",
+            "Access IFRS documents folder",
+            "Contact professional support"
+          ],
+          industryContext: "Professional IFRS Analysis",
           timestamp: new Date()
         };
-      }
-      
-      // Enhanced fallback with IFRS expertise
-      const fallbackResponse = getLocalFallbackResponse(query);
-      return fallbackResponse;
-    } finally {
+      } finally {
       setIsAIProcessing(false);
       stopLoadingPhrases();
     }
@@ -649,67 +684,12 @@ const ChatAssistant = () => {
   const getLocalFallbackResponse = (query) => {
     const queryLower = query.toLowerCase();
     
-    // Enhanced analysis for specific data mentions
-    if (queryLower.includes('backo') || queryLower.includes('entry') || queryLower.includes('entries') || queryLower.includes('posted')) {
-      // Extract specific details from the query
-      const amountMatch = query.match(/\b(\d+)\b/);
-      const amount = amountMatch ? amountMatch[1] : '1000';
-      const monthMatch = query.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i);
-      const month = monthMatch ? monthMatch[1] : 'January';
-      const yearMatch = query.match(/\b(20\d{2})\b/);
-      const year = yearMatch ? yearMatch[1] : '2025';
-      
-      return {
-        type: 'ai_response',
-        message: `**Real-Time Entry Analysis for BackoOy**
-
-I'm analyzing your question about BackoOy entries with amount ${amount} in ${month} ${year}. Let me provide specific IFRS guidance:
-
-**Most Likely Scenarios for ${amount} Amount:**
-
-**1. IFRS 16 Lease Recognition (High Probability)**
-- **Initial Entry:** Dr. Right-of-Use Asset ${amount} / Cr. Lease Liability ${amount}
-- **Standard Reference:** IFRS 16.22-24 (Initial measurement)
-- **Monthly Follow-up:** Depreciation + Interest expense
-- **Common For:** Office leases, equipment rentals, vehicle leases
-
-**2. IFRS 9 Financial Instruments (Medium Probability)**
-- **Classification Process:**
-  - **Step 1:** Business Model Test (Hold to collect, Hold to collect & sell, Other)
-  - **Step 2:** SPPI Test (Solely payments of principal and interest?)
-  - **Result:** Amortized Cost, FVOCI, or FVTPL
-- **Standard Reference:** IFRS 9.4.1.1-4.1.3, IFRS 9.5.1.1
-- **ECL Stages:** Stage 1 (12-month ECL), Stage 2/3 (Lifetime ECL)
-- **Example Entry:** Dr. Financial Asset ${amount} / Cr. Cash ${amount}
-
-**3. Opening Balance Adjustments**
-- **Period Opening:** Brought forward balances for ${year}
-- **Standard Reference:** IAS 1.54 (Opening balances)
-- **Common Accounts:** Cash, Retained Earnings, Fixed Assets
-
-**Industry Benchmarking:**
-- **Tata Motors:** ₹${amount} typical for small equipment leases
-- **Infosys:** Common amount for office lease ROU assets
-- **Manufacturing Sector:** Standard for facility lease recognition
-
-**Verification Steps:**
-1. **Check Data Input Module** - View actual entry details
-2. **Review Account Codes** - Identify asset/liability classification  
-3. **Examine Supporting Docs** - Lease agreements, contracts
-4. **Validate IFRS Compliance** - Ensure proper standard application
-
-**Next Actions:**
-Navigate to your Data Input module to see the actual entries with account codes, descriptions, and supporting documentation for precise analysis.`,
-        query: query,
-        followUpOptions: [
-          "Navigate to Data Input module",
-          "Explain IFRS 16 lease accounting in detail",
-          "Show IFRS 9 classification process",
-          "Help with opening balance procedures"
-        ],
-        industryContext: "Multi-entity Consolidation",
-        timestamp: new Date()
-      };
+    // For specific data questions, always use backend AI for dynamic analysis
+    if (queryLower.includes('backo') || queryLower.includes('entry') || queryLower.includes('entries') || queryLower.includes('posted') ||
+        /\b\d+\b/.test(query) || queryLower.includes('entity') || queryLower.includes('amount')) {
+      // Let the backend AI handle all specific data analysis dynamically
+      // No hardcoded responses - always use AI for professional analysis
+      return null; // This will trigger the backend AI call
     }
     
     // IFRS 16 specific guidance - check if it's general or specific
@@ -817,38 +797,8 @@ Dr. Lease Liability                      2,500
           timestamp: new Date()
         };
       } else {
-        // For specific questions, let the backend handle with actual data
-        return {
-          type: 'ai_response',
-          message: `**IFRS 16 Analysis Request**
-
-I need to analyze your specific IFRS 16 question with your actual system data. Please ensure I have access to your journal entries and I'll provide detailed analysis of:
-
-- Specific entry amounts and accounts
-- Debit/credit analysis for your actual transactions
-- Entity-specific lease accounting treatment
-- Compliance with IFRS 16 requirements for your data
-
-**What I'll analyze:**
-- Right-of-Use Asset recognition entries
-- Lease Liability initial measurement
-- Subsequent depreciation and interest calculations
-- Any errors in debit/credit treatment
-
-**For better analysis, please specify:**
-- Entity name or code
-- Specific amounts or dates
-- Account names or descriptions involved`,
-          query: query,
-          followUpOptions: [
-            "Analyze specific lease entries",
-            "Check IFRS 16 compliance for my data",
-            "Explain debit/credit treatment",
-            "Navigate to Data Input for details"
-          ],
-          industryContext: "IFRS 16 Data Analysis",
-          timestamp: new Date()
-        };
+        // For specific IFRS 16 questions, use backend AI for dynamic analysis
+        return null; // This will trigger the backend AI call for professional analysis
       }
     }
     
@@ -958,151 +908,13 @@ Dr. Credit Loss Expense             150
       };
     }
     
-    // Complex transaction scenarios (tripartite agreements, sale-leaseback, etc.)
+    // For complex transaction scenarios, always use backend AI for professional analysis
     if (queryLower.includes('tripartite') || queryLower.includes('three party') || 
         (queryLower.includes('company') && queryLower.includes('bank') && queryLower.includes('customer')) ||
         queryLower.includes('sale-leaseback') || queryLower.includes('complex transaction') ||
         (queryLower.includes('revenue') && queryLower.includes('lease') && queryLower.includes('agreement'))) {
-      return {
-        type: 'ai_response',
-        message: `**Complex Transaction Analysis - Tripartite Agreements & Revenue Recognition**
-
-**Scenario Analysis: Company-Bank-Customer Arrangements**
-
-Your question involves a complex tripartite arrangement with revenue recognition and lease accounting implications. Here's comprehensive guidance with industry references:
-
-**IFRS Standards Applicable:**
-- **IFRS 15**: Revenue from Contracts with Customers (5-step model)
-- **IFRS 16**: Leases (lessor and lessee accounting)
-- **IFRS 9**: Financial Instruments (if financing component exists)
-
-**Revenue Recognition Analysis (IFRS 15):**
-
-**Step 1: Contract Identification**
-- **Company X → Bank Y**: Sale contract (immediate transfer)
-- **Bank Y → Customer Z**: Lease contract (performance over time)
-- **Company X buyback right**: Contingent arrangement
-
-**Step 2: Performance Obligations**
-- Company X: Transfer asset to Bank Y
-- Bank Y: Provide lease services to Customer Z
-- Buyback right: Contingent obligation
-
-**Step 3: Transaction Price Determination**
-- Sale price from X to Y (fixed)
-- Lease payments from Z to Y (over lease term)
-- Buyback price (contingent/variable)
-
-**Industry Practice Examples:**
-
-**Automotive Sector - Equipment Financing:**
-- **Tata Motors**: Similar arrangements for commercial vehicle financing
-  - *Annual Report 2023*: "Revenue from vehicle sales to financing partners recognized at point of transfer"
-  - Treatment: Immediate revenue recognition on sale to bank, no lease accounting for manufacturer
-  
-- **Mahindra Finance**: Tripartite auto loan arrangements
-  - *Financial Statements 2023*: "Commission income from dealer arrangements recognized over loan term"
-  - Treatment: Bank recognizes financing income over lease/loan period
-
-**Technology Sector - Equipment Leasing:**
-- **HCL Technologies**: IT equipment sale-leaseback arrangements
-  - *Annual Report 2023*: "Proceeds from asset sales recognized immediately when control transfers"
-  - Treatment: Revenue recognized on sale, leaseback treated separately under IFRS 16
-
-**Banking Sector - Lease Financing:**
-- **HDFC Bank**: Equipment financing through tripartite agreements
-  - *Annual Report 2023*: "Lease rental income recognized on straight-line basis over lease term"
-  - Treatment: Bank as lessor recognizes lease income over term
-
-**Real Estate - Developer-Bank-Buyer Arrangements:**
-- **DLF Limited**: Home loan tie-ups with banks
-  - *Annual Report 2023*: "Revenue from unit sales recognized on registration/possession"
-  - Treatment: Developer recognizes revenue on sale completion, not on loan disbursement
-
-**Recommended Accounting Treatment:**
-
-**For Company X (Original Seller):**
-\`\`\`
-At Sale to Bank Y:
-Dr. Cash/Receivable                    XXX
-    Cr. Revenue                            XXX
-    Cr. Cost of Goods Sold               XXX
-(Revenue recognized immediately on transfer to bank)
-
-Buyback Right Recognition:
-Dr. Contingent Asset/Liability         XXX
-    Cr. Deferred Revenue/Provision        XXX
-(If buyback has commercial substance)
-\`\`\`
-
-**For Bank Y (Lessor):**
-\`\`\`
-At Purchase from Company X:
-Dr. Leased Asset                       XXX
-    Cr. Cash                              XXX
-
-At Lease Commencement with Customer Z:
-Dr. Lease Receivable                   XXX
-    Cr. Leased Asset                      XXX
-(If finance lease) OR recognize lease income over term (if operating lease)
-\`\`\`
-
-**Big 4 Firm Guidance:**
-
-**Deloitte Interpretation:**
-- "Tripartite arrangements require careful analysis of control transfer"
-- "Revenue recognition depends on when performance obligations are satisfied"
-
-**PwC Guidance:**
-- "Buyback rights may indicate continuing involvement"
-- "Assess if arrangement is sale or financing transaction"
-
-**EY Position:**
-- "Consider substance over form in complex arrangements"
-- "Evaluate if risks and rewards have transferred"
-
-**KPMG View:**
-- "Contingent buyback rights require careful measurement"
-- "Consider probability of exercise in revenue recognition"
-
-**Regulatory Precedents:**
-
-**SEBI Guidance (India):**
-- Listed companies must disclose significant tripartite arrangements
-- Revenue recognition policies must be clearly stated
-
-**SEC Precedents (US):**
-- Staff Accounting Bulletins emphasize substance over form
-- Complex arrangements require detailed disclosure
-
-**Key Decision Points:**
-
-1. **Control Transfer**: Has Company X transferred control to Bank Y?
-2. **Continuing Involvement**: Does buyback right indicate ongoing involvement?
-3. **Commercial Substance**: Is the arrangement genuine or financing in disguise?
-4. **Measurement**: How to measure contingent buyback obligations?
-
-**Industry Best Practices:**
-- Document the business rationale for the arrangement
-- Obtain legal opinions on contract terms
-- Consider external auditor consultation for complex structures
-- Ensure adequate disclosure in financial statements
-
-**Common Pitfalls to Avoid:**
-- Premature revenue recognition before control transfer
-- Ignoring contingent buyback obligations
-- Inadequate disclosure of arrangement terms
-- Mixing different accounting standards inappropriately`,
-        query: query,
-        followUpOptions: [
-          "Analyze specific tripartite agreement terms",
-          "Review industry precedents for similar arrangements",
-          "Explain IFRS 15 control transfer criteria",
-          "Help with complex revenue recognition scenarios"
-        ],
-        industryContext: "Complex Transaction Analysis",
-        timestamp: new Date()
-      };
+      // Let backend AI provide dynamic professional analysis with industry references
+      return null; // This will trigger the backend AI call
     }
     
     // Comprehensive IFRS expertise fallback
