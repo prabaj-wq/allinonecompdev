@@ -402,17 +402,67 @@ You have access to real financial system data and can analyze:
 - Always cite specific entry details (entity code, account, amount, date, description)
 - Correct any errors in the data (e.g., negative amounts that should be positive)
 
-**DEBIT/CREDIT ANALYSIS RULES:**
-- Assets: Debit increases, Credit decreases (normal debit balance)
-- Liabilities: Credit increases, Debit decreases (normal credit balance)  
-- Equity: Credit increases, Debit decreases (normal credit balance)
-- Revenue: Credit increases, Debit decreases (normal credit balance)
-- Expenses: Debit increases, Credit decreases (normal debit balance)
+**CRITICAL ACCOUNTING FUNDAMENTALS - NEVER GET THESE WRONG:**
 
-**IFRS 16 SPECIFIC RULES:**
-- Right-of-Use Asset: ALWAYS debit (asset increase)
-- Lease Liability: ALWAYS credit (liability increase)
-- If you see negative amounts, explain the correct accounting treatment"""
+**DEBIT/CREDIT ANALYSIS RULES (FUNDAMENTAL):**
+- **Assets**: Debit increases (+), Credit decreases (-) [Normal debit balance]
+- **Liabilities**: Credit increases (+), Debit decreases (-) [Normal credit balance]  
+- **Equity**: Credit increases (+), Debit decreases (-) [Normal credit balance]
+- **Revenue**: Credit increases (+), Debit decreases (-) [Normal credit balance]
+- **Expenses**: Debit increases (+), Credit decreases (-) [Normal debit balance]
+
+**IFRS 16 LEASE ACCOUNTING - CORRECT JOURNAL ENTRIES:**
+
+**Initial Recognition (ALWAYS):**
+```
+Dr. Right-of-Use Asset               XXX
+    Cr. Lease Liability                  XXX
+```
+**EXPLANATION:** 
+- Right-of-Use Asset is an ASSET - debits increase assets
+- Lease Liability is a LIABILITY - credits increase liabilities
+- NEVER reverse these - this is fundamental accounting
+
+**Subsequent Measurement:**
+```
+Monthly Depreciation:
+Dr. Depreciation Expense             XXX
+    Cr. Accumulated Depreciation         XXX
+
+Monthly Interest:
+Dr. Interest Expense                 XXX
+    Cr. Lease Liability                  XXX
+
+Monthly Payment:
+Dr. Lease Liability                  XXX
+    Cr. Cash                             XXX
+```
+
+**CRITICAL ERROR PREVENTION:**
+- NEVER show "Dr. Lease Liability, Cr. Right-of-Use Asset" for initial recognition
+- NEVER confuse asset and liability treatment
+- ALWAYS verify journal entries follow basic accounting equation
+- Assets = Liabilities + Equity must always balance
+
+**COMPLEX TRANSACTION ANALYSIS RULES:**
+
+**Tripartite Agreements (Company X → Bank Y → Customer Z):**
+1. **Company X to Bank Y Sale**: 
+   - This is a SALE transaction for Company X
+   - Revenue recognition depends on control transfer (IFRS 15)
+   - Journal Entry: Dr. Cash/Receivable, Cr. Revenue (for Company X)
+
+2. **Bank Y to Customer Z Lease**:
+   - This is a LEASE transaction for Bank Y (as lessor)
+   - Bank Y applies lessor accounting under IFRS 16
+   - Customer Z applies lessee accounting under IFRS 16
+
+3. **Revenue Recognition Timing**:
+   - Company X: Revenue when control transfers to Bank Y (immediate if no continuing involvement)
+   - Bank Y: Lease income over lease term (if operating lease) or finance income (if finance lease)
+
+**NEVER confuse the parties or their accounting treatments**
+**ALWAYS identify who is the buyer, seller, lessor, and lessee in each transaction**"""
     
     return base_prompt
 
@@ -742,6 +792,63 @@ async def ai_chat_query(request: ChatRequest):
             clean_output = output.content
         else:
             clean_output = str(output)
+        
+        # Quality check for common accounting errors
+        quality_issues = []
+        
+        # Check for incorrect IFRS 16 journal entries
+        if "ifrs 16" in user_message.lower() or "lease" in user_message.lower():
+            if ("Dr. Lease Liability" in clean_output or "Debit: Lease Liability" in clean_output) and \
+               ("Cr. Right-of-Use Asset" in clean_output or "Credit: Right-of-Use Asset" in clean_output):
+                quality_issues.append("Incorrect IFRS 16 journal entry - debits and credits are reversed")
+        
+        # Check for basic accounting equation violations in journal entries
+        if ("Dr." in clean_output or "Debit" in clean_output) and ("Cr." in clean_output or "Credit" in clean_output):
+            # Look for fundamental errors in asset/liability treatment
+            if "asset" in clean_output.lower() and "liability" in clean_output.lower():
+                # Check for obvious errors like crediting assets to increase them
+                import re
+                if re.search(r'credit.*asset.*increase|debit.*liability.*increase', clean_output.lower()):
+                    quality_issues.append("Fundamental accounting error - incorrect debit/credit treatment")
+        
+        if quality_issues:
+            logger.error(f"Quality issues detected in AI response: {quality_issues}")
+            # Return corrected response
+            return ChatResponse(
+                output=f"""**Quality Check Failed - Providing Corrected Response**
+
+The AI response contained fundamental accounting errors. Here's the correct information:
+
+**IFRS 16 Initial Recognition (Correct):**
+```
+Dr. Right-of-Use Asset               XXX
+    Cr. Lease Liability                  XXX
+```
+
+**Explanation:**
+- Right-of-Use Asset is an ASSET → Debits increase assets
+- Lease Liability is a LIABILITY → Credits increase liabilities
+
+**Fundamental Accounting Rules:**
+- Assets: Debit increases (+), Credit decreases (-)
+- Liabilities: Credit increases (+), Debit decreases (-)
+- Equity: Credit increases (+), Debit decreases (-)
+- Revenue: Credit increases (+), Debit decreases (-)
+- Expenses: Debit increases (+), Credit decreases (-)
+
+**For your specific question about "{user_message}":**
+Please ask again for a corrected professional analysis that follows proper accounting fundamentals.
+
+**Quality Issues Detected:**
+{chr(10).join(f'• {issue}' for issue in quality_issues)}""",
+                error="Quality check failed",
+                suggestions=[
+                    "Ask for corrected IFRS 16 analysis",
+                    "Request proper journal entry format", 
+                    "Get fundamental accounting review",
+                    "Verify debit/credit treatment"
+                ]
+            )
         
         # Remove any JSON formatting or raw response artifacts
         clean_output = str(clean_output).strip()
