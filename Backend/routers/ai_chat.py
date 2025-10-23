@@ -375,13 +375,33 @@ You have access to real financial system data and can analyze:
         
         base_prompt += """
 
-**CRITICAL INSTRUCTIONS FOR DATA ANALYSIS:**
-1. You MUST analyze the ACTUAL system data provided above
-2. Reference SPECIFIC entries, amounts, dates, and entity codes from the real data
-3. If the user asks about a specific entry (like BackoOy cash entry), find it in the data and explain it
-4. DO NOT give generic responses - use the actual numbers, dates, and descriptions from the system
-5. For accounting questions, explain WHY the entry was posted based on the actual data shown
-6. Always cite the specific entry details when answering (entity code, account, amount, date, description)"""
+**CRITICAL ANALYSIS INSTRUCTIONS:**
+
+**FOR GENERAL QUESTIONS (no specific entities/amounts mentioned):**
+- Provide comprehensive IFRS guidance with standard references
+- Include industry examples and best practices
+- Give step-by-step implementation guidance
+- Use generic examples with clear journal entry formats
+
+**FOR SPECIFIC DATA QUESTIONS (entity names, specific amounts, dates mentioned):**
+- MUST analyze the ACTUAL system data provided above
+- Reference SPECIFIC entries, amounts, dates, and entity codes from the real data
+- Find matching entries in the data and explain them in detail
+- Explain WHY each entry was posted based on the actual data shown
+- Always cite specific entry details (entity code, account, amount, date, description)
+- Correct any errors in the data (e.g., negative amounts that should be positive)
+
+**DEBIT/CREDIT ANALYSIS RULES:**
+- Assets: Debit increases, Credit decreases (normal debit balance)
+- Liabilities: Credit increases, Debit decreases (normal credit balance)  
+- Equity: Credit increases, Debit decreases (normal credit balance)
+- Revenue: Credit increases, Debit decreases (normal credit balance)
+- Expenses: Debit increases, Credit decreases (normal debit balance)
+
+**IFRS 16 SPECIFIC RULES:**
+- Right-of-Use Asset: ALWAYS debit (asset increase)
+- Lease Liability: ALWAYS credit (liability increase)
+- If you see negative amounts, explain the correct accounting treatment"""
     
     return base_prompt
 

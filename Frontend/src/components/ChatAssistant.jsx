@@ -712,67 +712,144 @@ Navigate to your Data Input module to see the actual entries with account codes,
       };
     }
     
-    // IFRS 16 specific guidance
+    // IFRS 16 specific guidance - check if it's general or specific
     if (queryLower.includes('ifrs 16') || queryLower.includes('lease') || queryLower.includes('right of use')) {
-      return {
-        type: 'ai_response',
-        message: `**IFRS 16 Lease Accounting - Complete Guide**
+      // Check if it's a general question (no specific entities/amounts mentioned)
+      const isGeneralQuestion = !queryLower.includes('backo') && 
+                               !queryLower.includes('entity') && 
+                               !/\b\d+\b/.test(query) && // no specific amounts
+                               !queryLower.includes('entry') &&
+                               !queryLower.includes('posted');
+      
+      if (isGeneralQuestion) {
+        return {
+          type: 'ai_response',
+          message: `**IFRS 16 Lease Accounting - Complete Implementation Guide**
 
 **Standard References:**
-- **IFRS 16.22**: Initial measurement of lease liability
+- **IFRS 16.22**: Initial measurement of lease liability at present value of lease payments
 - **IFRS 16.23**: Initial measurement of right-of-use asset
-- **IFRS 16.36**: Subsequent measurement of lease liability
-- **IFRS 16.29**: Subsequent measurement of ROU asset
+- **IFRS 16.36**: Subsequent measurement of lease liability using effective interest method
+- **IFRS 16.29**: Subsequent measurement of ROU asset (cost model)
 
-**Required Journal Entries:**
+**Initial Recognition Journal Entries:**
 
 \`\`\`
-Initial Recognition (Lease Commencement):
-Dr. Right-of-Use Asset                1,000
-    Cr. Lease Liability                   1,000
+At Lease Commencement Date:
+Dr. Right-of-Use Asset                 100,000
+    Cr. Lease Liability                    100,000
+(To record initial recognition of lease)
+\`\`\`
 
+**Subsequent Measurement Entries:**
+
+\`\`\`
 Monthly Depreciation:
-Dr. Depreciation Expense - ROU Asset    83
-    Cr. Accumulated Depreciation - ROU     83
+Dr. Depreciation Expense - ROU Asset     2,083
+    Cr. Accumulated Depreciation - ROU       2,083
+(100,000 ÷ 48 months = 2,083 per month)
 
-Monthly Interest:
-Dr. Interest Expense                    25
-    Cr. Lease Liability                    25
+Monthly Interest on Lease Liability:
+Dr. Interest Expense                       417
+    Cr. Lease Liability                        417
+(Lease liability × monthly interest rate)
 
-Monthly Payment:
-Dr. Lease Liability                    108
-    Cr. Cash                              108
+Monthly Lease Payment:
+Dr. Lease Liability                      2,500
+    Cr. Cash                                 2,500
+(Actual lease payment made)
 \`\`\`
 
-**Industry Benchmarking:**
+**Key Implementation Steps:**
 
-**Automotive Sector:**
-- **Tata Motors**: Recognizes leases for manufacturing facilities, average 2-5 year terms
-- **Mahindra**: Significant ROU assets for dealership properties
-- **Maruti Suzuki**: Factory and office lease capitalization
+**1. Lease Identification (IFRS 16.9-11)**
+- Contract conveys right to control use of identified asset
+- For a period of time in exchange for consideration
+
+**2. Initial Measurement**
+- **Lease Liability**: Present value of unpaid lease payments
+- **ROU Asset**: Lease liability + prepayments + initial direct costs
+
+**3. Discount Rate Selection**
+- Rate implicit in lease (if determinable)
+- Lessee's incremental borrowing rate (if implicit rate not available)
+
+**4. Lease Payments Include:**
+- Fixed payments (less incentives receivable)
+- Variable payments based on index/rate
+- Residual value guarantees
+- Purchase options (if reasonably certain)
+- Termination penalties (if lease term reflects exercise)
+
+**Industry Applications:**
+
+**Manufacturing & Automotive:**
+- **Tata Motors**: Manufacturing facilities, equipment leases
+- **Mahindra**: Dealership properties, production equipment
+- **Maruti Suzuki**: Factory buildings, office spaces
 
 **Technology Sector:**
-- **Infosys**: Office space leases, average 3-10 year terms
-- **TCS**: Global office lease portfolio recognition
-- **Wipro**: Data center and office facility leases
+- **Infosys**: Office buildings, data centers (3-10 year terms)
+- **TCS**: Global office portfolio, server facilities
+- **Wipro**: Development centers, customer delivery locations
 
-**Implementation Checklist:**
-1. ✅ Identify all lease contracts
-2. ✅ Calculate present value of lease payments
-3. ✅ Recognize ROU asset and lease liability
-4. ✅ Set up depreciation schedule
-5. ✅ Calculate effective interest rate
-6. ✅ Prepare monthly journal entries`,
-        query: query,
-        followUpOptions: [
-          "Calculate lease liability present value",
-          "Set up ROU asset depreciation schedule",
-          "Review industry lease accounting practices",
-          "Navigate to lease management module"
-        ],
-        industryContext: "IFRS 16 Implementation",
-        timestamp: new Date()
-      };
+**Real Estate & Retail:**
+- **DLF**: Corporate offices, retail spaces
+- **Future Group**: Store locations, warehouses
+
+**Exemptions Available:**
+- **Short-term leases**: ≤ 12 months, no purchase option
+- **Low-value assets**: ≤ $5,000 when new
+
+**Common Implementation Challenges:**
+1. **Embedded leases**: Identifying leases within service contracts
+2. **Variable payments**: Treatment of payments linked to performance/usage
+3. **Lease modifications**: Accounting for changes in lease terms
+4. **Transition**: Choosing modified retrospective vs full retrospective approach`,
+          query: query,
+          followUpOptions: [
+            "Calculate lease liability present value",
+            "Set up ROU asset depreciation schedule",
+            "Handle lease modifications under IFRS 16",
+            "Identify embedded leases in contracts"
+          ],
+          industryContext: "IFRS 16 Implementation",
+          timestamp: new Date()
+        };
+      } else {
+        // For specific questions, let the backend handle with actual data
+        return {
+          type: 'ai_response',
+          message: `**IFRS 16 Analysis Request**
+
+I need to analyze your specific IFRS 16 question with your actual system data. Please ensure I have access to your journal entries and I'll provide detailed analysis of:
+
+- Specific entry amounts and accounts
+- Debit/credit analysis for your actual transactions
+- Entity-specific lease accounting treatment
+- Compliance with IFRS 16 requirements for your data
+
+**What I'll analyze:**
+- Right-of-Use Asset recognition entries
+- Lease Liability initial measurement
+- Subsequent depreciation and interest calculations
+- Any errors in debit/credit treatment
+
+**For better analysis, please specify:**
+- Entity name or code
+- Specific amounts or dates
+- Account names or descriptions involved`,
+          query: query,
+          followUpOptions: [
+            "Analyze specific lease entries",
+            "Check IFRS 16 compliance for my data",
+            "Explain debit/credit treatment",
+            "Navigate to Data Input for details"
+          ],
+          industryContext: "IFRS 16 Data Analysis",
+          timestamp: new Date()
+        };
+      }
     }
     
     // Enhanced IFRS 9 specific guidance
