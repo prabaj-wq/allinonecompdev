@@ -633,7 +633,56 @@ Based on your system data, I can see an entry with the following details:
             )
     
     # General IFRS guidance when no specific data
-    if 'ifrs 16' in user_lower or 'lease' in user_lower:
+    if ('journal' in user_lower and 'ifrs 16' in user_lower) or ('initial' in user_lower and 'subsequent' in user_lower and 'ifrs 16' in user_lower):
+        return ChatResponse(
+            output="""**IFRS 16 Journal Entries - Complete Guide**
+
+**Initial Recognition (Lease Commencement):**
+```
+Dr. Right-of-Use Asset                    XXX
+    Cr. Lease Liability                       XXX
+```
+
+**Subsequent Measurement:**
+
+**1. Monthly Depreciation of ROU Asset:**
+```
+Dr. Depreciation Expense - ROU Asset      XXX
+    Cr. Accumulated Depreciation - ROU Asset  XXX
+```
+
+**2. Interest Expense on Lease Liability:**
+```
+Dr. Interest Expense                      XXX
+    Cr. Lease Liability                       XXX
+```
+
+**3. Lease Payment:**
+```
+Dr. Lease Liability                       XXX
+    Cr. Cash                                  XXX
+```
+
+**Key Points:**
+- ROU Asset = Initial lease liability + prepaid payments + initial direct costs
+- Lease Liability = Present value of unpaid lease payments
+- Depreciate ROU asset over shorter of lease term or useful life
+- Interest expense calculated using effective interest method
+
+**Example with Numbers:**
+If lease liability is INR 100,000 at 5% interest rate:
+- Monthly depreciation (5-year lease): INR 1,667
+- Monthly interest (first month): INR 417
+- Monthly payment: INR 1,887""",
+            error="AI service temporarily unavailable - using fallback guidance",
+            suggestions=[
+                "Calculate your lease liability present value",
+                "Set up ROU asset depreciation schedule",
+                "Review lease payment allocation"
+            ]
+        )
+    
+    elif 'ifrs 16' in user_lower or 'lease' in user_lower:
         return ChatResponse(
             output="""**IFRS 16 Lease Accounting Overview**
 
@@ -793,15 +842,9 @@ async def ai_chat_query(request: ChatRequest):
         # Handle the response
         if error:
             logger.error(f"Bytez API error: {error}")
-            # For specific questions like BackoOy entries, use fallback instead of generic error
-            if ("backo" in user_message.lower() and "entry" in user_message.lower()) or \
-               ("entry" in user_message.lower() and "1000" in user_message):
-                fallback_response = get_fallback_response(user_message, system_data)
-                return fallback_response
-            return ChatResponse(
-                output="I apologize, but I encountered an issue processing your question. Please try rephrasing or ask about a specific module.",
-                error=str(error)
-            )
+            # Always use fallback for any question when API fails
+            fallback_response = get_fallback_response(user_message, system_data)
+            return fallback_response
         
         if not output:
             # Provide fallback IFRS guidance when AI service is unavailable
