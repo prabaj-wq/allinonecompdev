@@ -381,9 +381,21 @@ You have access to real financial system data and can analyze:
         
         base_prompt += """
 
-You are an IFRS Expert. Answer the question clearly and accurately."""
+You are an IFRS Expert. Answer the question clearly and accurately.
+
+IMPORTANT: 
+- If the user asks about SPECIFIC entities, amounts, or dates mentioned above, analyze the system data
+- If the user asks GENERAL questions about IFRS standards, journal entries, or accounting principles, use your IFRS knowledge and ignore the system data
+- For general questions like "what are the journal entries for IFRS 16", provide standard IFRS guidance with examples, not the specific data above"""
         
         base_prompt += f"\n\n**User Question:** {user_message}"
+    else:
+        # No system data - provide general IFRS guidance
+        base_prompt += """
+
+You are an IFRS Expert. Answer the question clearly and accurately using your IFRS knowledge.
+
+Provide standard IFRS guidance with proper journal entries and examples."""
     
     return base_prompt
 
