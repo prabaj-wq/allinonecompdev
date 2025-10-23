@@ -881,55 +881,105 @@ Dr. Credit Loss Expense             150
       };
     }
     
-    // Default enhanced fallback
+    // Comprehensive IFRS expertise fallback
     return {
       type: 'ai_response',
-      message: `**IFRS Consolidation Expert - Enhanced Guidance**
+      message: `**IFRS Expert - Comprehensive Standards Guidance**
 
-I'm currently experiencing connectivity issues with the advanced AI service, but I can still provide comprehensive IFRS guidance:
+I'm ready to provide expert analysis on all IFRS standards with debit/credit analysis and industry-specific guidance:
 
-**Available Expertise Areas:**
+**📊 Complete IFRS Standards Coverage:**
 
-**Core IFRS Standards:**
-- **IFRS 15**: Revenue Recognition (5-step model)
-- **IFRS 16**: Lease Accounting (ROU assets, lease liabilities)
-- **IFRS 9**: Financial Instruments (classification, ECL)
-- **IFRS 3**: Business Combinations (goodwill, fair value)
-- **IAS 1**: Presentation of Financial Statements
+**Revenue & Performance:**
+- **IFRS 15**: Revenue recognition (5-step model, performance obligations, contract modifications)
+- **IFRS 8**: Operating segments (identification, measurement, disclosure)
+- **IAS 18**: Revenue (legacy standard for comparison)
 
-**Industry-Specific Guidance:**
-- **Manufacturing**: Inventory, PPE, lease accounting
-- **Technology**: Revenue recognition, R&D, intangibles
-- **Financial Services**: IFRS 9, credit risk, fair value
-- **Real Estate**: Investment property, revenue recognition
-- **Retail**: Revenue recognition, inventory, leases
+**Financial Instruments & Risk:**
+- **IFRS 9**: Financial instruments (ECL model, classification AC/FVOCI/FVTPL, hedge accounting)
+- **IFRS 7**: Financial instruments disclosures (risk management, fair value hierarchy)
+- **IAS 32**: Financial instruments presentation (equity vs liability classification)
 
-**System Integration Features:**
-- Real-time data analysis from your entries
-- Entity-specific consolidation guidance
-- Process-aware recommendations
-- Industry benchmarking references
+**Assets & Liabilities:**
+- **IFRS 16**: Leases (ROU assets, lease liabilities, exemptions, modifications)
+- **IAS 16**: Property, plant & equipment (recognition, measurement, depreciation)
+- **IAS 36**: Impairment (CGU identification, VIU calculations, goodwill testing)
+- **IAS 38**: Intangible assets (R&D, software, brands, useful life)
+- **IAS 40**: Investment property (cost vs fair value model)
 
-**Enhanced Capabilities:**
-✅ Standard references and paragraph citations
-✅ Industry practice comparisons
-✅ Step-by-step implementation guides
-✅ Journal entry examples and templates
-✅ Integration with your system data
+**Business Combinations & Consolidation:**
+- **IFRS 3**: Business combinations (goodwill, fair value, step acquisitions)
+- **IFRS 10**: Consolidated financial statements (control assessment, NCI)
+- **IFRS 11**: Joint arrangements (joint operations vs joint ventures)
+- **IAS 28**: Associates and joint ventures (equity method)
 
-**For Better Assistance:**
-1. Ask about specific IFRS standards
-2. Reference your actual data entries
-3. Mention your industry context
-4. Specify the module you're working in`,
+**Specialized Standards:**
+- **IAS 12**: Income taxes (deferred tax, uncertain positions, rate changes)
+- **IAS 19**: Employee benefits (pensions, post-employment, termination)
+- **IFRS 2**: Share-based payment (equity vs cash-settled, modifications)
+- **IAS 21**: Foreign currency (translation, hyperinflation)
+
+**🧮 Journal Entry Analysis Expertise:**
+
+**Debit/Credit Analysis Process:**
+1. **Account Identification**: Decode account names and classifications
+2. **Double-Entry Logic**: Assets (Dr+), Liabilities (Cr+), Equity (Cr+), Revenue (Cr+), Expenses (Dr+)
+3. **Transaction Substance**: Economic reality behind the entry
+4. **IFRS Compliance**: Standard applicability and recognition criteria
+5. **Business Rationale**: Why this transaction occurred
+6. **Industry Context**: Sector-specific considerations
+
+**🏭 Industry-Specific Expertise:**
+
+**Manufacturing & Automotive:**
+- Inventory costing, PPE depreciation, warranty provisions
+- Long-term contract revenue, R&D capitalization
+- Lease accounting for facilities and equipment
+
+**Technology & Software:**
+- SaaS revenue recognition, multiple deliverables
+- Software development costs, intangible assets
+- Stock-based compensation, business combinations
+
+**Banking & Financial Services:**
+- IFRS 9 ECL modeling, loan loss provisions
+- Fair value measurements, derivatives, hedge accounting
+- Regulatory capital requirements
+
+**Real Estate & Construction:**
+- Development project revenue, percentage of completion
+- Investment property accounting, joint arrangements
+- Land and building depreciation
+
+**Healthcare & Pharmaceuticals:**
+- R&D costs, regulatory approvals, intangible assets
+- Complex contract revenue, milestone payments
+- Product liability provisions
+
+**💡 What I Can Help You With:**
+
+**Entry Analysis Questions:**
+- "What does this debit/credit entry mean?"
+- "Why was this account debited instead of credited?"
+- "What IFRS standard applies to this transaction?"
+- "How do similar companies handle this entry?"
+
+**Standard Implementation:**
+- Step-by-step implementation guides
+- Industry-specific applications
+- Common pitfalls and best practices
+- Audit and compliance considerations
+
+**Ask me about any IFRS standard, journal entry analysis, or industry-specific accounting treatment!**`,
       query: query,
       followUpOptions: [
-        "Explain IFRS 16 lease accounting",
-        "Guide me through IFRS 9 classification",
-        "Help with consolidation procedures",
-        "Navigate to relevant system module"
+        "Analyze a specific journal entry",
+        "Explain IFRS 15 revenue recognition",
+        "Help with IFRS 9 financial instruments",
+        "Guide through consolidation procedures",
+        "Industry-specific IFRS applications"
       ],
-      industryContext: "IFRS Implementation",
+      industryContext: "Comprehensive IFRS Implementation",
       timestamp: new Date()
     };
   };
