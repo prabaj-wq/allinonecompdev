@@ -343,9 +343,50 @@ You have access to the user's financial system data and can analyze:
     
     return base_prompt
 
+def get_document_context(user_message: str):
+    """Get relevant document context for the query"""
+    try:
+        # Simple document context - in production integrate with document_integration.py
+        document_references = []
+        
+        user_lower = user_message.lower()
+        
+        # IFRS 16 references
+        if 'ifrs 16' in user_lower or 'lease' in user_lower:
+            document_references.extend([
+                "**Document Reference**: IFRS 16 - Leases (2016)",
+                "**Key Paragraphs**: 16.22-24 (Initial measurement), 16.29-36 (Subsequent measurement)",
+                "**Implementation Guide**: Available in uploaded IFRS documents"
+            ])
+        
+        # IFRS 9 references  
+        if 'ifrs 9' in user_lower or 'financial instrument' in user_lower:
+            document_references.extend([
+                "**Document Reference**: IFRS 9 - Financial Instruments (2014)",
+                "**Key Paragraphs**: 9.4.1.1-9.4.1.3 (Classification), 9.5.5.1 (ECL)",
+                "**Implementation Guide**: Available in uploaded IFRS documents"
+            ])
+        
+        # IFRS 15 references
+        if 'ifrs 15' in user_lower or 'revenue' in user_lower:
+            document_references.extend([
+                "**Document Reference**: IFRS 15 - Revenue from Contracts with Customers (2014)",
+                "**Key Paragraphs**: 15.22-30 (5-step model), 15.31-45 (Performance obligations)",
+                "**Implementation Guide**: Available in uploaded IFRS documents"
+            ])
+        
+        return document_references
+        
+    except Exception as e:
+        logger.error(f"Error getting document context: {e}")
+        return []
+
 def get_fallback_response(user_message: str, system_data: Dict = None):
     """Provide fallback IFRS guidance when AI service is unavailable"""
     user_lower = user_message.lower()
+    
+    # Check for document integration
+    document_context = get_document_context(user_message)
     
     # Analyze actual data if available
     if system_data and system_data.get('recent_entries'):
