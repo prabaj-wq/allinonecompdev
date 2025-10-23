@@ -146,9 +146,113 @@ const ChatAssistant = () => {
       .replace(/\\'/g, "'")           // Replace \' with '
       .replace(/\\"/g, '"')           // Replace \" with "
       .replace(/\\t/g, ' ')           // Replace \t with space
-      .replace(/\s+/g, ' ')           // Replace multiple spaces with single space
       .replace(/\n\s*\n/g, '\n\n')     // Clean up multiple newlines
       .trim();                        // Remove leading/trailing whitespace
+  };
+
+  // Render markdown-style text with proper formatting
+  const renderFormattedText = (text) => {
+    if (!text) return null;
+
+    const lines = text.split('\n');
+    const elements = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      if (!line) {
+        // Add spacing for empty lines
+        elements.push(<div key={i} className="h-3"></div>);
+        continue;
+      }
+      
+      // Handle headers (lines starting with **)
+      if (line.startsWith('**') && line.endsWith('**') && line.length > 4) {
+        const headerText = line.slice(2, -2);
+        elements.push(
+          <h4 key={i} className="font-bold text-slate-900 dark:text-white mb-2 mt-4 first:mt-0">
+            {headerText}
+          </h4>
+        );
+        continue;
+      }
+      
+      // Handle bullet points (lines starting with * or -)
+      if (line.startsWith('* ') || line.startsWith('- ')) {
+        const bulletText = line.slice(2);
+        elements.push(
+          <div key={i} className="flex items-start mb-1">
+            <span className="text-blue-500 mr-2 mt-1">•</span>
+            <span className="flex-1">{formatInlineText(bulletText)}</span>
+          </div>
+        );
+        continue;
+      }
+      
+      // Handle numbered lists (lines starting with numbers)
+      const numberMatch = line.match(/^(\d+)\.\s+(.+)/);
+      if (numberMatch) {
+        const [, number, listText] = numberMatch;
+        elements.push(
+          <div key={i} className="flex items-start mb-1">
+            <span className="text-blue-500 mr-2 mt-1 font-medium">{number}.</span>
+            <span className="flex-1">{formatInlineText(listText)}</span>
+          </div>
+        );
+        continue;
+      }
+      
+      // Handle code blocks (lines starting with ```)
+      if (line.startsWith('```')) {
+        // Find the end of code block
+        let codeContent = [];
+        let j = i + 1;
+        while (j < lines.length && !lines[j].trim().startsWith('```')) {
+          codeContent.push(lines[j]);
+          j++;
+        }
+        
+        if (codeContent.length > 0) {
+          elements.push(
+            <div key={i} className="bg-slate-100 dark:bg-slate-800 rounded-md p-3 my-2 font-mono text-sm overflow-x-auto">
+              {codeContent.map((codeLine, idx) => (
+                <div key={idx}>{codeLine}</div>
+              ))}
+            </div>
+          );
+          i = j; // Skip to end of code block
+          continue;
+        }
+      }
+      
+      // Regular paragraph
+      elements.push(
+        <p key={i} className="mb-2 leading-relaxed">
+          {formatInlineText(line)}
+        </p>
+      );
+    }
+    
+    return elements;
+  };
+
+  // Format inline text with bold, italic, etc.
+  const formatInlineText = (text) => {
+    if (!text) return text;
+    
+    // Split by ** for bold text
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+        return (
+          <strong key={index} className="font-semibold text-slate-900 dark:text-white">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
   };
 
   // Generate follow-up options for AI responses
@@ -773,15 +877,7 @@ const ChatAssistant = () => {
                 )}
               </div>
               <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                {message.content.message.split('\n').map((paragraph, index) => (
-                  paragraph.trim() ? (
-                    <p key={index} className="mb-2 last:mb-0">
-                      {paragraph.trim()}
-                    </p>
-                  ) : (
-                    <br key={index} />
-                  )
-                ))}
+                {renderFormattedText(message.content.message)}
               </div>
               {message.content.followUpOptions && message.content.followUpOptions.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-600">
