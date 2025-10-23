@@ -1,19 +1,77 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, text
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional, Dict, Any
 import json
-import pandas as pd
 from datetime import datetime, date
 import logging
-from database import get_company_connection
-from models.journal_entry import (
-    JournalBatch, JournalLine, JournalTemplate, 
-    JournalCustomField, JournalUploadBatch, JournalAuditLog
-)
+import psycopg2
+import os
+from contextlib import contextmanager
 
-router = APIRouter(prefix="/api/journal-entry", tags=["journal-entry"])
+router = APIRouter(prefix="/journal-entry", tags=["Journal Entry"])
 logger = logging.getLogger(__name__)
+
+# ==================== DATABASE UTILITIES ====================
+
+def get_db_config():
+    """Get database configuration for Docker environment"""
+    if os.getenv('DOCKER_ENV') == 'true':
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')
+    else:
+        POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
+
+    return {
+        'host': POSTGRES_HOST,
+        'port': os.getenv('POSTGRES_PORT', '5432'),
+        'user': os.getenv('POSTGRES_USER', 'postgres'),
+        'password': os.getenv('POSTGRES_PASSWORD', 'root@123')
+    }
+
+
+def get_company_db_name(company_name: str) -> str:
+    """Convert company name to database name"""
+    return company_name.lower().replace(' ', '_').replace('-', '_')
+
+
+@contextmanager
+def get_company_connection(company_name: str):
+    """Get database connection for specific company"""
+    db_config = get_db_config()
+    company_db_name = get_company_db_name(company_name)
+
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            database=company_db_name,
+            **db_config
+        )
+        conn.autocommit = False
+        yield conn
+    except psycopg2.OperationalError as e:
+        if "does not exist" in str(e):
+            try:
+                default_conn = psycopg2.connect(
+                    database='postgres',
+                    **db_config
+                )
+                default_conn.autocommit = True
+                cur = default_conn.cursor()
+                cur.execute(f'CREATE DATABASE "{company_db_name}"')
+                cur.close()
+                default_conn.close()
+
+                conn = psycopg2.connect(
+                    database=company_db_name,
+                    **db_config
+                )
+                conn.autocommit = False
+                yield conn
+            except Exception as create_error:
+                raise Exception(f"Failed to create company database: {str(create_error)}")
+        else:
+            raise Exception(f"Database connection error: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
 
 # ==================== JOURNAL BATCH ENDPOINTS ====================
 
