@@ -381,71 +381,9 @@ You have access to real financial system data and can analyze:
         
         base_prompt += """
 
-**You are an IFRS Expert. Provide clear, accurate, and professional analysis.**
-
-**Answer the specific question asked. Use proper IFRS references. Be practical and helpful.**
-
-**CRITICAL ACCOUNTING FUNDAMENTALS - NEVER GET THESE WRONG:**
-
-**DEBIT/CREDIT ANALYSIS RULES (FUNDAMENTAL):**
-- **Assets**: Debit increases (+), Credit decreases (-) [Normal debit balance]
-- **Liabilities**: Credit increases (+), Debit decreases (-) [Normal credit balance]  
-- **Equity**: Credit increases (+), Debit decreases (-) [Normal credit balance]
-- **Revenue**: Credit increases (+), Debit decreases (-) [Normal credit balance]
-- **Expenses**: Debit increases (+), Credit decreases (-) [Normal debit balance]
-
-**IFRS 16 LEASE ACCOUNTING - CORRECT JOURNAL ENTRIES:**
-
-**Initial Recognition (ALWAYS):**
-```
-Dr. Right-of-Use Asset               XXX
-    Cr. Lease Liability                  XXX
-```
-**EXPLANATION:** 
-- Right-of-Use Asset is an ASSET - debits increase assets
-- Lease Liability is a LIABILITY - credits increase liabilities
-- NEVER reverse these - this is fundamental accounting
-
-**Subsequent Measurement:**
-```
-Monthly Depreciation:
-Dr. Depreciation Expense             XXX
-    Cr. Accumulated Depreciation         XXX
-
-Monthly Interest:
-Dr. Interest Expense                 XXX
-    Cr. Lease Liability                  XXX
-
-Monthly Payment:
-Dr. Lease Liability                  XXX
-    Cr. Cash                             XXX
-```
-
-**CRITICAL ERROR PREVENTION:**
-- NEVER show "Dr. Lease Liability, Cr. Right-of-Use Asset" for initial recognition
-- NEVER confuse asset and liability treatment
-- ALWAYS verify journal entries follow basic accounting equation
-- Assets = Liabilities + Equity must always balance
-
-**COMPLEX TRANSACTION ANALYSIS RULES:**
-
-**Tripartite Agreements (Company X → Bank Y → Customer Z):**
-1. **Company X to Bank Y Sale**: 
-   - This is a SALE transaction for Company X
-   - Revenue recognition depends on control transfer (IFRS 15)
-   - Journal Entry: Dr. Cash/Receivable, Cr. Revenue (for Company X)
-
-2. **Bank Y to Customer Z Lease**:
-   - This is a LEASE transaction for Bank Y (as lessor)
-   - Bank Y applies lessor accounting under IFRS 16
-   - Customer Z applies lessee accounting under IFRS 16
-
-3. **Revenue Recognition Timing**:
-   - Company X: Revenue when control transfers to Bank Y (immediate if no continuing involvement)
-   - Bank Y: Lease income over lease term (if operating lease) or finance income (if finance lease)
-
-**NEVER confuse the parties or their accounting treatments**
-**ALWAYS identify who is the buyer, seller, lessor, and lessee in each transaction**"""
+You are an IFRS Expert. Answer the question clearly and accurately."""
+        
+        base_prompt += f"\n\n**User Question:** {user_message}"
     
     return base_prompt
 
@@ -867,95 +805,7 @@ async def ai_chat_query(request: ChatRequest):
         else:
             clean_output = str(output)
         
-        # Quality check for common accounting errors and response quality
-        quality_issues = []
-        
-        # MINIMAL QUALITY CHECKS - Only catch serious errors
-        user_lower = user_message.lower()
-        
-        # Only check for completely wrong IFRS 16 journal entries
-        if "ifrs 16" in user_message.lower() or "lease" in user_message.lower():
-            if ("Dr. Lease Liability" in clean_output and "Cr. Right-of-Use Asset" in clean_output):
-                quality_issues.append("Incorrect IFRS 16 journal entry - debits and credits are reversed")
-        
-        if quality_issues:
-            logger.error(f"Quality issues detected in AI response: {quality_issues}")
-            
-            # Provide specific corrected response based on the question type
-            if "entry" in user_message.lower() and "backo" in user_message.lower():
-                # For specific entry analysis questions - SIMPLE AND FOCUSED
-                corrected_output = f"""**CORRECTED: BackoOy Entry Analysis**
-
-**AI Quality Issues Detected and Fixed:**
-{chr(10).join(f'• {issue}' for issue in quality_issues)}
-
-**Your Question:** {user_message}
-
-**CORRECT Analysis for BackoOy 1000 Amount Entries:**
-
-**What These Entries Represent:**
-These are the two sides of an IFRS 16 lease recognition entry:
-
-```
-Dr. Right-of-Use Asset               1,000
-    Cr. Lease Liability                  1,000
-```
-
-**Simple Explanation:**
-- **Entry 1**: ROU Liability -1000 (the credit side - liability increases)
-- **Entry 2**: ROU Asset +1000 (the debit side - asset increases)
-- **Together**: They form one complete lease recognition entry
-
-**Why Posted:**
-- New lease agreement started January 1, 2025
-- Present value of lease payments = INR 1,000
-- Required by IFRS 16 for lease recognition
-
-**Business Context:**
-- Likely office space, equipment, or vehicle lease
-- Small amount suggests short-term or low-value lease
-- Standard accounting treatment for lease commencement
-
-**That's it - simple lease recognition, nothing more complex needed.**"""
-            else:
-                # For general IFRS questions
-                corrected_output = f"""**Quality Check Failed - Providing Corrected Response**
-
-The AI response contained quality issues. Here's the correct information:
-
-**IFRS 16 Initial Recognition (Correct):**
-```
-Dr. Right-of-Use Asset               XXX
-    Cr. Lease Liability                  XXX
-```
-
-**Explanation:**
-- Right-of-Use Asset is an ASSET → Debits increase assets
-- Lease Liability is a LIABILITY → Credits increase liabilities
-
-**Fundamental Accounting Rules:**
-- Assets: Debit increases (+), Credit decreases (-)
-- Liabilities: Credit increases (+), Debit decreases (-)
-- Equity: Credit increases (+), Debit decreases (-)
-- Revenue: Credit increases (+), Debit decreases (-)
-- Expenses: Debit increases (+), Credit decreases (-)
-
-**For your specific question about "{user_message}":**
-Please ask again for a corrected professional analysis that follows proper accounting fundamentals.
-
-**Quality Issues Detected:**
-{chr(10).join(f'• {issue}' for issue in quality_issues)}"""
-            
-            return ChatResponse(
-                output=corrected_output,
-                error="Quality check failed",
-                suggestions=[
-                    "Ask for corrected entry analysis",
-                    "Request concise professional response", 
-                    "Get fundamental accounting review",
-                    "Verify journal entry completeness"
-                ]
-            )
+        # NO QUALITY CHECKS - Let AI respond naturally
         
         # Remove any JSON formatting or raw response artifacts
         clean_output = str(clean_output).strip()
