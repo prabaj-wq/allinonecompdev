@@ -20,7 +20,19 @@ const JournalEntry = () => {
   const period = searchParams.get('period') || 'Q1'
   
   // State management
-  const [selectedCategory, setSelectedCategory] = useState('manual_adjustments')
+  const defaultCategoryId = searchParams.get('category') || 'manual_adjustments'
+
+  const initialScenario = searchParams.get('scenarioId') ||
+    searchParams.get('scenario') ||
+    scenarioId
+  const initialYear = searchParams.get('yearId') ||
+    searchParams.get('year') ||
+    fiscalYear
+  const initialPeriod = searchParams.get('periodId') ||
+    searchParams.get('period') ||
+    period
+
+  const [selectedCategory, setSelectedCategory] = useState(defaultCategoryId)
   const [currentBatch, setCurrentBatch] = useState(null)
   const [journalLines, setJournalLines] = useState([])
   const [categories, setCategories] = useState([])
@@ -32,8 +44,38 @@ const JournalEntry = () => {
   
   // Form state
   const [contextEntity, setContextEntity] = useState(entityId)
-  const [contextScenario, setContextScenario] = useState(scenarioId)
-  const [contextPeriod, setContextPeriod] = useState(period)
+  const [contextScenario, setContextScenario] = useState(initialScenario)
+  const [contextYear, setContextYear] = useState(initialYear)
+  const [contextPeriod, setContextPeriod] = useState(initialPeriod)
+
+  // Keep context state in sync with changing search params
+  useEffect(() => {
+    const urlScenario = searchParams.get('scenarioId') || searchParams.get('scenario')
+    const urlYear = searchParams.get('yearId') || searchParams.get('year')
+    const urlPeriod = searchParams.get('periodId') || searchParams.get('period')
+    const urlEntity = searchParams.get('entityId') || 'all'
+    const urlCategory = searchParams.get('category')
+
+    if (urlEntity && urlEntity !== contextEntity) {
+      setContextEntity(urlEntity)
+    }
+
+    if (urlScenario && urlScenario !== contextScenario) {
+      setContextScenario(urlScenario)
+    }
+
+    if (urlYear && urlYear !== contextYear) {
+      setContextYear(urlYear)
+    }
+
+    if (urlPeriod && urlPeriod !== contextPeriod) {
+      setContextPeriod(urlPeriod)
+    }
+
+    if (urlCategory && urlCategory !== selectedCategory) {
+      setSelectedCategory(urlCategory)
+    }
+  }, [searchParams, contextEntity, contextScenario, contextYear, contextPeriod, selectedCategory])
 
   // Categories configuration
   const defaultCategories = [

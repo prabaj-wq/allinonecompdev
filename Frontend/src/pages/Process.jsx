@@ -2276,6 +2276,34 @@ const Process = () => {
                             onClick={() => setSelectedNode(node)}
                             onDoubleClick={() => {
                               // Navigate to relevant module based on node type
+                              const primaryPeriodId = Array.isArray(selectedPeriods) && selectedPeriods.length > 0
+                                ? selectedPeriods[0]
+                                : ''
+                              const primaryPeriod = primaryPeriodId
+                                ? availablePeriods.find(p => p.id === primaryPeriodId)
+                                : null
+                              const periodLabel = primaryPeriod?.period_name
+                                || primaryPeriod?.name
+                                || primaryPeriod?.label
+                                || (typeof primaryPeriodId === 'string' ? primaryPeriodId : '')
+                              const fiscalYearRecord = selectedYear
+                                ? fiscalYears.find(fy => fy.id === selectedYear)
+                                : null
+                              const fiscalYearLabel = fiscalYearRecord?.year || ''
+                              const scenarioRecord = selectedScenario
+                                ? scenarios.find(s => s.id === selectedScenario)
+                                : null
+                              const scenarioLabel = scenarioRecord?.scenario_name
+                                || scenarioRecord?.name
+                                || ''
+                              const scenarioCode = scenarioRecord?.scenario_code
+                                || scenarioRecord?.code
+                                || scenarioRecord?.scenario_type
+                                || ''
+                              const resolvedEntityContext = selectedEntityContext !== 'all'
+                                ? selectedEntityContext
+                                : (selectedEntities.length === 1 ? selectedEntities[0] : 'all')
+
                               if (node.type === 'data_input' || node.type === 'entity_data_load') {
                                 // Navigate to Data Input page with context
                                 const params = new URLSearchParams({
@@ -2299,14 +2327,47 @@ const Process = () => {
                                 showNotification(`Opening ${node.title} module${entityContextMsg}...`, 'success')
                               } else if (node.type === 'journal_entry') {
                                 // Navigate to Journal Entry page with context
-                                const params = new URLSearchParams({
-                                  processId: selectedProcess.id,
-                                  processName: selectedProcess.name,
-                                  entityId: selectedEntityContext !== 'all' ? selectedEntityContext : 'all',
-                                  scenarioId: selectedScenario || '',
-                                  year: selectedYear || '',
-                                  period: selectedPeriod || 'Q1'
-                                })
+                                const params = new URLSearchParams()
+                                params.set('processId', `${selectedProcess.id}`)
+                                params.set('processName', selectedProcess.name || '')
+                                params.set('entityId', resolvedEntityContext || 'all')
+
+                                if (selectedEntities.length > 0) {
+                                  params.set('entities', selectedEntities.join(','))
+                                }
+
+                                if (selectedScenario) {
+                                  params.set('scenarioId', `${selectedScenario}`)
+                                }
+
+                                if (scenarioLabel) {
+                                  params.set('scenarioName', scenarioLabel)
+                                }
+
+                                if (scenarioCode && scenarioCode !== scenarioLabel) {
+                                  params.set('scenarioCode', `${scenarioCode}`)
+                                }
+
+                                if (selectedYear) {
+                                  params.set('yearId', `${selectedYear}`)
+                                }
+
+                                if (fiscalYearLabel) {
+                                  params.set('year', fiscalYearLabel)
+                                } else if (selectedYear) {
+                                  params.set('year', `${selectedYear}`)
+                                }
+
+                                if (primaryPeriodId) {
+                                  params.set('periodId', `${primaryPeriodId}`)
+                                }
+
+                                if (periodLabel) {
+                                  params.set('period', periodLabel)
+                                  params.set('periodName', periodLabel)
+                                }
+
+                                params.set('flowMode', flowMode || 'entity')
                                 navigate(`/journal-entry?${params.toString()}`)
                                 
                                 // Show context-aware notification
