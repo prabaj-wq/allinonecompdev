@@ -30,6 +30,7 @@ import ForexRates from '../pages/ForexRates'
 import EntityManagement from '../pages/EntityManagement'
 import AccountManagement from '../pages/AccountManagement'
 import JournalEntries from '../pages/JournalEntries'
+import JournalEntry from '../pages/JournalEntry'
 import EntityPage from '../pages/EntityPage'
 import AccountPage from '../pages/AccountPage'
 import TrialBalance from '../pages/TrialBalance'
@@ -205,6 +206,11 @@ const TwoFactorWrapper = () => {
           <Route path="/journal-entries" element={
             <PageAccessWrapper requiredPage="/journal-entries" pageName="Journal Entries">
               <JournalEntries />
+            </PageAccessWrapper>
+          } />
+          <Route path="/journal-entry" element={
+            <PageAccessWrapper requiredPage="/journal-entries" pageName="Journal Entry">
+              <JournalEntry />
             </PageAccessWrapper>
           } />
           <Route path="/trial-balance" element={

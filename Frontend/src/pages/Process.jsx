@@ -2297,6 +2297,23 @@ const Process = () => {
                                   ? ` for ${availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.entity_name || selectedEntityContext}`
                                   : ''
                                 showNotification(`Opening ${node.title} module${entityContextMsg}...`, 'success')
+                              } else if (node.type === 'journal_entry') {
+                                // Navigate to Journal Entry page with context
+                                const params = new URLSearchParams({
+                                  processId: selectedProcess.id,
+                                  processName: selectedProcess.name,
+                                  entityId: selectedEntityContext !== 'all' ? selectedEntityContext : 'all',
+                                  scenarioId: selectedScenario || '',
+                                  year: selectedYear || '',
+                                  period: selectedPeriod || 'Q1'
+                                })
+                                navigate(`/journal-entry?${params.toString()}`)
+                                
+                                // Show context-aware notification
+                                const entityContextMsg = selectedEntityContext !== 'all' 
+                                  ? ` for ${availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.entity_name || selectedEntityContext}`
+                                  : ''
+                                showNotification(`Opening ${node.title} module${entityContextMsg}...`, 'success')
                               } else {
                                 showNotification(`${node.title} module coming soon...`, 'info')
                               }
