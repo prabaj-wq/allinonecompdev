@@ -6,8 +6,8 @@ import json
 import pandas as pd
 from datetime import datetime, date
 import logging
-from ..database import get_company_connection
-from ..models.journal_entry import (
+from database import get_company_connection
+from models.journal_entry import (
     JournalBatch, JournalLine, JournalTemplate, 
     JournalCustomField, JournalUploadBatch, JournalAuditLog
 )
