@@ -723,29 +723,133 @@ Dr. Interest Expense            XXX
     
     elif 'ifrs 9' in user_lower or 'financial instrument' in user_lower:
         return ChatResponse(
-            output="""**IFRS 9 Financial Instruments Overview**
+            output="""**IFRS 9 Financial Instruments - Complete Guide**
 
 IFRS 9 covers classification, measurement, and impairment of financial instruments:
 
-**Classification Categories:**
-1. **Amortized Cost** - Hold to collect contractual cash flows
-2. **FVOCI** - Hold to collect and sell
-3. **FVTPL** - All others
+**Classification of Financial Assets:**
+
+**1. Amortized Cost (AC):**
+- Business model: Hold to collect contractual cash flows
+- Cash flows: Solely payments of principal and interest (SPPI)
+- Examples: Trade receivables, loans, bonds held to maturity
+
+**2. Fair Value Through Other Comprehensive Income (FVOCI):**
+- Business model: Hold to collect AND sell
+- Cash flows: SPPI test passed
+- Examples: Debt securities in mixed portfolios
+
+**3. Fair Value Through Profit or Loss (FVTPL):**
+- All other financial assets
+- Examples: Trading securities, derivatives, equity investments
+
+**Common Journal Entries:**
+
+**Initial Recognition:**
+```
+Dr. Financial Asset                    XXX
+    Cr. Cash                               XXX
+```
+
+**Interest Income (AC/FVOCI):**
+```
+Dr. Financial Asset                    XXX
+    Cr. Interest Income                    XXX
+```
+
+**Impairment Loss:**
+```
+Dr. Impairment Loss                    XXX
+    Cr. Loss Allowance                     XXX
+```
+
+**Fair Value Adjustment (FVTPL):**
+```
+Dr. Financial Asset                    XXX
+    Cr. Fair Value Gain                    XXX
+```
 
 **Expected Credit Loss Model:**
-- **12-month ECL** - Stage 1 (no significant increase in credit risk)
-- **Lifetime ECL** - Stage 2 (significant increase) & Stage 3 (credit-impaired)
+- **Stage 1**: 12-month ECL for performing assets
+- **Stage 2**: Lifetime ECL for significant increase in credit risk
+- **Stage 3**: Lifetime ECL for credit-impaired assets
 
-**Key Implementation Areas:**
-1. Business model assessment
-2. Contractual cash flow characteristics (SPPI test)
-3. ECL calculation and measurement
-4. Hedge accounting (if applicable)""",
-            error="AI service temporarily unavailable",
+**Key Implementation Steps:**
+1. Classify financial instruments based on business model and cash flow characteristics
+2. Apply appropriate measurement basis
+3. Calculate expected credit losses
+4. Recognize impairment in profit or loss""",
+            error="AI service temporarily unavailable - using fallback guidance",
             suggestions=[
-                "Assess your business model for financial instruments",
-                "Perform SPPI test on contractual cash flows",
-                "Calculate expected credit losses"
+                "Review your financial instrument portfolio",
+                "Assess business model for classification",
+                "Calculate expected credit losses",
+                "Update fair value measurements"
+            ]
+        )
+    
+    elif 'ifrs 15' in user_lower or 'revenue' in user_lower:
+        return ChatResponse(
+            output="""**IFRS 15 Revenue Recognition - Complete Guide**
+
+**The 5-Step Model:**
+
+**Step 1: Identify the Contract**
+- Enforceable rights and obligations
+- Commercial substance
+- Probable collection
+
+**Step 2: Identify Performance Obligations**
+- Distinct goods or services
+- Capable of being distinct
+- Distinct within context of contract
+
+**Step 3: Determine Transaction Price**
+- Fixed consideration
+- Variable consideration (estimates)
+- Financing components
+- Non-cash consideration
+
+**Step 4: Allocate Transaction Price**
+- Relative standalone selling prices
+- Residual approach (if applicable)
+- Discounts and variable consideration
+
+**Step 5: Recognize Revenue**
+- Over time vs. point in time
+- Progress measurement methods
+
+**Common Journal Entries:**
+
+**Contract Asset (Unbilled Revenue):**
+```
+Dr. Contract Asset                     XXX
+    Cr. Revenue                            XXX
+```
+
+**Contract Liability (Deferred Revenue):**
+```
+Dr. Cash                               XXX
+    Cr. Contract Liability                 XXX
+```
+
+**Revenue Recognition:**
+```
+Dr. Contract Liability                 XXX
+    Cr. Revenue                            XXX
+```
+
+**Key Decision Points:**
+- Performance obligations satisfied over time or at a point in time
+- Variable consideration estimation and constraint
+- Principal vs. agent considerations
+- Contract modifications and changes""",
+            error="AI service temporarily unavailable - using fallback guidance",
+            suggestions=[
+                "Apply the 5-step revenue model",
+                "Identify distinct performance obligations",
+                "Estimate variable consideration",
+                "Determine satisfaction timing"
             ]
         )
     
@@ -782,15 +886,25 @@ async def ai_chat_query(request: ChatRequest):
     Process AI chat query using Bytez API
     """
     try:
+        # Get user message first for fallback
+        user_message = request.messages[-1].content if request.messages else ""
+        
+        # Get system data if context provided
+        system_data = None
+        if request.company_name and request.user_context:
+            try:
+                system_data = get_system_data(request.company_name, request.user_context, user_message)
+            except Exception as data_error:
+                logger.error(f"Error getting system data: {data_error}")
+                # Continue without system data
         # Import bytez here to handle import errors gracefully
         try:
             from bytez import Bytez
         except ImportError:
             logger.error("Bytez package not installed")
-            return ChatResponse(
-                output="I'm having trouble connecting to the AI service. Please try again later.",
-                error="Bytez package not available"
-            )
+            # Use fallback system when Bytez is not available
+            fallback_response = get_fallback_response(user_message, system_data)
+            return fallback_response
         
         # Initialize Bytez SDK
         sdk = Bytez("c778aee69e98c1f995dc6cbdd73ef136")
@@ -799,13 +913,7 @@ async def ai_chat_query(request: ChatRequest):
         model = sdk.model("inference-net/Schematron-3B")
         logger.info("Using Schematron-3B model for IFRS expertise")
         
-        # Build expert prompt for the user's message
-        user_message = request.messages[-1].content if request.messages else ""
-        
-        # Get system data if context provided
-        system_data = None
-        if request.company_name and request.user_context:
-            system_data = get_system_data(request.company_name, request.user_context, user_message)
+        # Build expert prompt for the user's message (already extracted above)
         expert_prompt = build_expert_prompt(
             user_message, 
             request.industry_context, 
@@ -911,10 +1019,38 @@ async def ai_chat_query(request: ChatRequest):
         
     except Exception as e:
         logger.error(f"AI chat query error: {str(e)}")
-        return ChatResponse(
-            output="I'm having trouble connecting to the AI service. Let me help you with navigation or basic questions instead.",
-            error=str(e)
-        )
+        # Use fallback system for any error
+        try:
+            user_message = request.messages[-1].content if request.messages else ""
+            system_data = None
+            if request.company_name and request.user_context:
+                try:
+                    system_data = get_system_data(request.company_name, request.user_context, user_message)
+                except:
+                    pass  # Continue without system data
+            fallback_response = get_fallback_response(user_message, system_data)
+            return fallback_response
+        except:
+            # Last resort fallback
+            return ChatResponse(
+                output="""**IFRS Consolidation Assistant**
+
+I'm currently experiencing technical difficulties, but I can still help with basic IFRS guidance:
+
+**Common IFRS Areas:**
+- **IFRS 15**: Revenue Recognition
+- **IFRS 16**: Lease Accounting  
+- **IFRS 9**: Financial Instruments
+- **IFRS 3**: Business Combinations
+
+Please try asking about specific IFRS standards for detailed guidance.""",
+                error="Service temporarily unavailable",
+                suggestions=[
+                    "Ask about specific IFRS standards",
+                    "Try refreshing the page",
+                    "Check your connection"
+                ]
+            )
 
 @router.get("/health")
 async def health_check():
