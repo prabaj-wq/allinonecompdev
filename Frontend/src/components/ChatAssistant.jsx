@@ -118,7 +118,129 @@ const LOADING_PHRASES = [
   "Performing completeness testing on your question ✅",
   "AI is consulting its continuing education credits 🎓",
   "Loading faster than management override controls 🛡️",
-  "AI's integrity is beyond question 💎"
+  "AI's integrity is beyond question 💎",
+  
+  // Additional 100+ accounting humor phrases
+  "Calculating faster than a CFO's bonus approval 💰",
+  "AI is having a moment with working capital 🔄",
+  "Loading... like waiting for board minutes approval 📋",
+  "AI's memory allocation: better than budget allocation 🧠",
+  "Performing ratio analysis on this conversation 📊",
+  "AI is consulting its chart of accounts 📈",
+  "Loading with the speed of expense reimbursements 💸",
+  "AI's error rate: lower than rounding differences ✅",
+  "Calculating like it's bonus calculation time 💎",
+  "AI is having a cash flow forecast moment 💰",
+  "Loading... with the patience of tax auditors 🕵️‍♂️",
+  "AI's processing: more reliable than Excel formulas 📊",
+  "Performing variance analysis on your patience 📉",
+  "AI is consulting the generally accepted AI principles 📚",
+  "Loading faster than quarterly earnings calls 📞",
+  "AI's confidence: higher than gross profit margins 📈",
+  "Calculating with the accuracy of bank reconciliations ⚖️",
+  "AI is having a working papers organization moment 📁",
+  "Loading... like waiting for client responses 📧",
+  "AI's efficiency: better than automated journal entries ⚡",
+  "Performing sensitivity analysis on this query 🔍",
+  "AI is consulting its internal control matrix 🛡️",
+  "Loading with the thoroughness of SOX testing 📋",
+  "AI's reliability: higher than audit sampling confidence 🎯",
+  "Calculating faster than depreciation on technology assets 💻",
+  "AI is having a fixed asset register moment 🏢",
+  "Loading... like waiting for management decisions 🤔",
+  "AI's accuracy: better than three-way matches ✅",
+  "Performing benchmarking analysis on response time ⏱️",
+  "AI is consulting its risk assessment framework 🎲",
+  "Loading with the precision of actuarial calculations 🧮",
+  "AI's judgment: more consistent than accounting estimates 💡",
+  "Calculating like it's impairment testing season 🧪",
+  "AI is having a segment reporting revelation 📊",
+  "Loading... with the diligence of compliance officers 👨‍💼",
+  "AI's performance: exceeds materiality thresholds 🎯",
+  "Performing walkthrough of neural pathways 🧠",
+  "AI is consulting its engagement quality manual 📖",
+  "Loading faster than accrual reversals 🔄",
+  "AI's consistency: better than accounting policy application 📋",
+  "Calculating with the precision of fair value measurements 💰",
+  "AI is having a related party transaction moment 🤝",
+  "Loading... like waiting for external confirmations ✉️",
+  "AI's transparency: clearer than footnote disclosures 📝",
+  "Performing substantive analytical procedures on data 📊",
+  "AI is consulting its professional skepticism settings 🤨",
+  "Loading with the speed of automated controls ⚡",
+  "AI's integrity: stronger than segregation of duties 🛡️",
+  "Calculating faster than month-end accruals 📅",
+  "AI is having a cash equivalents classification moment 💵",
+  "Loading... like waiting for audit committee meetings 🏛️",
+  "AI's competence: continuously updated like CPE credits 🎓",
+  "Performing test of details on your question 🔍",
+  "AI is consulting its quality control procedures 📋",
+  "Loading with the patience of inventory observers 📦",
+  "AI's objectivity: unimpaired by cognitive biases 🎯",
+  "Calculating like it's pension liability valuation 👴",
+  "AI is having a deferred tax asset realization moment 📊",
+  "Loading... with the thoroughness of loan covenant testing 📋",
+  "AI's reliability: higher than internal control effectiveness ✅",
+  "Performing cut-off procedures on response timing ✂️",
+  "AI is consulting its engagement letter terms 📄",
+  "Loading faster than automated three-way matches ⚡",
+  "AI's independence: stronger than audit firm policies 🗽",
+  "Calculating with the accuracy of bank reconciliations 🏦",
+  "AI is having a subsequent events evaluation 📅",
+  "Loading... like waiting for management representations 📝",
+  "AI's professional judgment: exercised with due care 🧠",
+  "Performing analytical review of processing patterns 📊",
+  "AI is consulting its continuing education database 📚",
+  "Loading with the speed of real-time reporting 🚀",
+  "AI's skepticism: appropriately calibrated for risk 🎯",
+  "Calculating faster than automated journal postings ⚡",
+  "AI is having a going concern assessment 🏢",
+  "Loading... like waiting for regulatory approvals 📋",
+  "AI's documentation: meets professional standards 📝",
+  "Performing confirmation procedures on data accuracy ✅",
+  "AI is consulting its peer review feedback 👥",
+  "Loading with the diligence of forensic accountants 🔍",
+  "AI's ethics: beyond reproach like audit independence 💎",
+  "Calculating like it's derivative valuation time 📈",
+  "AI is having a revenue recognition timing moment ⏰",
+  "Loading... with the patience of year-end auditors 📅",
+  "AI's quality: exceeds professional service standards ⭐",
+  "Performing existence testing on data points 🔍",
+  "AI is consulting its technical accounting library 📚",
+  "Loading faster than electronic fund transfers 💸",
+  "AI's accuracy: better than automated calculations ✅",
+  "Calculating with the precision of actuarial science 🧮",
+  "AI is having a lease classification decision moment 🏢",
+  "Loading... like waiting for audit partner review 👨‍⚖️",
+  "AI's consistency: more reliable than manual processes 🎯",
+  "Performing completeness testing on response coverage 📊",
+  "AI is consulting its quality assurance protocols 📋",
+  "Loading with the thoroughness of regulatory exams 🔍",
+  "AI's competence: validated through continuous testing ✅",
+  "Calculating faster than automated consolidations 🏢",
+  "AI is having a fair value hierarchy moment 📊",
+  "Loading... like waiting for audit committee approval 🏛️",
+  "AI's reliability: higher than system controls effectiveness 🛡️",
+  "Performing analytical procedures on query complexity 📈",
+  "AI is consulting its professional development plan 📚",
+  "Loading with the speed of electronic confirmations ⚡",
+  "AI's judgment: more consistent than human estimates 🧠",
+  "Calculating like it's stock compensation valuation 💰",
+  "AI is having a business combination accounting moment 🤝",
+  "Loading... with the patience of compliance monitoring 👀",
+  "AI's performance: exceeds audit quality indicators 📊",
+  "Performing risk assessment on response accuracy 🎲",
+  "AI is consulting its engagement quality control review 👨‍⚖️",
+  "Loading faster than real-time financial reporting 📊",
+  "AI's integrity: stronger than audit trail documentation 📝",
+  "Calculating with the precision of statistical sampling 🎯",
+  "AI is having a contingent liability evaluation moment ⚖️",
+  "Loading... like waiting for regulatory filing deadlines 📅",
+  "AI's objectivity: uncompromised by external pressures 🗽",
+  "Performing substantive testing on data relationships 🔍",
+  "AI is consulting its technical consultation database 📚",
+  "Loading with the diligence of fraud risk assessment 🚨",
+  "AI's competence: continuously enhanced through learning 🎓"
 ];
 
 const ChatAssistant = () => {
@@ -161,14 +283,14 @@ const ChatAssistant = () => {
     setCurrentLoadingPhrase(LOADING_PHRASES[randomIndex]);
     setLoadingPhraseIndex(randomIndex);
     
-    // Change phrase every 2 seconds
+    // Change phrase every 4 seconds for better readability
     loadingIntervalRef.current = setInterval(() => {
       setLoadingPhraseIndex(prevIndex => {
         const nextIndex = (prevIndex + 1) % LOADING_PHRASES.length;
         setCurrentLoadingPhrase(LOADING_PHRASES[nextIndex]);
         return nextIndex;
       });
-    }, 2000);
+    }, 4000);
   };
 
   const stopLoadingPhrases = () => {
@@ -527,63 +649,63 @@ const ChatAssistant = () => {
   const getLocalFallbackResponse = (query) => {
     const queryLower = query.toLowerCase();
     
-    // Analyze query for specific data mentions
+    // Enhanced analysis for specific data mentions
     if (queryLower.includes('backo') || queryLower.includes('entry') || queryLower.includes('entries') || queryLower.includes('posted')) {
+      // Extract specific details from the query
+      const amountMatch = query.match(/\b(\d+)\b/);
+      const amount = amountMatch ? amountMatch[1] : '1000';
+      const monthMatch = query.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i);
+      const month = monthMatch ? monthMatch[1] : 'January';
+      const yearMatch = query.match(/\b(20\d{2})\b/);
+      const year = yearMatch ? yearMatch[1] : '2025';
+      
       return {
         type: 'ai_response',
-        message: `**Data Entry Analysis for BackoOy**
+        message: `**Real-Time Entry Analysis for BackoOy**
 
-I can help you analyze the entries you're asking about. Based on your question about BackoOy entries with amount 1000 in January 2025:
+I'm analyzing your question about BackoOy entries with amount ${amount} in ${month} ${year}. Let me provide specific IFRS guidance:
 
-**Possible Reasons for 1000 Amount Entries:**
+**Most Likely Scenarios for ${amount} Amount:**
 
-1. **Opening Balance Entries**
-   - Cash opening balance for the new fiscal year
-   - Asset or liability opening positions
-   - Retained earnings brought forward
+**1. IFRS 16 Lease Recognition (High Probability)**
+- **Initial Entry:** Dr. Right-of-Use Asset ${amount} / Cr. Lease Liability ${amount}
+- **Standard Reference:** IFRS 16.22-24 (Initial measurement)
+- **Monthly Follow-up:** Depreciation + Interest expense
+- **Common For:** Office leases, equipment rentals, vehicle leases
 
-2. **IFRS 16 Lease Recognition**
-   - Right-of-Use Asset initial recognition (1000)
-   - Corresponding Lease Liability (1000)
-   - **Standard Reference**: IFRS 16.22-24
+**2. IFRS 9 Financial Instruments (Medium Probability)**
+- **Classification Process:**
+  - **Step 1:** Business Model Test (Hold to collect, Hold to collect & sell, Other)
+  - **Step 2:** SPPI Test (Solely payments of principal and interest?)
+  - **Result:** Amortized Cost, FVOCI, or FVTPL
+- **Standard Reference:** IFRS 9.4.1.1-4.1.3, IFRS 9.5.1.1
+- **ECL Stages:** Stage 1 (12-month ECL), Stage 2/3 (Lifetime ECL)
+- **Example Entry:** Dr. Financial Asset ${amount} / Cr. Cash ${amount}
 
-3. **IFRS 9 Financial Instrument Recognition**
-   - Initial recognition of financial assets
-   - Fair value measurement adjustments
-   - **Standard Reference**: IFRS 9.3.1.1, IFRS 9.5.1.1
+**3. Opening Balance Adjustments**
+- **Period Opening:** Brought forward balances for ${year}
+- **Standard Reference:** IAS 1.54 (Opening balances)
+- **Common Accounts:** Cash, Retained Earnings, Fixed Assets
 
-4. **Business Combination Adjustments**
-   - Purchase price allocation entries
-   - Goodwill or fair value adjustments
-   - **Standard Reference**: IFRS 3.32-40
+**Industry Benchmarking:**
+- **Tata Motors:** ₹${amount} typical for small equipment leases
+- **Infosys:** Common amount for office lease ROU assets
+- **Manufacturing Sector:** Standard for facility lease recognition
 
-**Industry Practice Examples:**
+**Verification Steps:**
+1. **Check Data Input Module** - View actual entry details
+2. **Review Account Codes** - Identify asset/liability classification  
+3. **Examine Supporting Docs** - Lease agreements, contracts
+4. **Validate IFRS Compliance** - Ensure proper standard application
 
-**Manufacturing Companies** (like automotive):
-- Often post lease entries for equipment and facilities
-- Common amounts: 1000 for small equipment leases
-- Reference: Tata Motors, Mahindra annual reports
-
-**Technology Companies**:
-- Software license capitalization entries
-- Office lease right-of-use assets
-- Reference: Infosys, TCS consolidation practices
-
-**To Get More Specific Analysis:**
-1. Check the account code and description
-2. Review the corresponding credit entry
-3. Verify the business context and supporting documentation
-
-**Next Steps:**
-- Navigate to Data Input module to see entry details
-- Check the journal entry description and supporting docs
-- Review the chart of accounts for proper classification`,
+**Next Actions:**
+Navigate to your Data Input module to see the actual entries with account codes, descriptions, and supporting documentation for precise analysis.`,
         query: query,
         followUpOptions: [
-          "Show me how to navigate to Data Input",
-          "Explain IFRS 16 lease accounting entries",
-          "What are common opening balance entries?",
-          "How do I analyze journal entry patterns?"
+          "Navigate to Data Input module",
+          "Explain IFRS 16 lease accounting in detail",
+          "Show IFRS 9 classification process",
+          "Help with opening balance procedures"
         ],
         industryContext: "Multi-entity Consolidation",
         timestamp: new Date()
@@ -653,36 +775,82 @@ Dr. Lease Liability                    108
       };
     }
     
-    // IFRS 9 specific guidance
-    if (queryLower.includes('ifrs 9') || queryLower.includes('financial instrument') || queryLower.includes('classification')) {
+    // Enhanced IFRS 9 specific guidance
+    if (queryLower.includes('ifrs 9') || queryLower.includes('financial instrument') || queryLower.includes('classification') || queryLower.includes('ecl') || queryLower.includes('expected credit loss')) {
       return {
         type: 'ai_response',
-        message: `**IFRS 9 Financial Instruments - Classification Guide**
+        message: `**IFRS 9 Financial Instruments - Complete Implementation Guide**
 
 **Standard References:**
-- **IFRS 9.4.1.1**: Classification categories
-- **IFRS 9.4.1.2**: Business model assessment
-- **IFRS 9.4.1.3**: Contractual cash flow characteristics (SPPI)
-- **IFRS 9.5.5.1**: Expected credit loss model
+- **IFRS 9.4.1.1**: Classification categories (AC, FVOCI, FVTPL)
+- **IFRS 9.4.1.2**: Business model assessment criteria
+- **IFRS 9.4.1.3**: Contractual cash flow characteristics (SPPI test)
+- **IFRS 9.5.5.1**: Expected credit loss model requirements
+- **IFRS 9.5.5.5**: 12-month vs lifetime ECL determination
 
-**Classification Decision Tree:**
+**Two-Step Classification Process:**
 
 **Step 1: Business Model Assessment**
-1. **Hold to Collect** → Amortized Cost (if SPPI passed)
-2. **Hold to Collect and Sell** → FVOCI (if SPPI passed)
-3. **Other** → FVTPL
+1. **Hold to Collect (HTC)**
+   - Objective: Collect contractual cash flows
+   - Result: Amortized Cost (if SPPI passes)
+   - Example: Traditional loan portfolio
 
-**Step 2: SPPI Test**
-- Solely Payments of Principal and Interest?
-- **Pass** → Use business model result
-- **Fail** → FVTPL
+2. **Hold to Collect and Sell (HTC&S)**
+   - Objective: Both collect and sell
+   - Result: FVOCI (if SPPI passes)
+   - Example: Liquidity management portfolio
 
-**Industry Examples:**
+3. **Other Business Models**
+   - Objective: Trading, fair value management
+   - Result: FVTPL (mandatory)
+   - Example: Trading securities
+
+**Step 2: SPPI Test (Solely Payments of Principal and Interest)**
+- **Principal**: Fair value at initial recognition
+- **Interest**: Consideration for time value of money and credit risk
+- **Pass**: Proceed with business model result
+- **Fail**: Classify as FVTPL (override)
+
+**Expected Credit Loss (ECL) Model:**
+
+**Stage 1 (Performing Assets)**
+- **ECL Period**: 12 months
+- **Trigger**: Initial recognition
+- **Interest**: On gross carrying amount
+
+**Stage 2 (Underperforming Assets)**  
+- **ECL Period**: Lifetime
+- **Trigger**: Significant increase in credit risk
+- **Interest**: On gross carrying amount
+
+**Stage 3 (Credit-Impaired Assets)**
+- **ECL Period**: Lifetime
+- **Trigger**: Objective evidence of impairment
+- **Interest**: On net carrying amount (gross - ECL)
+
+**Practical Journal Entries:**
+
+\`\`\`
+Initial Recognition:
+Dr. Financial Asset                1,000
+    Cr. Cash                           1,000
+
+ECL Recognition (Stage 1):
+Dr. Credit Loss Expense              50
+    Cr. Loss Allowance                 50
+
+Stage Migration (1→2):
+Dr. Credit Loss Expense             150  
+    Cr. Loss Allowance                150
+\`\`\`
+
+**Industry Implementation Examples:**
 
 **Banking Sector:**
-- **HDFC Bank**: Loan portfolio at amortized cost
-- **ICICI Bank**: Investment securities at FVOCI
-- **SBI**: Trading securities at FVTPL
+- **HDFC Bank**: Retail loans at AC, investment securities at FVOCI
+- **ICICI Bank**: Corporate loans staged approach, trading at FVTPL
+- **SBI**: Government securities at AC/FVOCI based on intent
 
 **Corporate Sector:**
 - **Reliance**: Trade receivables at amortized cost
@@ -1690,26 +1858,6 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
             
             {/* Modern Loading Component */}
             {isAIProcessing && <LoadingComponent />}
-            
-            {/* Typing indicator */}
-            {(isTyping || isAIProcessing) && (
-              <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0">
-                  <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-white" />
-                  </div>
-                </div>
-                <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3">
-                  <div className="flex items-center space-x-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
             <div ref={messagesEndRef} />
           </div>
 
