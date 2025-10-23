@@ -381,13 +381,9 @@ You have access to real financial system data and can analyze:
         
         base_prompt += """
 
-**ANALYSIS INSTRUCTIONS:**
+**You are an IFRS Expert. Provide clear, accurate, and professional analysis.**
 
-**Be clear, accurate, and professional. Answer the specific question asked without overcomplicating.**
-
-**For entry analysis:** Look at the actual data provided and explain what the entries represent.
-**For general IFRS questions:** Provide clear guidance with proper journal entries and explanations.
-**For complex transactions:** Break down each party's role and accounting treatment clearly.
+**Answer the specific question asked. Use proper IFRS references. Be practical and helpful.**
 
 **CRITICAL ACCOUNTING FUNDAMENTALS - NEVER GET THESE WRONG:**
 
@@ -874,60 +870,13 @@ async def ai_chat_query(request: ChatRequest):
         # Quality check for common accounting errors and response quality
         quality_issues = []
         
-        # BASIC QUALITY CHECKS
-        
+        # MINIMAL QUALITY CHECKS - Only catch serious errors
         user_lower = user_message.lower()
         
-        # Check for made-up terminology
-        if "icnld" in clean_output.lower() or "non-cancellable, non-derogable" in clean_output.lower():
-            quality_issues.append("AI using made-up terminology not found in IFRS standards")
-        
-        # Check for overly complex responses to simple questions
-        if "entry" in user_lower and "backo" in user_lower and len(clean_output) > 1500:
-            quality_issues.append("Overly complex response for simple entry question")
-        
-        # Check for repetitive content
-        lines = clean_output.split('\n')
-        unique_lines = set()
-        repetitive_lines = 0
-        for line in lines:
-            line_clean = line.strip()
-            if line_clean and len(line_clean) > 20:  # Only check substantial lines
-                if line_clean in unique_lines:
-                    repetitive_lines += 1
-                else:
-                    unique_lines.add(line_clean)
-        
-        if repetitive_lines > 3:
-            quality_issues.append("Response contains excessive repetition")
-        
-        # Check for verbose data dumps
-        if clean_output.count("'id':") > 2 or clean_output.count("datetime.datetime") > 2:
-            quality_issues.append("Response contains verbose data dumps instead of analysis")
-        
-        # Check for hallucinated complex scenarios
-        if len(clean_output) > 2000 and ("entry" in user_lower and "amount" in user_lower):
-            quality_issues.append("Overly complex response for simple entry question - possible hallucination")
-        
-        # Check for incorrect IFRS 16 journal entries
+        # Only check for completely wrong IFRS 16 journal entries
         if "ifrs 16" in user_message.lower() or "lease" in user_message.lower():
-            if ("Dr. Lease Liability" in clean_output or "Debit: Lease Liability" in clean_output) and \
-               ("Cr. Right-of-Use Asset" in clean_output or "Credit: Right-of-Use Asset" in clean_output):
+            if ("Dr. Lease Liability" in clean_output and "Cr. Right-of-Use Asset" in clean_output):
                 quality_issues.append("Incorrect IFRS 16 journal entry - debits and credits are reversed")
-        
-        # Check for basic accounting equation violations in journal entries
-        if ("Dr." in clean_output or "Debit" in clean_output) and ("Cr." in clean_output or "Credit" in clean_output):
-            # Look for fundamental errors in asset/liability treatment
-            if "asset" in clean_output.lower() and "liability" in clean_output.lower():
-                # Check for obvious errors like crediting assets to increase them
-                import re
-                if re.search(r'credit.*asset.*increase|debit.*liability.*increase', clean_output.lower()):
-                    quality_issues.append("Fundamental accounting error - incorrect debit/credit treatment")
-        
-        # Check for unclear single entry analysis
-        if "entry" in user_message.lower() and "amount" in user_message.lower():
-            if clean_output.count("Debit:") + clean_output.count("Credit:") > 6:
-                quality_issues.append("Overly complex analysis for simple entry question")
         
         if quality_issues:
             logger.error(f"Quality issues detected in AI response: {quality_issues}")
