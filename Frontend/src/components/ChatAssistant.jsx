@@ -5,6 +5,122 @@ import { SearchEngine } from '../data/searchData';
 import { useCompany } from '../contexts/CompanyContext';
 import axios from 'axios';
 
+// Funny loading phrases for AI processing
+const LOADING_PHRASES = [
+  "Even AI takes time... ⏰",
+  "IFRS is luckily easy! 📊",
+  "Calculating consolidation magic ✨",
+  "Reading IFRS 16 for the 1000th time 📖",
+  "Asking the accounting gods for wisdom 🙏",
+  "Converting coffee to IFRS expertise ☕",
+  "Debugging journal entries like a pro 🐛",
+  "Teaching AI about debit and credit 💡",
+  "Consolidating thoughts and entities 🏢",
+  "Searching for the perfect IFRS paragraph 🔍",
+  "AI is having an existential crisis about goodwill 🤔",
+  "Calculating present value of patience ⏳",
+  "IFRS 9 expected credit loss: my sanity 😅",
+  "Translating human to accounting language 🤖",
+  "Loading... like a slow ERP system 🐌",
+  "AI is consulting the IFRS crystal ball 🔮",
+  "Depreciation in progress... please wait 📉",
+  "Amortizing the time it takes to respond ⏲️",
+  "Fair value measurement of your question 💰",
+  "AI is doing some creative accounting 🎨",
+  "Reconciling AI thoughts with reality ⚖️",
+  "IFRS 15 revenue recognition: still pending 💸",
+  "Calculating the NPV of this conversation 📈",
+  "AI audit in progress... no findings yet ✅",
+  "Consolidating 99 problems but IFRS ain't one 🎵",
+  "Teaching AI that assets = liabilities + equity 🧮",
+  "AI is having flashbacks to accounting school 🎓",
+  "Impairment testing AI's patience levels 📊",
+  "Loading faster than year-end closing 🏃‍♂️",
+  "AI is reading footnotes... this might take a while 📝",
+  "Hedge accounting: AI's natural defense mechanism 🛡️",
+  "Calculating lease liability like it's 2019 📅",
+  "AI is practicing its journal entry dance 💃",
+  "IFRS interpretation committee meeting in session 👥",
+  "AI's brain is doing some serious number crunching 🧠",
+  "Loading with the speed of regulatory approval 🐢",
+  "AI is consulting its inner auditor 🕵️‍♂️",
+  "Materiality assessment: this wait is immaterial ⚡",
+  "AI is having a moment with segment reporting 📊",
+  "Calculating faster than a Big 4 intern 🏃‍♀️",
+  "AI's processing power: depreciated but not impaired 💪",
+  "IFRS convergence: AI and human understanding 🤝",
+  "Loading... like waiting for audit sign-off 📋",
+  "AI is doing some forensic accounting on your question 🔍",
+  "Substance over form: AI gets it now 💡",
+  "AI's memory is being tested for impairment 🧪",
+  "Loading with the enthusiasm of tax season 📊",
+  "AI is calculating the probability of making sense 🎲",
+  "IFRS 3 business combination: AI + your question 💼",
+  "AI is having a control assessment moment 🎮",
+  "Loading... faster than regulatory changes 🚀",
+  "AI's confidence interval: 95% sure it knows IFRS 📈",
+  "Performing substantive testing on this query 🔬",
+  "AI is consulting the accounting standards codification 📚",
+  "Loading with the speed of financial statement prep 📄",
+  "AI's risk assessment: low risk of wrong answer 🎯",
+  "Calculating like it's month-end close 📅",
+  "AI is having a moment of professional skepticism 🤨",
+  "Loading... with the patience of an external auditor ⏰",
+  "AI's internal controls are functioning effectively ✅",
+  "Performing analytical procedures on your question 📊",
+  "AI is consulting its continuing professional education 🎓",
+  "Loading faster than SOX compliance testing 🏃‍♂️",
+  "AI's materiality threshold: every question matters 💎",
+  "Calculating with the precision of a forensic accountant 🔍",
+  "AI is having a going concern assessment 🏢",
+  "Loading... like waiting for management representation letter 📝",
+  "AI's professional judgment is being exercised 🧠",
+  "Performing walkthrough procedures on this query 🚶‍♂️",
+  "AI is consulting the conceptual framework 🏗️",
+  "Loading with the speed of quarterly reporting 📊",
+  "AI's quality control procedures are in effect ✅",
+  "Calculating faster than expense report approvals 💸",
+  "AI is having a subsequent events review 📅",
+  "Loading... with the thoroughness of due diligence 🔍",
+  "AI's independence is not impaired 🗽",
+  "Performing test of controls on this conversation 🎮",
+  "AI is consulting its engagement letter 📋",
+  "Loading faster than budget variance analysis 📈",
+  "AI's sampling method: judgmental selection 🎯",
+  "Calculating with the accuracy of a trial balance ⚖️",
+  "AI is having a management letter moment 💌",
+  "Loading... like waiting for board approval 👥",
+  "AI's documentation standards are being met 📝",
+  "Performing confirmation procedures on your question ✉️",
+  "AI is consulting the audit committee 🏛️",
+  "Loading with the speed of regulatory filing 📊",
+  "AI's ethical considerations are being evaluated 🤔",
+  "Calculating faster than depreciation schedules 📉",
+  "AI is having a peer review moment 👨‍💼",
+  "Loading... with the diligence of tax preparation 📊",
+  "AI's competence is continuously assessed 📚",
+  "Performing cut-off testing on this query ✂️",
+  "AI is consulting its quality assurance manual 📖",
+  "Loading faster than financial statement footnotes 📝",
+  "AI's objectivity remains uncompromised 🎯",
+  "Calculating with the precision of cash flow projections 💰",
+  "AI is having a business risk assessment 📊",
+  "Loading... like waiting for clean audit opinion ✅",
+  "AI's professional development is up to date 🎓",
+  "Performing existence testing on this conversation 🔍",
+  "AI is consulting the engagement quality control reviewer 👨‍⚖️",
+  "Loading with the speed of internal audit findings 🕵️‍♂️",
+  "AI's skepticism level: appropriately professional 🤨",
+  "Calculating faster than accrual adjustments 📊",
+  "AI is having a fraud risk assessment 🚨",
+  "Loading... with the patience of year-end inventory count 📦",
+  "AI's communication skills are being tested 💬",
+  "Performing completeness testing on your question ✅",
+  "AI is consulting its continuing education credits 🎓",
+  "Loading faster than management override controls 🛡️",
+  "AI's integrity is beyond question 💎"
+];
+
 const ChatAssistant = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -32,8 +148,45 @@ const ChatAssistant = () => {
   const searchEngine = useRef(new SearchEngine());
   const navigate = useNavigate();
   const [isAIProcessing, setIsAIProcessing] = useState(false);
+  const [currentLoadingPhrase, setCurrentLoadingPhrase] = useState('');
+  const [loadingPhraseIndex, setLoadingPhraseIndex] = useState(0);
   const chatRef = useRef(null);
   const resizeRef = useRef(null);
+  const loadingIntervalRef = useRef(null);
+
+  // Loading phrase management
+  const startLoadingPhrases = () => {
+    // Set initial random phrase
+    const randomIndex = Math.floor(Math.random() * LOADING_PHRASES.length);
+    setCurrentLoadingPhrase(LOADING_PHRASES[randomIndex]);
+    setLoadingPhraseIndex(randomIndex);
+    
+    // Change phrase every 2 seconds
+    loadingIntervalRef.current = setInterval(() => {
+      setLoadingPhraseIndex(prevIndex => {
+        const nextIndex = (prevIndex + 1) % LOADING_PHRASES.length;
+        setCurrentLoadingPhrase(LOADING_PHRASES[nextIndex]);
+        return nextIndex;
+      });
+    }, 2000);
+  };
+
+  const stopLoadingPhrases = () => {
+    if (loadingIntervalRef.current) {
+      clearInterval(loadingIntervalRef.current);
+      loadingIntervalRef.current = null;
+    }
+    setCurrentLoadingPhrase('');
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Reset chat function
   const resetChat = () => {
@@ -297,9 +450,10 @@ const ChatAssistant = () => {
 
   // Get AI response from backend API with enhanced context
   const getAIResponse = async (query) => {
-    try {
-      setIsAIProcessing(true);
+    setIsAIProcessing(true);
+    startLoadingPhrases();
       
+    try {
       // Build user context for system integration
       const userContext = {
         current_page: currentPage,
@@ -365,6 +519,7 @@ const ChatAssistant = () => {
       return fallbackResponse;
     } finally {
       setIsAIProcessing(false);
+      stopLoadingPhrases();
     }
   };
 
@@ -983,7 +1138,7 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
     }, 100);
   };
 
-  // Resizing functionality
+  // Handle resize (left side resizing)
   const handleMouseDown = (e) => {
     setIsResizing(true);
     e.preventDefault();
@@ -992,10 +1147,14 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
   const handleMouseMove = (e) => {
     if (!isResizing) return;
     
-    const newWidth = Math.max(350, Math.min(800, window.innerWidth - e.clientX + 20));
-    const newHeight = Math.max(400, Math.min(window.innerHeight - 100, window.innerHeight - e.clientY + 20));
-    
-    setChatSize({ width: newWidth, height: newHeight });
+    // Calculate new width based on mouse position from the left edge
+    const chatRect = chatRef.current?.getBoundingClientRect();
+    if (chatRect) {
+      const newWidth = Math.max(350, Math.min(800, chatRect.right - e.clientX));
+      const newHeight = Math.max(400, Math.min(window.innerHeight - 100, chatSize.height));
+      
+      setChatSize({ width: newWidth, height: newHeight });
+    }
   };
 
   const handleMouseUp = () => {
@@ -1017,6 +1176,39 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
   const toggleMaximize = () => {
     setIsMaximized(!isMaximized);
   };
+
+  // Modern loading component with animated phrases
+  const LoadingComponent = () => (
+    <div className="flex items-start space-x-3 mb-4">
+      <div className="flex-shrink-0">
+        <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      </div>
+      <div className="flex-1">
+        <div className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-3 max-w-xs lg:max-w-md">
+          <div className="flex items-center space-x-2 mb-2">
+            <Sparkles className="h-4 w-4 text-blue-500 animate-pulse" />
+            <span className="text-sm font-medium text-slate-900 dark:text-white">
+              AI Thinking
+            </span>
+          </div>
+          <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            <div className="flex items-center space-x-2">
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
+              <span className="text-xs text-slate-500 dark:text-slate-400 animate-pulse">
+                {currentLoadingPhrase || "Processing your request..."}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   // Industry context selector
   const industryOptions = [
@@ -1428,10 +1620,10 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
           {/* Resize Handle */}
           {!isMaximized && (
             <div
-              className="absolute -top-2 -left-2 w-4 h-4 cursor-nw-resize opacity-50 hover:opacity-100 transition-opacity"
+              className="absolute top-1/2 -left-1 w-2 h-8 cursor-ew-resize opacity-50 hover:opacity-100 transition-opacity bg-slate-300 dark:bg-slate-600 rounded-full transform -translate-y-1/2"
               onMouseDown={handleMouseDown}
+              title="Drag to resize"
             >
-              <Move className="h-4 w-4 text-slate-400" />
             </div>
           )}
           {/* Chat Header */}
@@ -1496,6 +1688,9 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
               </div>
             ))}
             
+            {/* Modern Loading Component */}
+            {isAIProcessing && <LoadingComponent />}
+            
             {/* Typing indicator */}
             {(isTyping || isAIProcessing) && (
               <div className="flex items-start space-x-3">
@@ -1511,12 +1706,6 @@ I'm currently experiencing connectivity issues with the advanced AI service, but
                       <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                       <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                     </div>
-                    {isAIProcessing && (
-                      <div className="flex items-center space-x-1">
-                        <Sparkles className="h-3 w-3 text-purple-500 animate-pulse" />
-                        <span className="text-xs text-purple-500">AI thinking...</span>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
