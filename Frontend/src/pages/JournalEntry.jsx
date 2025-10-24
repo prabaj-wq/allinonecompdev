@@ -181,6 +181,11 @@ const JournalEntry = () => {
   const [auditEvents, setAuditEvents] = useState([])
   const [auditLoading, setAuditLoading] = useState(false)
   const [checklistProgress, setChecklistProgress] = useState({ completed: 0, total: 0 })
+  const [lineSaving, setLineSaving] = useState(false)
+  const [notification, setNotification] = useState(null)
+  const [attachmentForm, setAttachmentForm] = useState({ description: '', metadata: '' })
+  const attachmentInputRef = useRef(null)
+  const uploadInputRef = useRef(null)
 
   const [batchLoading, setBatchLoading] = useState(false)
 
