@@ -555,6 +555,31 @@ const JournalEntry = () => {
     setHighlights(nextHighlights.slice(0, 4))
   }, [categoryTrend, periodVariance, summaryMetrics])
 
+  const addLine = useCallback(() => {
+    setLines((prev) => {
+      const entityCode = context.entity !== 'all' ? context.entity : ''
+      const entityName = entityCode ? (entities.find((ent) => ent.code === entityCode)?.name || '') : ''
+
+      return [
+        ...prev,
+        {
+          id: `temp-${Date.now()}`,
+          line_number: prev.length + 1,
+          transaction_date: new Date().toISOString().split('T')[0],
+          entity_code: entityCode,
+          entity_name: entityName,
+          account_debit_code: '',
+          account_credit_code: '',
+          amount: '',
+          description: '',
+          reference_number: '',
+          custom_fields: {},
+          isNew: true
+        }
+      ]
+    })
+  }, [context.entity, entities])
+
   const updateLineField = (lineId, field, value) => {
     setLines((prev) => prev.map((line) => {
       if (line.id !== lineId) return line
