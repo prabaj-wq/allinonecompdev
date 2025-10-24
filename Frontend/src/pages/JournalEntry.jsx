@@ -27,6 +27,7 @@ import {
   CalendarDays,
   Paperclip,
   Plus,
+  Trash2,
   Upload,
   X,
   BarChart3
