@@ -1,188 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { useCompany } from '../contexts/CompanyContext'
-import {
-  Activity,
-  AlertCircle,
-  Building2,
-  Check,
-  CheckCircle,
-  ChevronRight,
-  Clock,
-  Edit3,
-  FileSpreadsheet,
-  FileText,
-  History,
-  Loader2,
-  PieChart,
-  BarChart3,
-  LineChart,
-  ToggleLeft,
-  ToggleRight,
-  Copy,
-  CalendarDays,
-  Paperclip,
-  Plus,
-  RefreshCw,
-  Save,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Upload,
-  X
-} from 'lucide-react'
-import { journalAPI } from '../services/api'
-
-const CURRENT_YEAR = new Date().getFullYear()
-const FISCAL_YEARS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1].map(String)
-const PERIOD_OPTIONS = Array.from({ length: 12 }, (_, index) => ({
-  value: String(index + 1),
-  label: `Period ${index + 1}`
-}))
-const SCENARIO_OPTIONS = ['actual', 'budget', 'forecast']
-
-const DEFAULT_CATEGORY_META = [
-  {
-    id: 'manual_adjustments',
-    name: 'Manual Adjustments',
-    description: 'General manual adjustments and ad-hoc postings',
-    icon: Edit3,
-    color: 'bg-green-500'
-  },
-  {
-    id: 'accruals',
-    name: 'Accruals',
-    description: 'Deferred expenses, revenue and other accruals',
-    icon: Clock,
-    color: 'bg-blue-500'
-  },
-  {
-    id: 'depreciation',
-    name: 'Depreciation',
-    description: 'Asset depreciation and amortisation',
-    icon: Settings,
-    color: 'bg-orange-500'
-  },
-  {
-    id: 'recurring',
-    name: 'Recurring Entries',
-    description: 'Recurring entries generated from templates',
-    icon: RefreshCw,
-    color: 'bg-indigo-500'
-  },
-  {
-    id: 'intercompany',
-    name: 'Intercompany',
-    description: 'Intercompany eliminations and settlements',
-    icon: Building2,
-    color: 'bg-purple-500'
-  },
-  {
-    id: 'fx_revaluation',
-    name: 'FX Revaluation',
-    description: 'Foreign currency revaluation adjustments',
-    icon: FileSpreadsheet,
-    color: 'bg-cyan-500'
-  },
-  {
-    id: 'tax_adjustments',
-    name: 'Tax Adjustments',
-    description: 'Tax provisions and statutory adjustments',
-    icon: FileText,
-    color: 'bg-red-500'
-  },
-  {
-    id: 'consolidation',
-    name: 'Consolidation',
-    description: 'Group consolidation and eliminations',
-    icon: Settings,
-    color: 'bg-violet-500'
-  }
-]
-
-const NotificationBanner = ({ notification }) => {
-  if (!notification) return null
-
-  const tone = notification.type === 'error'
-    ? 'bg-red-50 text-red-600 border-red-200'
-    : 'bg-green-50 text-green-600 border-green-200'
-
-  return (
-    <div className={`flex items-center justify-between px-4 py-2 text-sm border rounded-md ${tone}`}>
-      <span>{notification.message}</span>
-      <button onClick={notification.onDismiss} className="text-xs font-semibold uppercase tracking-wide">
-        Dismiss
-      </button>
-    </div>
-  )
-}
-
-const StatusTimeline = ({ history }) => {
-  if (!history.length) {
-    return <p className="text-xs text-gray-500">No status events captured yet.</p>
-  }
-
-  return (
-    <ol className="space-y-2 text-xs text-gray-600 dark:text-gray-300">
-      {history.map((event) => (
-        <li key={`${event.status}-${event.changed_at}`} className="flex items-start gap-2">
-          <div className="mt-0.5 h-2 w-2 rounded-full bg-blue-500" />
-          <div>
-            <p className="font-medium text-gray-700 dark:text-gray-200">{event.status}</p>
-            <p className="text-[11px] text-gray-500">{event.changed_at}</p>
-            {event.changed_by && (
-              <p className="text-[11px] text-gray-500">By {event.changed_by}</p>
-            )}
-          </div>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-const formatCurrency = (value = 0) => {
-  const amount = Number.isNaN(Number(value)) ? 0 : Number(value)
-  return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-const JournalEntry = () => {
-  const [searchParams] = useSearchParams()
-  const { selectedCompany } = useCompany()
-
-  const processId = searchParams.get('processId')
-  const defaultEntity = searchParams.get('entityId') || 'all'
-  const defaultScenario = searchParams.get('scenarioId') || searchParams.get('scenario') || 'actual'
-  const defaultFiscalYear = searchParams.get('year') || searchParams.get('yearId') || String(CURRENT_YEAR)
-  const defaultPeriod = searchParams.get('period') || searchParams.get('periodId') || '1'
-  const defaultCategory = searchParams.get('category') || 'manual_adjustments'
-
-  const [categories, setCategories] = useState([])
-  const [entities, setEntities] = useState([])
-  const [accounts, setAccounts] = useState([])
-  const [templates, setTemplates] = useState([])
-  const [selectedCategory, setSelectedCategory] = useState(defaultCategory)
-
-  const [currentBatch, setCurrentBatch] = useState(null)
-  const [lines, setLines] = useState([])
-  const [attachments, setAttachments] = useState([])
-  const [statusHistory, setStatusHistory] = useState([])
-  const [validationResult, setValidationResult] = useState(null)
-  const [onboardingChecklist, setOnboardingChecklist] = useState([])
-  const [summaryMetrics, setSummaryMetrics] = useState(null)
-  const [categoryTrend, setCategoryTrend] = useState([])
-  const [periodVariance, setPeriodVariance] = useState([])
-  const [reportsLoading, setReportsLoading] = useState(false)
-  const [templateActionLoading, setTemplateActionLoading] = useState(false)
-  const [uploadBatches, setUploadBatches] = useState([])
-  const [uploadLoading, setUploadLoading] = useState(false)
-  const [uploadForm, setUploadForm] = useState({ description: '', file: null })
-  const [templatePreview, setTemplatePreview] = useState({ open: false, rows: [], metadata: null })
-  const [highlights, setHighlights] = useState([])
-  const [auditEvents, setAuditEvents] = useState([])
-  const [auditLoading, setAuditLoading] = useState(false)
-  const [checklistProgress, setChecklistProgress] = useState({ completed: 0, total: 0 })
-
-  const [batchLoading, setBatchLoading] = useState(false)
+...
   const [lineSaving, setLineSaving] = useState(false)
   const [notification, setNotification] = useState(null)
   const [attachmentForm, setAttachmentForm] = useState({ description: '', metadata: '' })
@@ -554,6 +371,31 @@ const JournalEntry = () => {
 
     setHighlights(nextHighlights.slice(0, 4))
   }, [categoryTrend, periodVariance, summaryMetrics])
+
+  const addLine = useCallback(() => {
+    setLines((prev) => {
+      const entityCode = context.entity !== 'all' ? context.entity : ''
+      const entityName = entityCode ? (entities.find((ent) => ent.code === entityCode)?.name || '') : ''
+
+      return [
+        ...prev,
+        {
+          id: `temp-${Date.now()}`,
+          line_number: prev.length + 1,
+          transaction_date: new Date().toISOString().split('T')[0],
+          entity_code: entityCode,
+          entity_name: entityName,
+          account_debit_code: '',
+          account_credit_code: '',
+          amount: '',
+          description: '',
+          reference_number: '',
+          custom_fields: {},
+          isNew: true
+        }
+      ]
+    })
+  }, [context.entity, entities])
 
   const addLine = useCallback(() => {
     setLines((prev) => {
