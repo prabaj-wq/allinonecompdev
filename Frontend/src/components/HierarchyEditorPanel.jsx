@@ -252,7 +252,7 @@ const HierarchyEditorPanel = ({
           
           // Call the API to update the entity's/account's node_id
           const endpoint = hierarchyType === 'account' 
-            ? `/api/axes-account/accounts/${entity.account_code || entity.code}`
+            ? `/api/axes-account/accounts/${entity.id}`
             : `/api/axes-entity/entities/${entity.id}`
           
           console.log('🚀 Using endpoint:', endpoint)
@@ -308,38 +308,50 @@ const HierarchyEditorPanel = ({
   const loadAllAccounts = async () => {
     if (hierarchyType === 'account') {
       try {
-        const response = await fetch('/api/ifrs-accounts', {
+        console.log('🔍 Loading all accounts from API...')
+        const response = await fetch('/api/axes-account/accounts?company_name=Default%20Company', {
           credentials: 'include'
         })
         
+        console.log('🔍 Response status:', response.status)
+        
         if (response.ok) {
           const data = await response.json()
-          const accounts = data.accounts || []
-          console.log('🔍 Raw accounts from API:', accounts)
+          console.log('🔍 Raw data from API:', data)
+          
+          const accounts = data.accounts || data || []
+          console.log('🔍 Accounts array:', accounts)
+          console.log('🔍 Number of accounts:', accounts.length)
           
           // Transform accounts to match expected format
-          const transformedAccounts = accounts.map((account, index) => ({
-            id: account.id || `temp_${index}`, // Ensure ID is never undefined
-            name: account.account_name || account.name || 'Unnamed Account',
-            code: account.account_code || account.code || `CODE_${index}`,
-            type: account.ifrs_category || account.account_type || 'Account',
-            account_name: account.account_name || account.name || 'Unnamed Account',
-            account_code: account.account_code || account.code || `CODE_${index}`,
-            account_type: account.ifrs_category || account.account_type || 'Account',
-            ifrs_category: account.ifrs_category || '',
-            statement: account.statement || '',
-            description: account.description || '',
-            balance: account.balance || 0,
-            hierarchy_id: account.hierarchy_id,
-            node_id: account.node_id
-          }))
+          const transformedAccounts = accounts.map((account, index) => {
+            console.log(`🔍 Processing account ${index}:`, account)
+            return {
+              id: account.id || account.code || `temp_${index}`,
+              name: account.name || 'Unnamed Account',
+              code: account.code || `CODE_${index}`,
+              type: account.account_type || 'Account',
+              account_name: account.name || 'Unnamed Account',
+              account_code: account.code || `CODE_${index}`,
+              account_type: account.account_type || 'Account',
+              statement: account.statement || '',
+              category: account.category || '',
+              description: account.description || '',
+              hierarchy_id: account.hierarchy_id,
+              node_id: account.node_id,
+              parent_id: account.parent_id,
+              level: account.level,
+              is_leaf: account.is_leaf
+            }
+          })
           
-          console.log('🔍 Transformed accounts sample:', transformedAccounts.slice(0, 2))
-          console.log('🔍 Account IDs:', transformedAccounts.map(acc => acc.id))
+          console.log('🔍 Transformed accounts:', transformedAccounts)
+          console.log('🔍 First account sample:', transformedAccounts[0])
           
           setAllAccounts(transformedAccounts)
         } else {
-          console.error('Failed to load all accounts')
+          const errorText = await response.text()
+          console.error('Failed to load all accounts:', errorText)
           setAllAccounts([])
         }
       } catch (error) {
