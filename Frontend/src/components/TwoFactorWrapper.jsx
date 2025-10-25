@@ -15,6 +15,7 @@ import Consolidation from '../pages/Consolidation'
 import Support from '../pages/Support'
 import Profile from '../pages/Profile'
 import FinancialStatements from '../pages/FinancialStatementsEnhanced'
+import FinancialReports from '../pages/FinancialReports'
 import AssetRegister from '../pages/AssetRegister'
 import BackupRestore from '../pages/BackupRestore'
 import AuditMateriality from '../pages/AuditMateriality'
@@ -153,6 +154,11 @@ const TwoFactorWrapper = () => {
           <Route path="/financial-statements" element={
             <PageAccessWrapper requiredPage="/financial-statements" pageName="Financial Statements">
               <FinancialStatements />
+            </PageAccessWrapper>
+          } />
+          <Route path="/financial-reports" element={
+            <PageAccessWrapper requiredPage="/process" pageName="Financial Reports">
+              <FinancialReports />
             </PageAccessWrapper>
           } />
           <Route path="/reports" element={

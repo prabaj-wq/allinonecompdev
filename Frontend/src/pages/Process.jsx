@@ -3113,11 +3113,38 @@ const Process = () => {
                                       }
 
                                       console.log(
-                                        "✅ Validation passed, opening reports modal",
+                                        "✅ Validation passed, navigating to reports page",
                                       );
-                                      console.log("🔄 Setting showReports to true");
-                                      setShowReports(true);
-                                      console.log("✅ showReports state updated");
+                                      
+                                      // Navigate to Financial Reports page with context
+                                      navigate("/financial-reports", {
+                                        state: {
+                                          processId: selectedProcess?.id || null,
+                                          processName: selectedProcess?.name || "Unknown Process",
+                                          entityIds: selectedEntityContext !== "all" 
+                                            ? [selectedEntityContext]
+                                            : availableEntities.map(e => getEntityIdentifier(e)),
+                                          entityNames: selectedEntityContext !== "all"
+                                            ? [availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.name || selectedEntityContext]
+                                            : availableEntities.map(e => e.name || e.entity_name),
+                                          scenarioId: selectedScenario || null,
+                                          scenarioName: Array.isArray(scenarios)
+                                            ? scenarios.find((s) => s.id === selectedScenario)?.scenario_name || null
+                                            : null,
+                                          fiscalYear: selectedYear || null,
+                                          fiscalYearName: fiscalYears.find(fy => fy.id === selectedYear)?.year_name || null,
+                                          selectedPeriods: Array.isArray(selectedPeriods) ? selectedPeriods : [],
+                                          periodNames: Array.isArray(selectedPeriods) && Array.isArray(availablePeriods)
+                                            ? selectedPeriods
+                                                .map((pId) => {
+                                                  const period = availablePeriods.find((p) => p.id === pId);
+                                                  return period?.period_name || period?.name || String(pId);
+                                                })
+                                                .filter(Boolean)
+                                            : [],
+                                        }
+                                      });
+                                      
                                       showNotification(
                                         "Opening Financial Reports...",
                                         "success",
