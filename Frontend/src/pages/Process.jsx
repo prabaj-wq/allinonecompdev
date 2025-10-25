@@ -3115,7 +3115,9 @@ const Process = () => {
                                       console.log(
                                         "✅ Validation passed, opening reports modal",
                                       );
+                                      console.log("🔄 Setting showReports to true");
                                       setShowReports(true);
+                                      console.log("✅ showReports state updated");
                                       showNotification(
                                         "Opening Financial Reports...",
                                         "success",
@@ -4118,6 +4120,7 @@ const Process = () => {
       )}
 
       {/* Financial Statements Modal */}
+      {console.log("🎭 Rendering modal section, showReports:", showReports)}
       {showReports && (
         <FinancialStatements
           processContext={{

@@ -21,6 +21,12 @@ import { useCompany } from "../contexts/CompanyContext";
 const FinancialStatements = ({ processContext = {}, nodeConfig = {}, onClose, onSaveConfig }) => {
   const { selectedCompany } = useCompany();
 
+  // Debug logging
+  console.log("🚀 FinancialStatements component rendering");
+  console.log("📊 Process Context:", processContext);
+  console.log("⚙️ Node Config:", nodeConfig);
+  console.log("🏢 Selected Company:", selectedCompany);
+
   // Validate and set defaults for processContext
   const safeProcessContext = {
     processId: processContext.processId || null,
