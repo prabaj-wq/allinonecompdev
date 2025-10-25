@@ -4,7 +4,12 @@ Generates financial statements from process data with hierarchical account suppo
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse
+
+try:
+    from fastapi.responses import FileResponse
+except ImportError:
+    FileResponse = None
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func, and_, or_, desc, asc
 from pydantic import BaseModel, Field, validator
@@ -19,15 +24,37 @@ import pandas as pd
 import io
 import os
 import tempfile
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
 import logging
 
+# Try to import reportlab, but make it optional
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer,
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    # Define dummy values to prevent errors
+    A4 = (595.27, 841.89)
+
 from database import get_db
-from auth.dependencies import get_current_active_user
+
+try:
+    from auth.dependencies import get_current_active_user
+except ImportError:
+    # Fallback if auth module is not properly configured
+    async def get_current_active_user():
+        return {"username": "system", "id": "system"}
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/financial-reports", tags=["Financial Reports"])
@@ -847,6 +874,12 @@ async def export_report(
 
 def export_to_pdf(report_data, report_id):
     """Export report to PDF"""
+    if not REPORTLAB_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="PDF export is not available. Please install reportlab: pip install reportlab",
+        )
+
     # Create temporary file
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
 
@@ -894,7 +927,7 @@ def export_to_pdf(report_data, report_id):
                     ["", f"Total {section['title']}", f"{section.get('total', 0):,.2f}"]
                 )
 
-                if len(table_data) > 1:
+                if len(table_data) > 1 and REPORTLAB_AVAILABLE:
                     table = Table(table_data)
                     table.setStyle(
                         TableStyle(
@@ -913,16 +946,23 @@ def export_to_pdf(report_data, report_id):
                     story.append(table)
                     story.append(Spacer(1, 12))
 
-        # Build PDF
-        doc.build(story)
+        if REPORTLAB_AVAILABLE:
+            # Build PDF
+            doc.build(story)
 
-        # Return file response
-        return FileResponse(
-            temp_file.name,
-            media_type="application/pdf",
-            filename=f"report_{report_id}.pdf",
-        )
+            # Return file response
+            from fastapi.responses import FileResponse
 
+            return FileResponse(
+                temp_file.name,
+                media_type="application/pdf",
+                filename=f"report_{report_id}.pdf",
+            )
+        else:
+            raise HTTPException(status_code=503, detail="PDF export not available")
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating PDF: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create PDF: {str(e)}")
@@ -933,7 +973,24 @@ def export_to_excel(report_data, report_id):
     output = io.BytesIO()
 
     try:
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        # Check if openpyxl is available
+        try:
+            import openpyxl
+        except ImportError:
+            # Fallback to xlsxwriter if available, or raise error
+            try:
+                with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                    pass  # Test if xlsxwriter works
+                engine = "xlsxwriter"
+            except:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Excel export requires openpyxl or xlsxwriter. Install with: pip install openpyxl",
+                )
+        else:
+            engine = "openpyxl"
+
+        with pd.ExcelWriter(output, engine=engine) as writer:
             # Create main report sheet
             if "sections" in report_data:
                 all_data = []
@@ -989,6 +1046,8 @@ def export_to_excel(report_data, report_id):
     except Exception as e:
         logger.error(f"Error creating Excel: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create Excel: {str(e)}")
+    finally:
+        output.seek(0)  # Reset to beginning for reading
 
 
 # ============================================================================

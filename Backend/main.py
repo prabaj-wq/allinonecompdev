@@ -695,9 +695,17 @@ from routers import (
     ai_chat,
     document_integration,
     journal_entry,
-    financial_reports,
 )
 from routers import journal_entry_extended
+
+# Try to import financial_reports - it's optional
+try:
+    from routers import financial_reports
+
+    FINANCIAL_REPORTS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Financial reports module not available: {e}")
+    FINANCIAL_REPORTS_AVAILABLE = False
 
 # Include all routers with /api prefix
 # All routers including SQL router should use the same prefix pattern
@@ -736,7 +744,8 @@ app.include_router(ai_chat.router, prefix="/api")
 app.include_router(document_integration.router, prefix="/api")
 app.include_router(journal_entry.router, prefix="/api")
 app.include_router(journal_entry_extended.router, prefix="/api")
-app.include_router(financial_reports.router, prefix="/api")
+if FINANCIAL_REPORTS_AVAILABLE:
+    app.include_router(financial_reports.router, prefix="/api")
 app.include_router(role_management.router)
 
 
