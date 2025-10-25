@@ -15,7 +15,7 @@ const HierarchyCreateModal = ({
   const [formData, setFormData] = useState({
     hierarchy_name: '',
     description: '',
-    hierarchy_type: 'entity'
+    hierarchy_type: 'account'
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
@@ -26,14 +26,14 @@ const HierarchyCreateModal = ({
       setFormData({
         hierarchy_name: hierarchy.hierarchy_name || '',
         description: hierarchy.description || '',
-        hierarchy_type: hierarchy.hierarchy_type || 'entity'
+        hierarchy_type: hierarchy.hierarchy_type || 'account'
       })
     } else {
       // Reset form for new hierarchy
       setFormData({
         hierarchy_name: '',
         description: '',
-        hierarchy_type: 'entity'
+        hierarchy_type: 'account'
       })
     }
   }, [hierarchy, isOpen])
@@ -64,7 +64,7 @@ const HierarchyCreateModal = ({
         setFormData({
           hierarchy_name: '',
           description: '',
-          hierarchy_type: 'entity'
+          hierarchy_type: 'account'
         })
         onClose()
       }

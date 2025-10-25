@@ -30,7 +30,6 @@ const FinancialReports = () => {
   // Configuration State
   const [config, setConfig] = useState({
     hierarchyId: null,
-    reportType: "balance_sheet",
     showZeroBalances: false,
     showICColumn: true,
     showOtherColumn: true,
@@ -131,7 +130,6 @@ const FinancialReports = () => {
             hierarchy_id: config.hierarchyId,
             entity_ids: processContext.entityIds || [],
             period_ids: processContext.selectedPeriods || [],
-            report_type: config.reportType,
             show_zero_balances: config.showZeroBalances,
             show_ic_column: config.showICColumn,
             show_other_column: config.showOtherColumn,
@@ -246,7 +244,7 @@ const FinancialReports = () => {
             Report Configuration
           </h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Account Hierarchy *
@@ -262,21 +260,6 @@ const FinancialReports = () => {
                     {h.hierarchy_name}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Report Type
-              </label>
-              <select
-                value={config.reportType}
-                onChange={(e) => setConfig({ ...config, reportType: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-white"
-              >
-                <option value="balance_sheet">Balance Sheet</option>
-                <option value="profit_loss">Profit & Loss</option>
-                <option value="cash_flow">Cash Flow Statement</option>
               </select>
             </div>
 
