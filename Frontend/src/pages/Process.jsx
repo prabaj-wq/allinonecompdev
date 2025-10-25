@@ -2893,10 +2893,25 @@ const Process = () => {
                                 node.type === "consolidated_reports"
                               ) {
                                 // Open Reports Modal
+                                console.log("📊 Reports node double-clicked");
+                                console.log("📅 Selected Year:", selectedYear);
+                                console.log(
+                                  "📆 Selected Periods:",
+                                  selectedPeriods,
+                                );
+                                console.log(
+                                  "🎯 Selected Scenario:",
+                                  selectedScenario,
+                                );
+
                                 if (
                                   !selectedYear ||
+                                  !Array.isArray(selectedPeriods) ||
                                   selectedPeriods.length === 0
                                 ) {
+                                  console.warn(
+                                    "❌ Validation failed: Missing year or periods",
+                                  );
                                   showNotification(
                                     "Please select fiscal year and periods first",
                                     "error",
@@ -2904,12 +2919,18 @@ const Process = () => {
                                   return;
                                 }
                                 if (!selectedScenario) {
+                                  console.warn(
+                                    "❌ Validation failed: Missing scenario",
+                                  );
                                   showNotification(
                                     "Please select a scenario first",
                                     "error",
                                   );
                                   return;
                                 }
+                                console.log(
+                                  "✅ Validation passed, opening reports modal",
+                                );
                                 setShowReports(true);
                                 showNotification(
                                   "Opening Financial Reports...",
@@ -3041,16 +3062,39 @@ const Process = () => {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    console.log(
+                                      "🖱️ Node button clicked:",
+                                      node.type,
+                                    );
 
                                     // Special handling for Reports node
                                     if (
                                       node.type === "reports" ||
                                       node.type === "consolidated_reports"
                                     ) {
+                                      console.log("📊 Reports node clicked");
+                                      console.log(
+                                        "📅 Selected Year:",
+                                        selectedYear,
+                                      );
+                                      console.log(
+                                        "📆 Selected Periods:",
+                                        selectedPeriods,
+                                      );
+                                      console.log(
+                                        "🎯 Selected Scenario:",
+                                        selectedScenario,
+                                      );
+
+                                      // Validate with proper array checks
                                       if (
                                         !selectedYear ||
+                                        !Array.isArray(selectedPeriods) ||
                                         selectedPeriods.length === 0
                                       ) {
+                                        console.warn(
+                                          "❌ Validation failed: Missing year or periods",
+                                        );
                                         showNotification(
                                           "Please select fiscal year and periods first",
                                           "error",
@@ -3058,18 +3102,26 @@ const Process = () => {
                                         return;
                                       }
                                       if (!selectedScenario) {
+                                        console.warn(
+                                          "❌ Validation failed: Missing scenario",
+                                        );
                                         showNotification(
                                           "Please select a scenario first",
                                           "error",
                                         );
                                         return;
                                       }
+
+                                      console.log(
+                                        "✅ Validation passed, opening reports modal",
+                                      );
                                       setShowReports(true);
                                       showNotification(
                                         "Opening Financial Reports...",
                                         "success",
                                       );
                                     } else {
+                                      console.log("▶️ Running node:", node.id);
                                       runNode(node.id);
                                     }
                                   }}
