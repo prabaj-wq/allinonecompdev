@@ -1688,6 +1688,7 @@ const AxesEntityEnhanced = () => {
                     onClose={handleCanvasClose}
                     onRefresh={refreshAllData}
                     selectedCompany={selectedCompany}
+                    axisType="entity"
                     showExportImport={true}
                     onExport={handleExportHierarchy}
                     onImport={handleImportHierarchy}

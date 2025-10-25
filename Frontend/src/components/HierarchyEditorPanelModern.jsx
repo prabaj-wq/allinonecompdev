@@ -379,8 +379,12 @@ const HierarchyEditorPanelModern = ({
   hierarchyStructure = { nodes: [], unassigned_entities: [] },
   onClose,
   onRefresh,
-  selectedCompany
+  selectedCompany,
+  axisType = 'entity' // 'entity' or 'account'
 }) => {
+  // Determine API endpoints based on axis type
+  const apiBase = axisType === 'account' ? 'axes-account' : 'axes-entity';
+  const elementName = axisType === 'account' ? 'accounts' : 'entities';
   const [elements, setElements] = useState([])
   const [allElements, setAllElements] = useState([]) // All elements for selection
   const [loading, setLoading] = useState(false)
@@ -404,7 +408,7 @@ const HierarchyEditorPanelModern = ({
 
   const loadCustomFields = async () => {
     try {
-      const response = await fetch(`/api/axes-entity/settings?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/settings?company_name=${selectedCompany}`, {
         credentials: 'include'
       })
       
@@ -419,7 +423,7 @@ const HierarchyEditorPanelModern = ({
 
   const loadAllElements = async () => {
     try {
-      const response = await fetch(`/api/axes-entity/entities?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/${elementName}?company_name=${selectedCompany}`, {
         credentials: 'include'
       })
       
@@ -441,8 +445,8 @@ const HierarchyEditorPanelModern = ({
     try {
       setLoading(true)
       const url = selectedNode?.id 
-        ? `/api/axes-entity/entities?company_name=${selectedCompany}&hierarchy_id=${hierarchy.id}&node_id=${selectedNode.id}`
-        : `/api/axes-entity/entities?company_name=${selectedCompany}&hierarchy_id=${hierarchy.id}`
+        ? `/api/${apiBase}/${elementName}?company_name=${selectedCompany}&hierarchy_id=${hierarchy.id}&node_id=${selectedNode.id}`
+        : `/api/${apiBase}/${elementName}?company_name=${selectedCompany}&hierarchy_id=${hierarchy.id}`
       console.log('🔄 Loading node elements:', url)
       
       const response = await fetch(url, {
@@ -476,7 +480,7 @@ const HierarchyEditorPanelModern = ({
     try {
       setLoading(true)
       // For unassigned elements, we need to pass parent_id as null (not the string 'null')
-      const url = `/api/axes-entity/entities?company_name=${selectedCompany}&hierarchy_id=${hierarchy.id}`
+      const url = `/api/${apiBase}/${elementName}?company_name=${selectedCompany}&hierarchy_id=${hierarchy.id}`
       console.log('🔄 Loading unassigned elements:', url)
       
       const response = await fetch(url, {
@@ -504,7 +508,7 @@ const HierarchyEditorPanelModern = ({
 
   const createElement = async (elementData) => {
     try {
-      const response = await fetch(`/api/axes-entity/entities?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/${elementName}?company_name=${selectedCompany}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -545,7 +549,7 @@ const HierarchyEditorPanelModern = ({
 
   const updateElement = async (elementId, elementData) => {
     try {
-      const response = await fetch(`/api/axes-entity/entities/${elementId}?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/${elementName}/${elementId}?company_name=${selectedCompany}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -587,13 +591,16 @@ const HierarchyEditorPanelModern = ({
 
     try {
       // Unassign by setting node_id to null
-      const response = await fetch(`/api/axes-entity/entities/${elementId}?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/${elementName}/${elementId}?company_name=${selectedCompany}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
-        body: JSON.stringify({ node_id: null })
+        body: JSON.stringify({
+          node_id: null,
+          hierarchy_id: null
+        })
       })
 
       if (response.ok) {
@@ -624,7 +631,7 @@ const HierarchyEditorPanelModern = ({
     }
 
     try {
-      const response = await fetch(`/api/axes-entity/entities/${elementId}?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/${elementName}/${elementId}?company_name=${selectedCompany}`, {
         method: 'DELETE',
         credentials: 'include'
       })
@@ -673,7 +680,7 @@ const HierarchyEditorPanelModern = ({
         }
         console.log('🔍 Assignment data for element', elementId, ':', assignmentData)
         
-        const response = await fetch(`/api/axes-entity/entities/${elementId}?company_name=${selectedCompany}`, {
+        const response = await fetch(`/api/${apiBase}/${elementName}/${elementId}?company_name=${selectedCompany}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -733,7 +740,7 @@ const HierarchyEditorPanelModern = ({
 
   const createChildNode = async (nodeData) => {
     try {
-      const response = await fetch(`/api/axes-entity/hierarchy-nodes?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/hierarchy-nodes?company_name=${selectedCompany}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

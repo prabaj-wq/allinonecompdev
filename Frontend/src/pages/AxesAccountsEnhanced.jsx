@@ -1680,6 +1680,7 @@ const AxesAccountsEnhanced = () => {
                     onClose={handleCanvasClose}
                     onRefresh={refreshAllData}
                     selectedCompany={selectedCompany}
+                    axisType="account"
                     showExportImport={true}
                     onExport={handleExportHierarchy}
                     onImport={handleImportHierarchy}
