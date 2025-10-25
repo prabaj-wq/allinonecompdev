@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Query, Request
-from fastapi.responses import FileResponse
-from typing import List, Optional
+from fastapi.responses import FileResponse, StreamingResponse
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 import psycopg2
 import os
@@ -9,15 +9,25 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 import tempfile
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 router = APIRouter(prefix="/financial-statements", tags=["Financial Statements"])
 
-class StatementRequest(BaseModel):
-    period: str
-    year: str
-    statement_type: str  # balance_sheet, income_statement, cash_flow
-    entity_codes: Optional[List[str]] = None
-    format: Optional[str] = "json"  # json, excel, pdf
+class GenerateRequest(BaseModel):
+    company_name: str
+    process_id: Optional[int] = None
+    scenario_id: Optional[int] = None
+    hierarchy_id: int
+    entity_ids: List[Any]
+    period_ids: List[int]
+    report_type: str
+    show_zero_balances: bool = False
+    show_ic_column: bool = True
+    show_other_column: bool = True
+    rounding_factor: int = 1
+    currency: str = "INR"
 
 def get_db_config():
     """Get database configuration"""
@@ -34,80 +44,344 @@ def get_db_config():
     }
 
 @router.post("/generate")
-async def generate_financial_statements(request: Request):
-    """Generate financial statements"""
+async def generate_financial_statements(req: GenerateRequest):
+    """Generate comprehensive financial statements based on account hierarchy"""
     try:
-        # Parse request body
-        body = await request.body()
-        try:
-            statement_data = json.loads(body)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-        
-        period = statement_data.get('period', '')
-        year = statement_data.get('year', '')
-        
-        if not period or not year:
-            raise HTTPException(status_code=400, detail="Period and year are required")
-        
-        # Get company name from query parameter
-        company_name = request.query_params.get('company_name', 'Backo')
-        
         db_config = get_db_config()
-        company_db_name = company_name.lower().replace(' ', '_').replace('-', '_')
+        company_db_name = req.company_name.lower().replace(' ', '_').replace('-', '_')
         
+        conn = psycopg2.connect(database=company_db_name, **db_config)
+        cur = conn.cursor()
+        
+        # 1. Fetch hierarchy structure
+        cur.execute("""
+            SELECT id, code, name, parent_id, level, hierarchy_id
+            FROM account_hierarchy_nodes
+            WHERE hierarchy_id = %s
+            ORDER BY level, code
+        """, (req.hierarchy_id,))
+        nodes = cur.fetchall()
+        
+        # 2. Fetch accounts mapped to hierarchy
+        cur.execute("""
+            SELECT a.account_code, a.account_name, a.node_id
+            FROM axes_accounts a
+            WHERE a.company_name = %s
+        """, (req.company_name,))
+        accounts = cur.fetchall()
+        
+        # 3. Fetch amounts from data input tables
+        amounts_data = {}
+        
+        # Get process table name
+        if req.process_id:
+            cur.execute("SELECT table_name FROM processes WHERE id = %s", (req.process_id,))
+            process_result = cur.fetchone()
+            table_prefix = process_result[0] if process_result else "actuals"
+        else:
+            table_prefix = "actuals"
+        
+        # Fetch entity amounts
+        entity_table = f"{table_prefix}_entity_amounts_entries"
         try:
-            conn = psycopg2.connect(
-                database=company_db_name,
-                **db_config
-            )
+            period_filter = ",".join(str(p) for p in req.period_ids)
+            entity_filter = ",".join(f"'{e}'" for e in req.entity_ids)
             
-            cur = conn.cursor()
+            query = f"""
+                SELECT account_code, entity_id, SUM(CAST(amount AS NUMERIC)) as total_amount
+                FROM {entity_table}
+                WHERE scenario_id = %s
+                AND period_id IN ({period_filter})
+                AND entity_id IN ({entity_filter})
+                GROUP BY account_code, entity_id
+            """
+            cur.execute(query, (req.scenario_id,))
+            entity_amounts = cur.fetchall()
             
-            # Get trial balance data with account types
-            cur.execute("""
-                SELECT te.account_code, te.account_name, te.debit_amount, te.credit_amount, 
-                       te.balance_amount, COALESCE(a.account_type, 'Unknown') as account_type,
-                       te.entity_code
-                FROM tb_entries te
-                LEFT JOIN accounts a ON te.account_code = a.account_code
-                WHERE te.period = %s AND te.year = %s
-                ORDER BY te.account_code
-            """, (period, year))
-            
-            entries = cur.fetchall()
-            cur.close()
-            conn.close()
-            
-            # Generate Balance Sheet
-            balance_sheet = generate_balance_sheet(entries)
-            
-            # Generate Income Statement
-            income_statement = generate_income_statement(entries)
-            
-            # Generate Cash Flow Statement (simplified)
-            cash_flow = generate_cash_flow_statement(entries)
-            
-            return {
-                "success": True,
-                "period": period,
-                "year": year,
-                "company_name": company_name,
-                "balance_sheet": balance_sheet,
-                "income_statement": income_statement,
-                "cash_flow_statement": cash_flow,
-                "generated_at": datetime.utcnow().isoformat()
+            for acc_code, entity_id, amount in entity_amounts:
+                if acc_code not in amounts_data:
+                    amounts_data[acc_code] = {}
+                if entity_id not in amounts_data[acc_code]:
+                    amounts_data[acc_code][entity_id] = {"entity_amount": 0, "ic_amount": 0, "other_amount": 0}
+                amounts_data[acc_code][entity_id]["entity_amount"] = float(amount or 0)
+        except Exception as e:
+            print(f"Error fetching entity amounts: {e}")
+        
+        # Fetch IC amounts
+        if req.show_ic_column:
+            ic_table = f"{table_prefix}_ic_amounts_entries"
+            try:
+                query = f"""
+                    SELECT from_account_code as account_code, from_entity_id as entity_id, 
+                           SUM(CAST(amount AS NUMERIC)) as total_amount
+                    FROM {ic_table}
+                    WHERE scenario_id = %s
+                    AND period_id IN ({period_filter})
+                    AND from_entity_id IN ({entity_filter})
+                    GROUP BY from_account_code, from_entity_id
+                """
+                cur.execute(query, (req.scenario_id,))
+                ic_amounts = cur.fetchall()
+                
+                for acc_code, entity_id, amount in ic_amounts:
+                    if acc_code not in amounts_data:
+                        amounts_data[acc_code] = {}
+                    if entity_id not in amounts_data[acc_code]:
+                        amounts_data[acc_code][entity_id] = {"entity_amount": 0, "ic_amount": 0, "other_amount": 0}
+                    amounts_data[acc_code][entity_id]["ic_amount"] = float(amount or 0)
+            except Exception as e:
+                print(f"Error fetching IC amounts: {e}")
+        
+        # Fetch other amounts
+        if req.show_other_column:
+            other_table = f"{table_prefix}_other_amounts_entries"
+            try:
+                query = f"""
+                    SELECT account_code, entity_id, SUM(CAST(amount AS NUMERIC)) as total_amount
+                    FROM {other_table}
+                    WHERE scenario_id = %s
+                    AND period_id IN ({period_filter})
+                    AND entity_id IN ({entity_filter})
+                    GROUP BY account_code, entity_id
+                """
+                cur.execute(query, (req.scenario_id,))
+                other_amounts = cur.fetchall()
+                
+                for acc_code, entity_id, amount in other_amounts:
+                    if acc_code not in amounts_data:
+                        amounts_data[acc_code] = {}
+                    if entity_id not in amounts_data[acc_code]:
+                        amounts_data[acc_code][entity_id] = {"entity_amount": 0, "ic_amount": 0, "other_amount": 0}
+                    amounts_data[acc_code][entity_id]["other_amount"] = float(amount or 0)
+            except Exception as e:
+                print(f"Error fetching other amounts: {e}")
+        
+        cur.close()
+        conn.close()
+        
+        # 4. Build hierarchy structure with amounts
+        nodes_dict = {}
+        for node_id, code, name, parent_id, level, hierarchy_id in nodes:
+            nodes_dict[node_id] = {
+                "id": node_id,
+                "code": code,
+                "name": name,
+                "parent_id": parent_id,
+                "level": level,
+                "accounts": [],
+                "children": []
             }
-            
-        except psycopg2.OperationalError:
-            # Return sample financial statements if database doesn't exist
-            return generate_sample_statements(period, year, company_name)
+        
+        # Map accounts to nodes
+        for acc_code, acc_name, node_id in accounts:
+            if node_id and node_id in nodes_dict:
+                nodes_dict[node_id]["accounts"].append({
+                    "code": acc_code,
+                    "name": acc_name,
+                    "amounts": amounts_data.get(acc_code, {})
+                })
+        
+        # Build tree structure
+        root_nodes = []
+        for node_id, node_data in nodes_dict.items():
+            if node_data["parent_id"] is None:
+                root_nodes.append(node_data)
+            else:
+                parent_id = node_data["parent_id"]
+                if parent_id in nodes_dict:
+                    nodes_dict[parent_id]["children"].append(node_data)
+        
+        return {
+            "report_title": f"{req.report_type.replace('_', ' ').title()} - Financial Statement",
+            "report_id": f"report_{datetime.now().timestamp()}",
+            "currency": req.currency,
+            "nodes": root_nodes,
+            "entities": req.entity_ids,
+            "generated_at": datetime.utcnow().isoformat()
+        }
         
     except Exception as e:
         print(f"Error generating financial statements: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate financial statements: {str(e)}"
+        )
+
+@router.get("/drill-down")
+async def get_drill_down_data(
+    company_name: str = Query(...),
+    process_id: int = Query(...),
+    scenario_id: int = Query(...),
+    account_code: str = Query(...),
+    entity_id: str = Query(...),
+    period_ids: str = Query(...)
+):
+    """Get drill-down transaction details for an account"""
+    try:
+        db_config = get_db_config()
+        company_db_name = company_name.lower().replace(' ', '_').replace('-', '_')
+        
+        conn = psycopg2.connect(database=company_db_name, **db_config)
+        cur = conn.cursor()
+        
+        # Get process table name
+        cur.execute("SELECT table_name FROM processes WHERE id = %s", (process_id,))
+        process_result = cur.fetchone()
+        table_prefix = process_result[0] if process_result else "actuals"
+        
+        period_list = period_ids.split(",")
+        period_filter = ",".join(period_list)
+        
+        # Fetch entries from all three tables
+        entries = []
+        
+        # Entity amounts
+        entity_table = f"{table_prefix}_entity_amounts_entries"
+        try:
+            query = f"""
+                SELECT transaction_date, reference_id, description, amount, 'Entity' as type
+                FROM {entity_table}
+                WHERE account_code = %s
+                AND entity_id = %s
+                AND scenario_id = %s
+                AND period_id IN ({period_filter})
+                ORDER BY transaction_date DESC
+            """
+            cur.execute(query, (account_code, entity_id, scenario_id))
+            entries.extend(cur.fetchall())
+        except Exception as e:
+            print(f"Error fetching entity entries: {e}")
+        
+        # IC amounts
+        ic_table = f"{table_prefix}_ic_amounts_entries"
+        try:
+            query = f"""
+                SELECT transaction_date, reference_id, description, amount, 'IC' as type
+                FROM {ic_table}
+                WHERE from_account_code = %s
+                AND from_entity_id = %s
+                AND scenario_id = %s
+                AND period_id IN ({period_filter})
+                ORDER BY transaction_date DESC
+            """
+            cur.execute(query, (account_code, entity_id, scenario_id))
+            entries.extend(cur.fetchall())
+        except Exception as e:
+            print(f"Error fetching IC entries: {e}")
+        
+        # Other amounts
+        other_table = f"{table_prefix}_other_amounts_entries"
+        try:
+            query = f"""
+                SELECT transaction_date, reference_id, description, amount, 'Other' as type
+                FROM {other_table}
+                WHERE account_code = %s
+                AND entity_id = %s
+                AND scenario_id = %s
+                AND period_id IN ({period_filter})
+                ORDER BY transaction_date DESC
+            """
+            cur.execute(query, (account_code, entity_id, scenario_id))
+            entries.extend(cur.fetchall())
+        except Exception as e:
+            print(f"Error fetching other entries: {e}")
+        
+        cur.close()
+        conn.close()
+        
+        # Format entries
+        formatted_entries = []
+        for date, ref, desc, amount, entry_type in entries:
+            formatted_entries.append({
+                "date": str(date) if date else "",
+                "reference": ref or "",
+                "description": desc or "",
+                "amount": float(amount) if amount else 0,
+                "type": entry_type
+            })
+        
+        return {
+            "account_code": account_code,
+            "entity_id": entity_id,
+            "entries": formatted_entries
+        }
+        
+    except Exception as e:
+        print(f"Error getting drill-down data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get drill-down data: {str(e)}"
+        )
+
+@router.post("/export")
+async def export_financial_statement(request: Request):
+    """Export financial statement to Excel or PDF"""
+    try:
+        body = await request.body()
+        data = json.loads(body)
+        
+        company_name = data.get("company_name")
+        report_data = data.get("report_data")
+        config = data.get("config")
+        format_type = data.get("format", "excel")
+        
+        if format_type == "excel":
+            # Create Excel workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Financial Statement"
+            
+            # Add header
+            ws["A1"] = report_data.get("report_title", "Financial Statement")
+            ws["A1"].font = Font(size=14, bold=True)
+            ws["A2"] = f"Company: {company_name}"
+            ws["A3"] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            
+            # Add column headers
+            row = 5
+            ws[f"A{row}"] = "Account Code"
+            ws[f"B{row}"] = "Description"
+            col = 3
+            
+            entities = report_data.get("entities", [])
+            for entity in entities:
+                ws.cell(row, col).value = str(entity)
+                col += 1
+            
+            # Style headers
+            for cell in ws[row]:
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+            
+            # Add data rows (simplified - would need full hierarchy traversal)
+            row += 1
+            nodes = report_data.get("nodes", [])
+            for node in nodes:
+                ws.cell(row, 1).value = node.get("code")
+                ws.cell(row, 2).value = node.get("name")
+                row += 1
+            
+            # Save to bytes
+            excel_file = io.BytesIO()
+            wb.save(excel_file)
+            excel_file.seek(0)
+            
+            return StreamingResponse(
+                excel_file,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename=financial_statement_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+            )
+        
+        else:
+            raise HTTPException(status_code=400, detail="Only Excel export is currently supported")
+        
+    except Exception as e:
+        print(f"Error exporting financial statement: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export financial statement: {str(e)}"
         )
 
 def generate_balance_sheet(entries):

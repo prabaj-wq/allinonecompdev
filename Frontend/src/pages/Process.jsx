@@ -34,7 +34,7 @@ import {
   Unlock,
   FileText,
 } from "lucide-react";
-import ProcessReports from "../components/ProcessReports";
+import FinancialStatements from "../components/FinancialStatements";
 
 // Icon mapping for converting string names to components
 const ICON_MAP = {
@@ -4117,40 +4117,39 @@ const Process = () => {
         </div>
       )}
 
-      {/* Process Reports Modal */}
+      {/* Financial Statements Modal */}
       {showReports && (
-        <ProcessReports
+        <FinancialStatements
           processContext={{
             processId: selectedProcess?.id || null,
             processName: selectedProcess?.name || "Unknown Process",
-            entityId:
-              selectedEntityContext !== "all" ? selectedEntityContext : null,
-            entityName:
-              selectedEntityContext !== "all"
-                ? availableEntities.find(
-                    (e) => getEntityIdentifier(e) === selectedEntityContext,
-                  )?.name || null
-                : null,
+            entityIds: selectedEntityContext !== "all" 
+              ? [selectedEntityContext]
+              : availableEntities.map(e => getEntityIdentifier(e)),
+            entityNames: selectedEntityContext !== "all"
+              ? [availableEntities.find(e => getEntityIdentifier(e) === selectedEntityContext)?.name || selectedEntityContext]
+              : availableEntities.map(e => e.name || e.entity_name),
             scenarioId: selectedScenario || null,
             scenarioName: Array.isArray(scenarios)
-              ? scenarios.find((s) => s.id === selectedScenario)
-                  ?.scenario_name || null
+              ? scenarios.find((s) => s.id === selectedScenario)?.scenario_name || null
               : null,
             fiscalYear: selectedYear || null,
-            selectedPeriods: Array.isArray(selectedPeriods)
+            fiscalYearName: fiscalYears.find(fy => fy.id === selectedYear)?.year_name || null,
+            selectedPeriods: Array.isArray(selectedPeriods) ? selectedPeriods : [],
+            periodNames: Array.isArray(selectedPeriods) && Array.isArray(availablePeriods)
               ? selectedPeriods
+                  .map((pId) => {
+                    const period = availablePeriods.find((p) => p.id === pId);
+                    return period?.period_name || period?.name || String(pId);
+                  })
+                  .filter(Boolean)
               : [],
-            periodNames:
-              Array.isArray(selectedPeriods) && Array.isArray(availablePeriods)
-                ? selectedPeriods
-                    .map((pId) => {
-                      const period = availablePeriods.find((p) => p.id === pId);
-                      return period?.period_name || period?.name || String(pId);
-                    })
-                    .filter(Boolean)
-                : [],
           }}
+          nodeConfig={{}}
           onClose={() => setShowReports(false)}
+          onSaveConfig={(config) => {
+            console.log("Saving node config:", config);
+          }}
         />
       )}
     </div>
