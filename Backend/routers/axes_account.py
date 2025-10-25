@@ -1504,6 +1504,12 @@ async def get_hierarchies(company_name: str = Query(...)):
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+            # First, check all hierarchies in the table
+            cur.execute("SELECT * FROM hierarchies")
+            all_hierarchies = cur.fetchall()
+            print(f"🔍 All hierarchies in table: {all_hierarchies}")
+            print(f"🔍 Looking for company_id: {company_name}")
+
             # Get account hierarchies only with account counts
             cur.execute("""
                 SELECT
@@ -1512,11 +1518,12 @@ async def get_hierarchies(company_name: str = Query(...)):
                 FROM hierarchies h
                 LEFT JOIN axes_accounts a ON a.hierarchy_id = h.id AND a.company_id = %s
                 WHERE h.company_id = %s AND h.hierarchy_type = 'account'
-                GROUP BY h.id, h.hierarchy_name, h.hierarchy_type, h.description, h.created_at, h.updated_at
+                GROUP BY h.id, h.hierarchy_name, h.hierarchy_type, h.description, h.created_at, h.updated_at, h.company_id
                 ORDER BY h.hierarchy_name
             """, (company_name, company_name))
 
             hierarchies = cur.fetchall()
+            print(f"🔍 Filtered hierarchies: {hierarchies}")
             conn.commit()
 
             return {"hierarchies": hierarchies}
