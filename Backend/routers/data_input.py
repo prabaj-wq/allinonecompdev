@@ -115,6 +115,12 @@ def create_tables_if_not_exist(company_name: str):
                 period_id INTEGER NOT NULL,
                 entity_id INTEGER NOT NULL,
                 account_id INTEGER NOT NULL,
+                account_code VARCHAR(100),
+                entity_code VARCHAR(100),
+                entity_name VARCHAR(255),
+                period_code VARCHAR(100),
+                period_name VARCHAR(255),
+                account_name VARCHAR(255),
                 amount FLOAT NOT NULL,
                 currency VARCHAR(10) DEFAULT 'USD',
                 description TEXT,
@@ -251,7 +257,10 @@ async def get_entries(
     scenario_id: int = Query(...),
     company_name: str = Query(...),
     limit: int = Query(500),
-    offset: int = Query(0)
+    offset: int = Query(0),
+    entity_id: Optional[str] = Query(None),
+    account_code: Optional[str] = Query(None),
+    period_id: Optional[int] = Query(None)
 ):
     """Get entries for a specific card type filtered by process and scenario"""
     try:
@@ -267,15 +276,33 @@ async def get_entries(
 
         with get_company_connection(company_name) as conn:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute(
-                f"""
+
+            # Build dynamic query with optional filters
+            where_conditions = ["process_id = %s", "scenario_id = %s"]
+            params = [process_id, scenario_id]
+
+            if entity_id:
+                where_conditions.append("entity_id = %s")
+                params.append(entity_id)
+
+            if account_code:
+                where_conditions.append("account_code = %s")
+                params.append(account_code)
+
+            if period_id:
+                where_conditions.append("period_id = %s")
+                params.append(period_id)
+
+            where_clause = " AND ".join(where_conditions)
+
+            query = f"""
                 SELECT * FROM {table_name}
-                WHERE process_id = %s AND scenario_id = %s
+                WHERE {where_clause}
                 ORDER BY created_at DESC
                 LIMIT %s OFFSET %s
-                """,
-                (process_id, scenario_id, limit, offset)
-            )
+            """
+
+            cur.execute(query, params + [limit, offset])
             rows = cur.fetchall()
 
         return rows
@@ -804,13 +831,13 @@ async def download_template(
             'ic_amounts': ['From Entity Code', 'To Entity Code', 'From Account Code', 'To Account Code', 'Amount', 'Currency', 'Transaction Type', 'Custom Transaction Type', 'Transaction Date', 'Description', 'Reference ID'],
             'other_amounts': ['Entity Code', 'Account Code', 'Amount', 'Currency', 'Description']
         }
-        
+
         headers = templates.get(card_type, [])
         df = pd.DataFrame(columns=headers)
-        
+
         # Create CSV
         csv_data = df.to_csv(index=False)
-        
+
         return StreamingResponse(
             iter([csv_data]),
             media_type="text/csv",
@@ -818,3 +845,179 @@ async def download_template(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Reports Data Endpoint - Efficient aggregation for ProcessReports
+@router.get("/reports-data")
+async def get_reports_data(
+    process_id: int = Query(...),
+    scenario_id: int = Query(...),
+    company_name: str = Query(...),
+    hierarchy_id: Optional[int] = Query(None),
+    card_types: Optional[str] = Query("entity_amounts")  # comma-separated
+):
+    """Get aggregated data for reports generation - efficient single query approach"""
+    try:
+        create_tables_if_not_exist(company_name)
+
+        # Parse card types
+        card_types_list = [ct.strip() for ct in card_types.split(',') if ct.strip()]
+
+        with get_company_connection(company_name) as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Get entities for column headers
+            cur.execute("""
+                SELECT DISTINCT
+                    COALESCE(entity_code, CAST(entity_id AS VARCHAR)) as entity_code,
+                    COALESCE(entity_name, CONCAT('Entity ', entity_id)) as entity_name,
+                    entity_id
+                FROM entity_amounts
+                WHERE process_id = %s AND scenario_id = %s
+                ORDER BY entity_code
+            """, (process_id, scenario_id))
+
+            entities = cur.fetchall()
+
+            # Get all accounts with their data aggregated by entity
+            all_accounts_data = {}
+
+            for card_type in card_types_list:
+                if card_type == 'entity_amounts':
+                    # Get entity amounts aggregated by account and entity
+                    cur.execute("""
+                        SELECT
+                            account_code,
+                            account_name,
+                            entity_code,
+                            entity_name,
+                            SUM(amount) as total_amount,
+                            currency
+                        FROM entity_amounts
+                        WHERE process_id = %s AND scenario_id = %s
+                        GROUP BY account_code, account_name, entity_code, entity_name, currency
+                        ORDER BY account_code, entity_code
+                    """, (process_id, scenario_id))
+
+                    rows = cur.fetchall()
+                    for row in rows:
+                        account_key = row['account_code']
+                        entity_key = row['entity_code']
+
+                        if account_key not in all_accounts_data:
+                            all_accounts_data[account_key] = {
+                                'account_code': account_key,
+                                'account_name': row['account_name'],
+                                'entities': {}
+                            }
+
+                        all_accounts_data[account_key]['entities'][entity_key] = {
+                            'entity_amount': float(row['total_amount'] or 0),
+                            'ic_amount': 0,
+                            'other_amount': 0,
+                            'currency': row['currency'],
+                            'entity_name': row['entity_name']
+                        }
+
+                elif card_type == 'ic_amounts':
+                    # Get IC amounts aggregated by account and entity
+                    cur.execute("""
+                        SELECT
+                            COALESCE(
+                                (SELECT account_code FROM axes_accounts WHERE id = ic.from_account_id LIMIT 1),
+                                CAST(ic.from_account_id AS VARCHAR)
+                            ) as account_code,
+                            COALESCE(
+                                (SELECT name FROM axes_accounts WHERE id = ic.from_account_id LIMIT 1),
+                                CONCAT('Account ', ic.from_account_id)
+                            ) as account_name,
+                            from_entity_code,
+                            from_entity_name,
+                            to_entity_code,
+                            to_entity_name,
+                            SUM(amount) as total_amount,
+                            currency_code as currency
+                        FROM ic_amounts ic
+                        WHERE process_id = %s AND scenario_id = %s
+                        GROUP BY account_code, account_name, from_entity_code, from_entity_name,
+                                 to_entity_code, to_entity_name, currency_code
+                        ORDER BY account_code, from_entity_code
+                    """, (process_id, scenario_id))
+
+                    rows = cur.fetchall()
+                    for row in rows:
+                        account_key = row['account_code']
+                        entity_key = row['from_entity_code']
+
+                        if account_key not in all_accounts_data:
+                            all_accounts_data[account_key] = {
+                                'account_code': account_key,
+                                'account_name': row['account_name'],
+                                'entities': {}
+                            }
+
+                        if entity_key not in all_accounts_data[account_key]['entities']:
+                            all_accounts_data[account_key]['entities'][entity_key] = {
+                                'entity_amount': 0,
+                                'ic_amount': 0,
+                                'other_amount': 0,
+                                'currency': row['currency'],
+                                'entity_name': row['from_entity_name']
+                            }
+
+                        all_accounts_data[account_key]['entities'][entity_key]['ic_amount'] = float(row['total_amount'] or 0)
+
+                elif card_type == 'other_amounts':
+                    # Get other amounts aggregated by account and entity
+                    cur.execute("""
+                        SELECT
+                            COALESCE(account_code, CAST(account_id AS VARCHAR)) as account_code,
+                            COALESCE(account_name, CONCAT('Account ', account_id)) as account_name,
+                            COALESCE(entity_code, CAST(entity_id AS VARCHAR)) as entity_code,
+                            COALESCE(entity_name, CONCAT('Entity ', entity_id)) as entity_name,
+                            SUM(amount) as total_amount,
+                            currency
+                        FROM other_amounts
+                        WHERE process_id = %s AND scenario_id = %s
+                        GROUP BY account_code, account_name, entity_code, entity_name, currency
+                        ORDER BY account_code, entity_code
+                    """, (process_id, scenario_id))
+
+                    rows = cur.fetchall()
+                    for row in rows:
+                        account_key = row['account_code']
+                        entity_key = row['entity_code']
+
+                        if account_key not in all_accounts_data:
+                            all_accounts_data[account_key] = {
+                                'account_code': account_key,
+                                'account_name': row['account_name'],
+                                'entities': {}
+                            }
+
+                        if entity_key not in all_accounts_data[account_key]['entities']:
+                            all_accounts_data[account_key]['entities'][entity_key] = {
+                                'entity_amount': 0,
+                                'ic_amount': 0,
+                                'other_amount': 0,
+                                'currency': row['currency'],
+                                'entity_name': row['entity_name']
+                            }
+
+                        all_accounts_data[account_key]['entities'][entity_key]['other_amount'] = float(row['total_amount'] or 0)
+
+            # Format response for ProcessReports component
+            result = {
+                'entities': entities,
+                'accounts': all_accounts_data,
+                'card_types': card_types_list,
+                'total_accounts': len(all_accounts_data),
+                'total_entities': len(entities)
+            }
+
+            return result
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Reports data error: {e}")
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to get reports data: {str(e)}")

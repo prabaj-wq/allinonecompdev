@@ -139,16 +139,32 @@ const ProcessReports = ({ processContext = {}, onClose }) => {
 
       const hierarchyData = await structureResponse.json();
 
-      // Fetch data for all accounts
-      const accountsWithData = await Promise.all(
-        (hierarchyData.accounts || []).map(async (account) => {
-          const amounts = await fetchAccountAmounts(account.code);
-          return {
-            ...account,
-            entityAmounts: amounts,
-          };
-        })
+      // Use the new efficient reports data endpoint
+      const reportsDataResponse = await fetch(
+        `/api/data-input/reports-data?` +
+        `process_id=${safeProcessContext.processId}&` +
+        `scenario_id=${safeProcessContext.scenarioId}&` +
+        `company_name=${selectedCompany}&` +
+        `card_types=entity_amounts,ic_amounts,other_amounts`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        },
       );
+
+      if (!reportsDataResponse.ok) {
+        throw new Error("Failed to fetch reports data");
+      }
+
+      const reportsData = await reportsDataResponse.json();
+
+      // Map the efficient data format to the expected format
+      const accountsWithData = Object.entries(reportsData.accounts).map(([accountCode, accountData]) => ({
+        code: accountCode,
+        name: accountData.account_name,
+        entityAmounts: accountData.entities,
+      }));
 
       // Build report structure
       const reportData = {
@@ -158,9 +174,11 @@ const ProcessReports = ({ processContext = {}, onClose }) => {
         nodes: await enrichNodesWithAccounts(hierarchyData.nodes, accountsWithData),
         accounts: accountsWithData,
         unassigned_accounts: hierarchyData.unassigned_accounts || [],
+        entities: reportsData.entities, // Add entities for column headers
       };
 
       setReportData(reportData);
+      setEntities(reportsData.entities); // Update entities state with data from API
     } catch (error) {
       console.error("Error generating report:", error);
       setError("Unable to generate report. " + error.message);
