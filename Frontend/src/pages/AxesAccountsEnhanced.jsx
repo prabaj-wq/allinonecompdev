@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Building2,
   Layers,
@@ -74,6 +74,9 @@ const AxesAccountsEnhanced = () => {
     unassigned_accounts: [],
     hierarchy_id: null
   })
+
+  // Ref for HierarchyNodesPanelModern to access its methods
+  const hierarchyNodesPanelRef = useRef(null)
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -1636,7 +1639,7 @@ const AxesAccountsEnhanced = () => {
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
-                        onClick={() => {/* Add root functionality */}}
+                        onClick={() => hierarchyNodesPanelRef.current?.addRootNode()}
                         className="flex items-center space-x-1 px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm"
                       >
                         <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1659,6 +1662,7 @@ const AxesAccountsEnhanced = () => {
 
                 <div className="flex-1 overflow-hidden">
                   <HierarchyNodesPanelModern
+                    ref={hierarchyNodesPanelRef}
                     hierarchy={selectedHierarchy}
                     hierarchyStructure={hierarchyStructure}
                     onNodeSelect={setCanvasItem}
@@ -1666,6 +1670,7 @@ const AxesAccountsEnhanced = () => {
                     onBack={handleCanvasClose}
                     onAddNode={refreshHierarchyStructure}
                     selectedCompany={selectedCompany}
+                    axisType="account"
                   />
                 </div>
               </div>
@@ -1971,6 +1976,7 @@ const AxesAccountsEnhanced = () => {
           }}
           onSave={handleSaveHierarchy}
           hierarchy={selectedHierarchy} // Pass the selected hierarchy for editing
+          hierarchyType="account" // Specify account hierarchy type
         />
       )}
 

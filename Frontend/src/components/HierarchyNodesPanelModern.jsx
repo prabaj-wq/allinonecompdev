@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -94,20 +94,28 @@ const NodeForm = ({ node, onSave, onCancel, isEditing = false }) => {
   )
 }
 
-const HierarchyNodesPanelModern = ({ 
+const HierarchyNodesPanelModern = forwardRef(({ 
   hierarchy, 
   hierarchyStructure = { nodes: [], unassigned_entities: [] }, 
   onNodeSelect,
   selectedNode,
   onBack,
   onAddNode,
-  selectedCompany
-}) => {
+  selectedCompany,
+  axisType = 'entity' // 'entity' or 'account'
+}, ref) => {
+  // Determine API endpoints based on axis type
+  const apiBase = axisType === 'account' ? 'axes-account' : 'axes-entity';
   const [expandedNodes, setExpandedNodes] = useState(new Set())
   const [hoveredNode, setHoveredNode] = useState(null)
   const [editingNode, setEditingNode] = useState(null)
   const [showAddNodeForm, setShowAddNodeForm] = useState(false)
   const [newNodeParent, setNewNodeParent] = useState(null)
+
+  // Expose methods to parent component via ref
+  useImperativeHandle(ref, () => ({
+    addRootNode: () => handleAddNode(null)
+  }))
 
   // Use the already properly nested tree structure from the API
   const buildNodeTree = () => {
@@ -136,7 +144,7 @@ const HierarchyNodesPanelModern = ({
   // Node management functions
   const createNode = async (nodeData) => {
     try {
-      const response = await fetch(`/api/axes-entity/hierarchy-nodes?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/hierarchy-nodes?company_name=${selectedCompany}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -169,7 +177,7 @@ const HierarchyNodesPanelModern = ({
 
   const updateNode = async (nodeId, nodeData) => {
     try {
-      const response = await fetch(`/api/axes-entity/hierarchy-nodes/${nodeId}?company_name=${selectedCompany}`, {
+      const response = await fetch(`/api/${apiBase}/hierarchy-nodes/${nodeId}?company_name=${selectedCompany}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -201,7 +209,7 @@ const HierarchyNodesPanelModern = ({
     }
 
     try {
-      const response = await fetch(`/api/axes-entity/hierarchy-nodes/${nodeId}?company_name=${selectedCompany}&cascade=true`, {
+      const response = await fetch(`/api/${apiBase}/hierarchy-nodes/${nodeId}?company_name=${selectedCompany}&cascade=true`, {
         method: 'DELETE',
         credentials: 'include'
       })
@@ -457,6 +465,6 @@ const HierarchyNodesPanelModern = ({
       </div>
     </div>
   )
-}
+})
 
 export default HierarchyNodesPanelModern

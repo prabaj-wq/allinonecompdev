@@ -10,12 +10,13 @@ const HierarchyCreateModal = ({
   isOpen, 
   onClose, 
   onSave,
-  hierarchy = null // For editing existing hierarchy
+  hierarchy = null, // For editing existing hierarchy
+  hierarchyType = 'entity' // Default type: 'entity' or 'account'
 }) => {
   const [formData, setFormData] = useState({
     hierarchy_name: '',
     description: '',
-    hierarchy_type: 'account'
+    hierarchy_type: hierarchyType
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(false)
@@ -26,17 +27,17 @@ const HierarchyCreateModal = ({
       setFormData({
         hierarchy_name: hierarchy.hierarchy_name || '',
         description: hierarchy.description || '',
-        hierarchy_type: hierarchy.hierarchy_type || 'account'
+        hierarchy_type: hierarchy.hierarchy_type || hierarchyType
       })
     } else {
       // Reset form for new hierarchy
       setFormData({
         hierarchy_name: '',
         description: '',
-        hierarchy_type: 'account'
+        hierarchy_type: hierarchyType
       })
     }
-  }, [hierarchy, isOpen])
+  }, [hierarchy, isOpen, hierarchyType])
 
   const validateForm = () => {
     const newErrors = {}
@@ -64,7 +65,7 @@ const HierarchyCreateModal = ({
         setFormData({
           hierarchy_name: '',
           description: '',
-          hierarchy_type: 'account'
+          hierarchy_type: hierarchyType
         })
         onClose()
       }
