@@ -589,6 +589,7 @@ from routers import (
     budget, backup_restore, business_tools, axes_entity, axes_account, sql, role_management, fiscal_management,
     workflow_builder, process_builder_enhanced, financial_process, data_input, ai_chat, document_integration, journal_entry
 )
+from routers import journal_entry_extended
 
 # Include all routers with /api prefix
 # All routers including SQL router should use the same prefix pattern
@@ -626,6 +627,7 @@ app.include_router(data_input.router, prefix="/api")
 app.include_router(ai_chat.router, prefix="/api")
 app.include_router(document_integration.router, prefix="/api")
 app.include_router(journal_entry.router, prefix="/api")
+app.include_router(journal_entry_extended.router, prefix="/api")
 app.include_router(role_management.router)
 
 # Add a specific route to check first install status
