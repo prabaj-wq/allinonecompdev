@@ -2,10 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useCompany } from '../contexts/CompanyContext'
 import {
-  Plus, Save, Upload, FileSpreadsheet, Trash2, Edit3, Check, X,
-  Calculator, Building2, Calendar, DollarSign, FileText, AlertCircle,
-  ChevronRight, Settings, Download, RefreshCw, Clock, CheckCircle,
-  Copy, Paperclip, Eye, Send, UserCheck, Repeat, Archive
+  Plus, Save, Trash2, ChevronDown, ChevronRight, Check, X, AlertCircle, CheckCircle, Repeat
 } from 'lucide-react'
 
 const JournalEntry = () => {
@@ -13,62 +10,43 @@ const JournalEntry = () => {
   const navigate = useNavigate()
   const { selectedCompany } = useCompany()
   
-  // Process context from URL
+  // Process context from URL - REQUIRED
   const processId = searchParams.get('processId')
-  const entityId = searchParams.get('entityId') || searchParams.get('entity') || 'all'
+  const entityId = searchParams.get('entityId') || searchParams.get('entity')
   const scenarioId = searchParams.get('scenarioId') || searchParams.get('scenario')
-  const fiscalYear = searchParams.get('year') || searchParams.get('yearId') || '2025'
-  const period = searchParams.get('period') || searchParams.get('periodId') || 'Q1'
+  const period = searchParams.get('period') || searchParams.get('periodId')
   
   // State
   const [categories, setCategories] = useState([])
-  const [selectedCategory, setSelectedCategory] = useState(null)
-  const [currentBatch, setCurrentBatch] = useState(null)
-  const [journalLines, setJournalLines] = useState([])
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null)
+  const [journals, setJournals] = useState([])
+  const [expandedJournalId, setExpandedJournalId] = useState(null)
   const [entities, setEntities] = useState([])
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
   
-  // Enhanced form state
+  // New journal form
+  const [showNewJournalForm, setShowNewJournalForm] = useState(false)
   const [journalReference, setJournalReference] = useState('')
-  const [journalDate, setJournalDate] = useState(new Date().toISOString().split('T')[0])
-  const [description, setDescription] = useState('')
-  const [extractedPeriod, setExtractedPeriod] = useState('')
-  const [extractedYear, setExtractedYear] = useState('')
-  const [status, setStatus] = useState('draft')
-  
-  // Templates & Recurring
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [templates, setTemplates] = useState([])
+  const [journalDescription, setJournalDescription] = useState('')
+  const [journalLines, setJournalLines] = useState([])
   const [isRecurring, setIsRecurring] = useState(false)
-  const [recurrencePattern, setRecurrencePattern] = useState('monthly')
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState('')
+  const [recurringExpiresOn, setRecurringExpiresOn] = useState('')
+  const [recurringRepeatDays, setRecurringRepeatDays] = useState(30)
   
-  // Attachments
-  const [attachments, setAttachments] = useState([])
-  const [showAttachments, setShowAttachments] = useState(false)
-  
-  // Initialize
+  // Validate required params
   useEffect(() => {
-    if (selectedCompany) {
+    if (!processId || !scenarioId || !period) {
+      alert('Missing required parameters: processId, scenarioId, and period are required')
+      navigate('/process')
+    }
+  }, [processId, scenarioId, period, navigate])
+  
+  useEffect(() => {
+    if (selectedCompany && processId) {
       fetchInitialData()
     }
-  }, [selectedCompany])
-  
-  // Extract period and year from date
-  useEffect(() => {
-    if (journalDate) {
-      const date = new Date(journalDate)
-      const month = date.getMonth() + 1
-      const year = date.getFullYear()
-      
-      // Determine quarter
-      const quarter = Math.ceil(month / 3)
-      setExtractedPeriod(`Q${quarter}`)
-      setExtractedYear(year.toString())
-    }
-  }, [journalDate])
+  }, [selectedCompany, processId, scenarioId, period])
   
   const fetchInitialData = async () => {
     setLoading(true)
@@ -90,9 +68,13 @@ const JournalEntry = () => {
       const response = await fetch(`/api/journal-entry/categories?company_name=${selectedCompany}`)
       if (response.ok) {
         const data = await response.json()
-        setCategories(data.categories || [])
+        const cats = data.categories || []
+        setCategories(cats)
         
-        if (data.categories.length === 0) {
+        if (cats.length > 0 && !selectedCategoryId) {
+          setSelectedCategoryId(cats[0].id)
+          fetchJournals(cats[0].id)
+        } else if (cats.length === 0) {
           await createDefaultCategories()
         }
       }
@@ -103,26 +85,35 @@ const JournalEntry = () => {
   
   const createDefaultCategories = async () => {
     const defaultCategories = [
-      { category_code: 'ACCR', category_name: 'Accruals', description: 'Period-end accrual entries', color: '#3B82F6', icon: 'Clock' },
-      { category_code: 'IC', category_name: 'Inter-Company', description: 'IC eliminations', color: '#8B5CF6', icon: 'Building2' },
-      { category_code: 'DEP', category_name: 'Depreciation', description: 'Asset depreciation', color: '#F97316', icon: 'Calculator' },
-      { category_code: 'MA', category_name: 'Manual Adjustments', description: 'General adjustments', color: '#10B981', icon: 'Edit3' },
-      { category_code: 'REC', category_name: 'Recurring', description: 'Monthly recurring entries', color: '#6366F1', icon: 'RefreshCw' },
-      { category_code: 'TAX', category_name: 'Tax Adjustments', description: 'Tax provisions', color: '#EF4444', icon: 'FileText' },
-      { category_code: 'FX', category_name: 'FX Revaluation', description: 'FX revaluation', color: '#06B6D4', icon: 'DollarSign' },
-      { category_code: 'CONS', category_name: 'Consolidation', description: 'Consolidation adjustments', color: '#8B5CF6', icon: 'FileSpreadsheet' }
+      { category_code: 'MA', category_name: 'Manual Adjustments', description: 'General adjustments', color: '#10B981' },
+      { category_code: 'ACCR', category_name: 'Accruals', description: 'Period-end accruals', color: '#3B82F6' },
+      { category_code: 'DEP', category_name: 'Depreciation', description: 'Asset depreciation', color: '#F97316' },
+      { category_code: 'TAX', category_name: 'Tax', description: 'Tax entries', color: '#EF4444' }
     ]
     
-    const promises = defaultCategories.map(cat =>
-      fetch(`/api/journal-entry/categories?company_name=${selectedCompany}`, {
+    for (const cat of defaultCategories) {
+      await fetch(`/api/journal-entry/categories?company_name=${selectedCompany}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...cat, created_by: 'system' })
-      }).catch(err => console.error(`Error creating ${cat.category_name}:`, err))
-    )
+      }).catch(err => console.error(err))
+    }
     
-    await Promise.all(promises)
     fetchCategories()
+  }
+  
+  const fetchJournals = async (categoryId) => {
+    try {
+      const response = await fetch(
+        `/api/journal-entry/batches?company_name=${selectedCompany}&process_id=${processId}&entity_id=${entityId}&scenario_id=${scenarioId}&period=${period}&category_id=${categoryId}`
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setJournals(data.batches || [])
+      }
+    } catch (error) {
+      console.error('Error fetching journals:', error)
+    }
   }
   
   const fetchEntities = async () => {
@@ -149,729 +140,446 @@ const JournalEntry = () => {
     }
   }
   
-  const fetchTemplates = async (categoryId) => {
-    try {
-      const response = await fetch(
-        `/api/journal-entry/templates?company_name=${selectedCompany}&category_id=${categoryId}`
-      )
-      if (response.ok) {
-        const data = await response.json()
-        setTemplates(data.templates || [])
-      }
-    } catch (error) {
-      console.error('Error fetching templates:', error)
-    }
+  const selectCategory = (categoryId) => {
+    setSelectedCategoryId(categoryId)
+    fetchJournals(categoryId)
+    setShowNewJournalForm(false)
   }
   
-  const selectCategory = async (category) => {
-    setSelectedCategory(category)
-    await fetchTemplates(category.id)
-    
-    // Create new batch
-    try {
-      const batchData = {
-        journal_reference: `${category.category_code}-${Date.now()}`,
-        journal_date: journalDate,
-        description: `${category.category_name} Entry`,
-        process_id: processId ? parseInt(processId) : null,
-        entity_id: entityId !== 'all' ? entityId : null,
-        scenario_id: scenarioId ? parseInt(scenarioId) : null,
-        fiscal_year: extractedYear || fiscalYear,
-        period: extractedPeriod || period,
-        category_id: category.id,
-        category: category.category_name,
-        created_by: 'current_user'
-      }
-      
-      const response = await fetch(`/api/journal-entry/batches?company_name=${selectedCompany}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batchData)
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setCurrentBatch({ id: data.batch_id, batch_number: data.batch_number, ...batchData })
-        setJournalReference(batchData.journal_reference)
-        setDescription(batchData.description)
-        setJournalLines([])
-      }
-    } catch (error) {
-      console.error('Error creating batch:', error)
-    }
+  const startNewJournal = () => {
+    setShowNewJournalForm(true)
+    setJournalReference(`JE-${Date.now()}`)
+    setJournalDescription('')
+    setJournalLines([{ id: Date.now(), entry_type: 'debit', entity_code: entityId || '', account_code: '', amount: 0, description: '', reference_number: '' }])
+    setIsRecurring(false)
+    setRecurringExpiresOn('')
+    setRecurringRepeatDays(30)
   }
   
   const addDebitLine = () => {
-    const newLine = {
-      id: `temp_${Date.now()}`,
-      line_number: journalLines.length + 1,
+    setJournalLines([...journalLines, {
+      id: Date.now(),
       entry_type: 'debit',
-      entity_code: entityId !== 'all' ? entityId : '',
-      entity_name: '',
+      entity_code: entityId || '',
       account_code: '',
-      account_name: '',
       amount: 0,
-      currency: 'INR',
-      description: ''
-    }
-    setJournalLines([...journalLines, newLine])
+      description: '',
+      reference_number: ''
+    }])
   }
   
   const addCreditLine = () => {
-    const newLine = {
-      id: `temp_${Date.now()}`,
-      line_number: journalLines.length + 1,
+    setJournalLines([...journalLines, {
+      id: Date.now(),
       entry_type: 'credit',
-      entity_code: entityId !== 'all' ? entityId : '',
-      entity_name: '',
+      entity_code: entityId || '',
       account_code: '',
-      account_name: '',
       amount: 0,
-      currency: 'INR',
-      description: ''
-    }
-    setJournalLines([...journalLines, newLine])
+      description: '',
+      reference_number: ''
+    }])
   }
   
   const updateLine = (index, field, value) => {
-    const updatedLines = [...journalLines]
-    updatedLines[index] = { ...updatedLines[index], [field]: value }
+    const updated = [...journalLines]
+    updated[index][field] = value
     
     if (field === 'entity_code') {
       const entity = entities.find(e => e.code === value)
-      if (entity) updatedLines[index].entity_name = entity.name
+      if (entity) updated[index].entity_name = entity.name
     }
     
     if (field === 'account_code') {
       const account = accounts.find(a => a.code === value)
-      if (account) updatedLines[index].account_name = account.name
+      if (account) updated[index].account_name = account.name
     }
     
-    setJournalLines(updatedLines)
+    setJournalLines(updated)
   }
   
   const removeLine = (index) => {
     setJournalLines(journalLines.filter((_, i) => i !== index))
   }
   
-  const calculateTotals = () => {
-    const totalDebits = journalLines
-      .filter(line => line.entry_type === 'debit')
-      .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0)
-    
-    const totalCredits = journalLines
-      .filter(line => line.entry_type === 'credit')
-      .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0)
-    
+  const calculateBalance = () => {
+    const debits = journalLines.filter(l => l.entry_type === 'debit').reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0)
+    const credits = journalLines.filter(l => l.entry_type === 'credit').reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0)
+    const difference = debits - credits
     return {
-      totalDebits,
-      totalCredits,
-      difference: Math.abs(totalDebits - totalCredits),
-      isBalanced: Math.abs(totalDebits - totalCredits) < 0.01
+      debits,
+      credits,
+      difference,
+      isBalanced: Math.abs(difference) < 0.01
     }
   }
   
-  const saveBatch = async () => {
-    if (!currentBatch || journalLines.length === 0) return
+  const saveJournal = async () => {
+    const { isBalanced } = calculateBalance()
     
-    const { isBalanced } = calculateTotals()
     if (!isBalanced) {
-      alert('Debits and credits must be balanced!')
+      alert('Journal must be balanced (Debits - Credits = 0)')
       return
     }
     
-    setSaving(true)
+    if (journalLines.length === 0) {
+      alert('Add at least one line')
+      return
+    }
+    
     try {
-      // Update batch header
-      await fetch(`/api/journal-entry/batches/${currentBatch.id}?company_name=${selectedCompany}`, {
-        method: 'PUT',
+      // Create batch
+      const batchResponse = await fetch(`/api/journal-entry/batches?company_name=${selectedCompany}`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           journal_reference: journalReference,
-          journal_date: journalDate,
-          description,
-          modified_by: 'current_user'
+          journal_date: new Date().toISOString().split('T')[0],
+          description: journalDescription,
+          process_id: parseInt(processId),
+          entity_id: entityId,
+          scenario_id: parseInt(scenarioId),
+          fiscal_year: new Date().getFullYear().toString(),
+          period: period,
+          category_id: selectedCategoryId,
+          status: 'draft',
+          created_by: 'current_user',
+          is_recurring: isRecurring,
+          recurring_expires_on: recurringExpiresOn || null,
+          recurring_repeat_days: isRecurring ? recurringRepeatDays : null
         })
       })
       
-      // Save lines
-      for (const line of journalLines) {
-        if (line.id.toString().startsWith('temp_')) {
-          await fetch(`/api/journal-entry/batches/${currentBatch.id}/lines?company_name=${selectedCompany}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...line, created_by: 'current_user' })
-          })
-        }
+      if (!batchResponse.ok) {
+        throw new Error('Failed to create journal')
       }
       
-      // Save as template if recurring
-      if (isRecurring) {
-        await fetch(`/api/journal-entry/templates?company_name=${selectedCompany}`, {
+      const { batch_id } = await batchResponse.json()
+      
+      // Save lines
+      for (const line of journalLines) {
+        await fetch(`/api/journal-entry/batches/${batch_id}/lines?company_name=${selectedCompany}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            template_name: `${selectedCategory.category_name} - ${new Date().toLocaleDateString()}`,
-            template_code: `TMPL_${Date.now()}`,
-            description,
-            category_id: selectedCategory.id,
-            is_recurring: true,
-            recurrence_pattern: recurrencePattern,
-            recurrence_end_date: recurrenceEndDate,
-            default_entity: entityId !== 'all' ? entityId : null,
-            default_scenario: scenarioId,
-            template_lines: journalLines.map(line => ({
-              entry_type: line.entry_type,
-              account_code: line.account_code,
-              account_name: line.account_name,
-              amount: line.amount,
-              currency: line.currency,
-              description: line.description
-            })),
+            entry_type: line.entry_type,
+            entity_code: line.entity_code,
+            entity_name: line.entity_name,
+            account_code: line.account_code,
+            account_name: line.account_name,
+            amount: parseFloat(line.amount),
+            description: line.description,
+            reference_number: line.reference_number,
             created_by: 'current_user'
           })
         })
       }
       
       alert('Journal saved successfully!')
-      
-      // Reset
-      setSelectedCategory(null)
-      setCurrentBatch(null)
-      setJournalLines([])
-      setJournalReference('')
-      setDescription('')
-      setIsRecurring(false)
+      setShowNewJournalForm(false)
+      fetchJournals(selectedCategoryId)
     } catch (error) {
-      console.error('Error saving:', error)
-      alert('Error saving journal entry')
-    } finally {
-      setSaving(false)
+      console.error('Error saving journal:', error)
+      alert('Error saving journal')
     }
   }
   
-  const submitForApproval = async () => {
-    if (!currentBatch) return
-    
-    try {
-      const response = await fetch(
-        `/api/journal-entry/batches/${currentBatch.id}/submit?company_name=${selectedCompany}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ submitted_by: 'current_user', comments: '' })
+  const toggleJournalExpand = async (journalId) => {
+    if (expandedJournalId === journalId) {
+      setExpandedJournalId(null)
+    } else {
+      setExpandedJournalId(journalId)
+      // Fetch lines for this journal
+      try {
+        const response = await fetch(`/api/journal-entry/batches/${journalId}/lines?company_name=${selectedCompany}`)
+        if (response.ok) {
+          const data = await response.json()
+          // Update the journal with lines
+          setJournals(journals.map(j => j.id === journalId ? { ...j, lines: data.lines } : j))
         }
-      )
-      
-      if (response.ok) {
-        alert('Journal submitted for approval!')
-        setStatus('submitted')
+      } catch (error) {
+        console.error('Error fetching lines:', error)
       }
-    } catch (error) {
-      console.error('Error submitting:', error)
     }
   }
   
-  const copyBatch = async () => {
-    if (!currentBatch) return
-    
-    try {
-      const response = await fetch(
-        `/api/journal-entry/batches/${currentBatch.id}/copy?company_name=${selectedCompany}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            journal_date: new Date().toISOString().split('T')[0],
-            created_by: 'current_user'
-          })
-        }
-      )
-      
-      if (response.ok) {
-        const data = await response.json()
-        alert(`Copied! New batch: ${data.batch_number}`)
-        window.location.reload()
-      }
-    } catch (error) {
-      console.error('Error copying:', error)
-    }
-  }
-  
-  const applyTemplate = async (template) => {
-    try {
-      const templateLines = JSON.parse(template.template_lines || '[]')
-      const newLines = templateLines.map((tLine, idx) => ({
-        id: `temp_${Date.now()}_${idx}`,
-        line_number: idx + 1,
-        ...tLine
-      }))
-      
-      setJournalLines(newLines)
-      setShowTemplates(false)
-      alert('Template applied!')
-    } catch (error) {
-      console.error('Error applying template:', error)
-    }
-  }
-  
-  const uploadAttachment = async (e) => {
-    if (!currentBatch) return
-    
-    const file = e.target.files[0]
-    if (!file) return
-    
-    const formData = new FormData()
-    formData.append('file', file)
-    
-    try {
-      const response = await fetch(
-        `/api/journal-entry/batches/${currentBatch.id}/attachments?company_name=${selectedCompany}&uploaded_by=current_user`,
-        {
-          method: 'POST',
-          body: formData
-        }
-      )
-      
-      if (response.ok) {
-        alert('Attachment uploaded!')
-        // Refresh attachments
-        const attResponse = await fetch(
-          `/api/journal-entry/batches/${currentBatch.id}/attachments?company_name=${selectedCompany}`
-        )
-        if (attResponse.ok) {
-          const data = await attResponse.json()
-          setAttachments(data.attachments || [])
-        }
-      }
-    } catch (error) {
-      console.error('Error uploading attachment:', error)
-    }
-  }
-  
-  const { totalDebits, totalCredits, difference, isBalanced } = calculateTotals()
+  const { debits, credits, difference, isBalanced } = calculateBalance()
   
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    )
+    return <div className="flex items-center justify-center h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+    </div>
   }
   
+  const selectedCategory = categories.find(c => c.id === selectedCategoryId)
+  
   return (
-    <div className="h-screen flex bg-gray-50 dark:bg-gray-900">
-      {/* Left Sidebar */}
-      <div className="w-80 bg-white dark:bg-gray-800 border-r flex flex-col overflow-hidden">
-        <div className="p-4 border-b">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Categories</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Select to create journal</p>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 border-b p-4">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Journal Entries</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Process: {processId} | Scenario: {scenarioId} | Period: {period} | Entity: {entityId || 'All'}
+        </p>
+      </div>
+      
+      {/* Category Tabs */}
+      <div className="bg-white dark:bg-gray-800 border-b px-4">
+        <div className="flex space-x-2 overflow-x-auto">
           {categories.map((category) => (
             <button
               key={category.id}
-              onClick={() => selectCategory(category)}
-              className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                selectedCategory?.id === category.id
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+              onClick={() => selectCategory(category.id)}
+              className={`px-4 py-3 font-medium border-b-2 transition-colors whitespace-nowrap ${
+                selectedCategoryId === category.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
-              <div className="flex items-start space-x-3">
-                <div 
-                  className="p-2 rounded-lg text-white"
-                  style={{ backgroundColor: category.color || '#3B82F6' }}
-                >
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium text-gray-900 dark:text-white">
-                    {category.category_name}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {category.description}
-                  </p>
-                </div>
-                {selectedCategory?.id === category.id && (
-                  <ChevronRight className="h-5 w-5 text-blue-500" />
-                )}
-              </div>
+              {category.category_name}
             </button>
           ))}
         </div>
-        
-        <div className="p-4 border-t">
-          <button
-            onClick={() => navigate('/settings/journal-categories')}
-            className="w-full flex items-center justify-center px-4 py-2 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Manage Categories
-          </button>
-        </div>
       </div>
       
-      {/* Main Panel */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {!selectedCategory ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                Select a Category
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                Choose a category from the left to begin
-              </p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Header */}
-            <div className="bg-white dark:bg-gray-800 border-b p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {selectedCategory.category_name}
-                  </h1>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Process: {processId || 'Standalone'} | Entity: {entityId} | Period: {extractedPeriod || period}
-                  </p>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    status === 'draft' ? 'bg-gray-100 text-gray-700' :
-                    status === 'submitted' ? 'bg-yellow-100 text-yellow-700' :
-                    status === 'approved' ? 'bg-green-100 text-green-700' :
-                    'bg-blue-100 text-blue-700'
-                  }`}>
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </div>
-                  <button
-                    onClick={() => setShowTemplates(true)}
-                    className="flex items-center px-3 py-2 border rounded-lg hover:bg-gray-50"
-                  >
-                    <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Templates
-                  </button>
-                  <button
-                    onClick={copyBatch}
-                    disabled={!currentBatch}
-                    className="flex items-center px-3 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy
-                  </button>
-                  <button
-                    onClick={saveBatch}
-                    disabled={saving || journalLines.length === 0 || !isBalanced}
-                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {saving ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    ) : (
-                      <Save className="h-4 w-4 mr-2" />
-                    )}
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                  {status === 'draft' && (
-                    <button
-                      onClick={submitForApproval}
-                      disabled={!currentBatch || !isBalanced}
-                      className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                    >
-                      <Send className="h-4 w-4 mr-2" />
-                      Submit
-                    </button>
-                  )}
-                </div>
-              </div>
-              
-              {/* Journal Header */}
-              <div className="grid grid-cols-4 gap-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Journal Reference</label>
-                  <input
-                    type="text"
-                    value={journalReference}
-                    onChange={(e) => setJournalReference(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                    placeholder="JE-001"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={journalDate}
-                    onChange={(e) => setJournalDate(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                  />
-                  {extractedPeriod && (
-                    <p className="text-xs text-gray-500 mt-1">Period: {extractedPeriod} {extractedYear}</p>
-                  )}
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                    placeholder="Journal description"
-                  />
-                </div>
-              </div>
-              
-              {/* Recurring Toggle */}
-              <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="checkbox"
-                      checked={isRecurring}
-                      onChange={(e) => setIsRecurring(e.target.checked)}
-                      className="h-4 w-4 text-blue-600 rounded"
-                    />
-                    <label className="flex items-center text-sm font-medium">
-                      <Repeat className="h-4 w-4 mr-2" />
-                      Recurring Entry
-                    </label>
-                  </div>
-                  {isRecurring && (
-                    <div className="flex items-center space-x-3">
-                      <select
-                        value={recurrencePattern}
-                        onChange={(e) => setRecurrencePattern(e.target.value)}
-                        className="px-3 py-1 border rounded bg-white dark:bg-gray-800 text-sm"
-                      >
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annually">Annually</option>
-                      </select>
-                      <input
-                        type="date"
-                        value={recurrenceEndDate}
-                        onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                        className="px-3 py-1 border rounded bg-white dark:bg-gray-800 text-sm"
-                        placeholder="End date"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {/* Attachments */}
-              <div className="mt-4 flex items-center space-x-3">
-                <label className="flex items-center px-4 py-2 border rounded-lg cursor-pointer hover:bg-gray-50">
-                  <Paperclip className="h-4 w-4 mr-2" />
-                  Upload Attachment
-                  <input
-                    type="file"
-                    onChange={uploadAttachment}
-                    className="hidden"
-                    multiple
-                  />
-                </label>
-                {attachments.length > 0 && (
-                  <span className="text-sm text-gray-600">
-                    {attachments.length} attachment{attachments.length !== 1 ? 's' : ''}
-                  </span>
-                )}
-              </div>
-            </div>
-            
-            {/* Journal Lines */}
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg border">
-                <div className="p-4 border-b flex items-center justify-between">
-                  <h3 className="text-lg font-medium">Journal Lines</h3>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={addDebitLine}
-                      className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Debit
-                    </button>
-                    <button
-                      onClick={addCreditLine}
-                      className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Credit
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Grid Header */}
-                <div className="grid grid-cols-12 gap-2 p-4 bg-gray-50 dark:bg-gray-700 text-sm font-medium border-b">
-                  <div className="col-span-1">Type</div>
-                  <div className="col-span-2">Entity</div>
-                  <div className="col-span-3">Account</div>
-                  <div className="col-span-2">Amount</div>
-                  <div className="col-span-3">Description</div>
-                  <div className="col-span-1">Action</div>
-                </div>
-                
-                {/* Lines */}
-                <div className="max-h-96 overflow-y-auto">
-                  {journalLines.map((line, index) => (
-                    <div key={line.id} className="grid grid-cols-12 gap-2 p-4 border-b hover:bg-gray-50 dark:hover:bg-gray-700">
-                      <div className="col-span-1 flex items-center">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          line.entry_type === 'debit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {line.entry_type === 'debit' ? 'DR' : 'CR'}
-                        </span>
-                      </div>
-                      
-                      <div className="col-span-2">
-                        <select
-                          value={line.entity_code}
-                          onChange={(e) => updateLine(index, 'entity_code', e.target.value)}
-                          className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-800"
-                        >
-                          <option value="">Entity</option>
-                          {entities.map(entity => (
-                            <option key={entity.code} value={entity.code}>{entity.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      <div className="col-span-3">
-                        <select
-                          value={line.account_code}
-                          onChange={(e) => updateLine(index, 'account_code', e.target.value)}
-                          className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-800"
-                        >
-                          <option value="">Account</option>
-                          {accounts.map(account => (
-                            <option key={account.code} value={account.code}>
-                              {account.code} - {account.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      <div className="col-span-2">
-                        <input
-                          type="number"
-                          value={line.amount}
-                          onChange={(e) => updateLine(index, 'amount', e.target.value)}
-                          className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-800"
-                          placeholder="0.00"
-                          step="0.01"
-                        />
-                      </div>
-                      
-                      <div className="col-span-3">
-                        <input
-                          type="text"
-                          value={line.description}
-                          onChange={(e) => updateLine(index, 'description', e.target.value)}
-                          className="w-full border rounded px-2 py-1 text-sm bg-white dark:bg-gray-800"
-                          placeholder="Description"
-                        />
-                      </div>
-                      
-                      <div className="col-span-1 flex items-center">
-                        <button
-                          onClick={() => removeLine(index)}
-                          className="p-1 text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {journalLines.length === 0 && (
-                    <div className="p-8 text-center text-gray-500">
-                      No lines. Click "Add Debit" or "Add Credit" to begin.
-                    </div>
-                  )}
-                </div>
-                
-                {/* Totals */}
-                <div className="p-4 bg-gray-50 dark:bg-gray-700 border-t">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-6">
-                      <div className="text-sm">
-                        <span className="text-gray-600">Total Debits: </span>
-                        <span className="font-medium text-green-600">
-                          ₹{totalDebits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="text-sm">
-                        <span className="text-gray-600">Total Credits: </span>
-                        <span className="font-medium text-red-600">
-                          ₹{totalCredits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className={`flex items-center text-sm font-medium ${
-                        isBalanced ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {isBalanced ? (
-                          <><CheckCircle className="h-4 w-4 mr-1" />Balanced</>
-                        ) : (
-                          <><AlertCircle className="h-4 w-4 mr-1" />Diff: ₹{difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="text-sm text-gray-500">
-                      {journalLines.length} line{journalLines.length !== 1 ? 's' : ''} | {currentBatch?.batch_number || 'New'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-      
-      {/* Templates Modal */}
-      {showTemplates && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden">
-            <div className="p-6 border-b flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Templates</h3>
-              <button onClick={() => setShowTemplates(false)}>
-                <X className="h-5 w-5" />
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {!showNewJournalForm ? (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                {selectedCategory?.category_name || 'Select Category'}
+              </h2>
+              <button
+                onClick={startNewJournal}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Journal
               </button>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              {templates.map(template => (
-                <div key={template.id} className="p-4 border rounded-lg mb-3 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">{template.template_name}</h4>
-                      <p className="text-sm text-gray-500">{template.description}</p>
-                      {template.is_recurring && (
-                        <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded mt-2 inline-block">
-                          Recurring: {template.recurrence_pattern}
+            
+            {/* Journal Cards */}
+            <div className="space-y-4">
+              {journals.map((journal) => (
+                <div key={journal.id} className="bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
+                  <div 
+                    className="p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                    onClick={() => toggleJournalExpand(journal.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        {expandedJournalId === journal.id ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                        <div>
+                          <h3 className="font-medium text-gray-900 dark:text-white">{journal.journal_reference || journal.batch_number}</h3>
+                          <p className="text-sm text-gray-500">{journal.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        {journal.is_recurring && <Repeat className="h-4 w-4 text-blue-500" title="Recurring" />}
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          journal.is_balanced ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {journal.is_balanced ? '✓ Balanced' : '⚠ Unbalanced'}
                         </span>
-                      )}
+                        <span className="text-sm text-gray-600">
+                          ₹{(journal.total_debits || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => applyTemplate(template)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                      Apply
-                    </button>
                   </div>
+                  
+                  {/* Expanded View */}
+                  {expandedJournalId === journal.id && journal.lines && (
+                    <div className="border-t p-4 bg-gray-50 dark:bg-gray-700">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-600 dark:text-gray-300">
+                            <th className="pb-2">Type</th>
+                            <th className="pb-2">Entity</th>
+                            <th className="pb-2">Account</th>
+                            <th className="pb-2">Amount</th>
+                            <th className="pb-2">Description</th>
+                            <th className="pb-2">Ref#</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {journal.lines.map((line) => (
+                            <tr key={line.id} className="border-t">
+                              <td className="py-2">
+                                <span className={`px-2 py-1 rounded text-xs ${
+                                  line.entry_type === 'debit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {line.entry_type === 'debit' ? 'DR' : 'CR'}
+                                </span>
+                              </td>
+                              <td className="py-2">{line.entity_code}</td>
+                              <td className="py-2">{line.account_code} - {line.account_name}</td>
+                              <td className="py-2">₹{(line.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="py-2">{line.description}</td>
+                              <td className="py-2">{line.reference_number}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               ))}
-              {templates.length === 0 && (
-                <p className="text-center text-gray-500 py-8">No templates available</p>
+              
+              {journals.length === 0 && (
+                <div className="text-center py-12 text-gray-500">
+                  No journals yet. Click "New Journal" to create one.
+                </div>
               )}
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          /* New Journal Form */
+          <div className="bg-white dark:bg-gray-800 rounded-lg border p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">New Journal Entry</h2>
+              <button onClick={() => setShowNewJournalForm(false)} className="text-gray-500 hover:text-gray-700">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            {/* Header Fields */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium mb-1">Journal Reference</label>
+                <input
+                  type="text"
+                  value={journalReference}
+                  onChange={(e) => setJournalReference(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Description</label>
+                <input
+                  type="text"
+                  value={journalDescription}
+                  onChange={(e) => setJournalDescription(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Journal description"
+                />
+              </div>
+            </div>
+            
+            {/* Recurring Option */}
+            <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <label className="flex items-center space-x-2 mb-3">
+                <input
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={(e) => setIsRecurring(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span className="font-medium">Recurring Entry</span>
+              </label>
+              
+              {isRecurring && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm mb-1">Expires On</label>
+                    <input
+                      type="date"
+                      value={recurringExpiresOn}
+                      onChange={(e) => setRecurringExpiresOn(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1">Repeat Every (days)</label>
+                    <input
+                      type="number"
+                      value={recurringRepeatDays}
+                      onChange={(e) => setRecurringRepeatDays(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      min="1"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Journal Lines */}
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-medium">Lines</h3>
+                <div className="flex space-x-2">
+                  <button onClick={addDebitLine} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                    + Debit
+                  </button>
+                  <button onClick={addCreditLine} className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+                    + Credit
+                  </button>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                {journalLines.map((line, index) => (
+                  <div key={line.id} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-1">
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        line.entry_type === 'debit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {line.entry_type === 'debit' ? 'DR' : 'CR'}
+                      </span>
+                    </div>
+                    <select value={line.entity_code} onChange={(e) => updateLine(index, 'entity_code', e.target.value)} className="col-span-2 px-2 py-1 border rounded text-sm">
+                      <option value="">Entity</option>
+                      {entities.map(e => <option key={e.code} value={e.code}>{e.name}</option>)}
+                    </select>
+                    <select value={line.account_code} onChange={(e) => updateLine(index, 'account_code', e.target.value)} className="col-span-2 px-2 py-1 border rounded text-sm">
+                      <option value="">Account</option>
+                      {accounts.map(a => <option key={a.code} value={a.code}>{a.code} - {a.name}</option>)}
+                    </select>
+                    <input type="number" value={line.amount} onChange={(e) => updateLine(index, 'amount', e.target.value)} className="col-span-2 px-2 py-1 border rounded text-sm" placeholder="Amount" step="0.01" />
+                    <input type="text" value={line.description} onChange={(e) => updateLine(index, 'description', e.target.value)} className="col-span-2 px-2 py-1 border rounded text-sm" placeholder="Description" />
+                    <input type="text" value={line.reference_number} onChange={(e) => updateLine(index, 'reference_number', e.target.value)} className="col-span-2 px-2 py-1 border rounded text-sm" placeholder="Ref#" />
+                    <button onClick={() => removeLine(index)} className="col-span-1 text-red-500 hover:text-red-700">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Balance Summary */}
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg mb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex space-x-6">
+                  <span className="text-sm">Debits: <strong className="text-green-600">₹{debits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                  <span className="text-sm">Credits: <strong className="text-red-600">₹{credits.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                  <span className="text-sm">Difference: <strong>₹{difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></span>
+                </div>
+                <div className={`flex items-center space-x-2 ${
+                  isBalanced ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {isBalanced ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+                  <span className="font-medium">{isBalanced ? 'Balanced' : 'Not Balanced'}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="flex justify-end space-x-3">
+              <button onClick={() => setShowNewJournalForm(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={saveJournal}
+                disabled={!isBalanced || journalLines.length === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Journal
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

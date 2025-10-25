@@ -31,7 +31,8 @@ async def get_journal_batches(
     process_id: Optional[int] = Query(None),
     entity_id: Optional[str] = Query(None),
     scenario_id: Optional[int] = Query(None),
-    category: Optional[str] = Query(None),
+    period: Optional[str] = Query(None),
+    category_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     limit: int = Query(100, le=1000),
     offset: int = Query(0, ge=0)
@@ -60,9 +61,12 @@ async def get_journal_batches(
             if scenario_id:
                 query += " AND jb.scenario_id = %s"
                 params.append(scenario_id)
-            if category:
-                query += " AND jb.category = %s"
-                params.append(category)
+            if period:
+                query += " AND jb.period = %s"
+                params.append(period)
+            if category_id:
+                query += " AND jb.category_id = %s"
+                params.append(category_id)
             if status:
                 query += " AND jb.status = %s"
                 params.append(status)
@@ -105,26 +109,29 @@ async def create_journal_batch(
                 INSERT INTO journal_batches (
                     batch_number, journal_reference, description, journal_date,
                     process_id, entity_id, scenario_id,
-                    fiscal_year, period, category_id, category, journal_type, status,
-                    created_by, total_debits, total_credits, is_balanced
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    fiscal_year, period, category_id, journal_type, status,
+                    created_by, total_debits, total_credits, is_balanced,
+                    is_recurring, recurring_expires_on, recurring_repeat_days
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 batch_number,
                 batch_data.get('journal_reference', ''),
                 batch_data.get('description', ''),
-                batch_data.get('journal_date'),
+                batch_data.get('journal_date', date.today()),
                 batch_data.get('process_id'),
                 batch_data.get('entity_id'),
                 batch_data.get('scenario_id'),
                 batch_data.get('fiscal_year'),
                 batch_data.get('period'),
                 batch_data.get('category_id'),
-                batch_data.get('category', 'Manual Adjustments'),
                 batch_data.get('journal_type', 'manual'),
                 batch_data.get('status', 'draft'),
                 batch_data.get('created_by', 'system'),
-                0, 0, False
+                0, 0, False,
+                batch_data.get('is_recurring', False),
+                batch_data.get('recurring_expires_on'),
+                batch_data.get('recurring_repeat_days')
             ))
             
             batch_id = cursor.fetchone()[0]

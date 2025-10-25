@@ -197,7 +197,10 @@ def create_journal_tables(conn):
             total_credits DECIMAL(15,2) DEFAULT 0,
             is_balanced BOOLEAN DEFAULT FALSE,
             recurring_template_id INTEGER,
-            attachment_count INTEGER DEFAULT 0
+            attachment_count INTEGER DEFAULT 0,
+            is_recurring BOOLEAN DEFAULT FALSE,
+            recurring_expires_on DATE,
+            recurring_repeat_days INTEGER
         )
     """)
     
