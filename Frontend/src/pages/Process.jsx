@@ -34,7 +34,7 @@ import {
   Unlock,
   FileText,
 } from "lucide-react";
-import FinancialStatements from "../components/FinancialStatements";
+import FinancialStatementsSimple from "../components/FinancialStatementsSimple";
 
 // Icon mapping for converting string names to components
 const ICON_MAP = {
@@ -4122,7 +4122,7 @@ const Process = () => {
       {/* Financial Statements Modal */}
       {console.log("🎭 Rendering modal section, showReports:", showReports)}
       {showReports && (
-        <FinancialStatements
+        <FinancialStatementsSimple
           processContext={{
             processId: selectedProcess?.id || null,
             processName: selectedProcess?.name || "Unknown Process",
