@@ -2888,6 +2888,33 @@ const Process = () => {
                                   `Opening ${node.title} module${entityContextMsg}...`,
                                   "success",
                                 );
+                              } else if (
+                                node.type === "reports" ||
+                                node.type === "consolidated_reports"
+                              ) {
+                                // Open Reports Modal
+                                if (
+                                  !selectedYear ||
+                                  selectedPeriods.length === 0
+                                ) {
+                                  showNotification(
+                                    "Please select fiscal year and periods first",
+                                    "error",
+                                  );
+                                  return;
+                                }
+                                if (!selectedScenario) {
+                                  showNotification(
+                                    "Please select a scenario first",
+                                    "error",
+                                  );
+                                  return;
+                                }
+                                setShowReports(true);
+                                showNotification(
+                                  "Opening Financial Reports...",
+                                  "success",
+                                );
                               } else {
                                 showNotification(
                                   `${node.title} module coming soon...`,
@@ -3014,13 +3041,46 @@ const Process = () => {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    runNode(node.id);
+
+                                    // Special handling for Reports node
+                                    if (
+                                      node.type === "reports" ||
+                                      node.type === "consolidated_reports"
+                                    ) {
+                                      if (
+                                        !selectedYear ||
+                                        selectedPeriods.length === 0
+                                      ) {
+                                        showNotification(
+                                          "Please select fiscal year and periods first",
+                                          "error",
+                                        );
+                                        return;
+                                      }
+                                      if (!selectedScenario) {
+                                        showNotification(
+                                          "Please select a scenario first",
+                                          "error",
+                                        );
+                                        return;
+                                      }
+                                      setShowReports(true);
+                                      showNotification(
+                                        "Opening Financial Reports...",
+                                        "success",
+                                      );
+                                    } else {
+                                      runNode(node.id);
+                                    }
                                   }}
                                   disabled={node.status === "running"}
                                   className="w-full px-2 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white text-xs font-medium rounded flex items-center justify-center gap-1 transition-colors"
                                 >
                                   <Play className="h-3 w-3" />
-                                  Run Node
+                                  {node.type === "reports" ||
+                                  node.type === "consolidated_reports"
+                                    ? "Open Reports"
+                                    : "Run Node"}
                                 </button>
                               </div>
                             </div>

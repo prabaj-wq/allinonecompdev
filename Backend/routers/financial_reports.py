@@ -304,74 +304,167 @@ def get_account_amounts(cursor, accounts, context):
     amounts = {}
 
     try:
-        # Get entity amounts
-        if context.get("entity_id") and context.get("scenario_id"):
-            cursor.execute(
-                """
-                SELECT ea.account_id, acc.account_code,
-                       SUM(ea.amount) as total_amount, ea.currency
-                FROM entity_amounts ea
-                JOIN accounts acc ON ea.account_id = acc.account_code::int
-                WHERE acc.account_code = ANY(%s)
-                  AND ea.scenario_id = %s
-                  AND ea.entity_id = %s
-                GROUP BY ea.account_id, acc.account_code, ea.currency
-            """,
-                (account_codes, context.get("scenario_id"), context.get("entity_id")),
+        # Build filter conditions based on context
+        process_filter = ""
+        scenario_filter = ""
+        period_filter = ""
+
+        filter_params = [account_codes]
+
+        if context.get("process_id"):
+            process_filter = " AND ea.process_id = %s"
+            filter_params.append(context.get("process_id"))
+
+        if context.get("scenario_id"):
+            scenario_filter = " AND ea.scenario_id = %s"
+            filter_params.append(context.get("scenario_id"))
+
+        if context.get("period_ids") and len(context.get("period_ids", [])) > 0:
+            period_filter = " AND ea.period_id = ANY(%s)"
+            filter_params.append(context.get("period_ids"))
+
+        # Get entity amounts with process, scenario, and period filters
+        entity_query = f"""
+            SELECT ea.account_id, acc.account_code, ea.entity_id,
+                   SUM(ea.amount) as total_amount, ea.currency
+            FROM entity_amounts ea
+            JOIN accounts acc ON ea.account_id = acc.account_code::int
+            WHERE acc.account_code = ANY(%s)
+              {process_filter}
+              {scenario_filter}
+              {period_filter}
+            GROUP BY ea.account_id, acc.account_code, ea.entity_id, ea.currency
+        """
+
+        cursor.execute(entity_query, tuple(filter_params))
+        entity_amounts = cursor.fetchall()
+
+        for amount in entity_amounts:
+            account_code = amount["account_code"]
+            entity_id = amount.get("entity_id", "unknown")
+
+            if account_code not in amounts:
+                amounts[account_code] = {}
+            if "entities" not in amounts[account_code]:
+                amounts[account_code]["entities"] = {}
+
+            if entity_id not in amounts[account_code]["entities"]:
+                amounts[account_code]["entities"][entity_id] = {
+                    "entity_amount": 0,
+                    "ic_amount": 0,
+                    "other_amount": 0,
+                }
+
+            amounts[account_code]["entities"][entity_id]["entity_amount"] += float(
+                amount["total_amount"] or 0
             )
+            amounts[account_code]["currency"] = amount["currency"]
 
-            entity_amounts = cursor.fetchall()
+        # Get IC amounts with same filters
+        ic_filter_params = [account_codes]
+        ic_process_filter = ""
+        ic_scenario_filter = ""
+        ic_period_filter = ""
 
-            for amount in entity_amounts:
-                account_code = amount["account_code"]
-                if account_code not in amounts:
-                    amounts[account_code] = {}
-                amounts[account_code]["entity_amount"] = float(
-                    amount["total_amount"] or 0
-                )
-                amounts[account_code]["currency"] = amount["currency"]
+        if context.get("process_id"):
+            ic_process_filter = " AND ic.process_id = %s"
+            ic_filter_params.append(context.get("process_id"))
 
-        # Get IC amounts
-        cursor.execute(
-            """
-            SELECT ic.account_id, acc.account_code,
+        if context.get("scenario_id"):
+            ic_scenario_filter = " AND ic.scenario_id = %s"
+            ic_filter_params.append(context.get("scenario_id"))
+
+        if context.get("period_ids") and len(context.get("period_ids", [])) > 0:
+            ic_period_filter = " AND ic.period_id = ANY(%s)"
+            ic_filter_params.append(context.get("period_ids"))
+
+        ic_query = f"""
+            SELECT ic.account_id, acc.account_code, ic.from_entity_id,
                    SUM(ic.amount) as total_amount, ic.currency
             FROM ic_amounts ic
             JOIN accounts acc ON ic.account_id = acc.account_code::int
             WHERE acc.account_code = ANY(%s)
-            GROUP BY ic.account_id, acc.account_code, ic.currency
-        """,
-            (account_codes,),
-        )
+              {ic_process_filter}
+              {ic_scenario_filter}
+              {ic_period_filter}
+            GROUP BY ic.account_id, acc.account_code, ic.from_entity_id, ic.currency
+        """
 
+        cursor.execute(ic_query, tuple(ic_filter_params))
         ic_amounts = cursor.fetchall()
 
         for amount in ic_amounts:
             account_code = amount["account_code"]
+            entity_id = amount.get("from_entity_id", "unknown")
+
             if account_code not in amounts:
                 amounts[account_code] = {}
-            amounts[account_code]["ic_amount"] = float(amount["total_amount"] or 0)
+            if "entities" not in amounts[account_code]:
+                amounts[account_code]["entities"] = {}
 
-        # Get other amounts
-        cursor.execute(
-            """
-            SELECT oa.account_id, acc.account_code,
+            if entity_id not in amounts[account_code]["entities"]:
+                amounts[account_code]["entities"][entity_id] = {
+                    "entity_amount": 0,
+                    "ic_amount": 0,
+                    "other_amount": 0,
+                }
+
+            amounts[account_code]["entities"][entity_id]["ic_amount"] += float(
+                amount["total_amount"] or 0
+            )
+
+        # Get other amounts with same filters
+        other_filter_params = [account_codes]
+        other_process_filter = ""
+        other_scenario_filter = ""
+        other_period_filter = ""
+
+        if context.get("process_id"):
+            other_process_filter = " AND oa.process_id = %s"
+            other_filter_params.append(context.get("process_id"))
+
+        if context.get("scenario_id"):
+            other_scenario_filter = " AND oa.scenario_id = %s"
+            other_filter_params.append(context.get("scenario_id"))
+
+        if context.get("period_ids") and len(context.get("period_ids", [])) > 0:
+            other_period_filter = " AND oa.period_id = ANY(%s)"
+            other_filter_params.append(context.get("period_ids"))
+
+        other_query = f"""
+            SELECT oa.account_id, acc.account_code, oa.entity_id,
                    SUM(oa.amount) as total_amount, oa.currency
             FROM other_amounts oa
             JOIN accounts acc ON oa.account_id = acc.account_code::int
             WHERE acc.account_code = ANY(%s)
-            GROUP BY oa.account_id, acc.account_code, oa.currency
-        """,
-            (account_codes,),
-        )
+              {other_process_filter}
+              {other_scenario_filter}
+              {other_period_filter}
+            GROUP BY oa.account_id, acc.account_code, oa.entity_id, oa.currency
+        """
 
+        cursor.execute(other_query, tuple(other_filter_params))
         other_amounts = cursor.fetchall()
 
         for amount in other_amounts:
             account_code = amount["account_code"]
+            entity_id = amount.get("entity_id", "unknown")
+
             if account_code not in amounts:
                 amounts[account_code] = {}
-            amounts[account_code]["other_amount"] = float(amount["total_amount"] or 0)
+            if "entities" not in amounts[account_code]:
+                amounts[account_code]["entities"] = {}
+
+            if entity_id not in amounts[account_code]["entities"]:
+                amounts[account_code]["entities"][entity_id] = {
+                    "entity_amount": 0,
+                    "ic_amount": 0,
+                    "other_amount": 0,
+                }
+
+            amounts[account_code]["entities"][entity_id]["other_amount"] += float(
+                amount["total_amount"] or 0
+            )
 
     except Exception as e:
         logger.error(f"Error getting account amounts: {e}")
