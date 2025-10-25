@@ -4069,25 +4069,34 @@ const Process = () => {
       {showReports && (
         <ProcessReports
           processContext={{
-            processId: selectedProcess?.id,
-            processName: selectedProcess?.name,
+            processId: selectedProcess?.id || null,
+            processName: selectedProcess?.name || "Unknown Process",
             entityId:
               selectedEntityContext !== "all" ? selectedEntityContext : null,
             entityName:
               selectedEntityContext !== "all"
                 ? availableEntities.find(
                     (e) => getEntityIdentifier(e) === selectedEntityContext,
-                  )?.name
+                  )?.name || null
                 : null,
-            scenarioId: selectedScenario,
-            scenarioName: scenarios.find((s) => s.id === selectedScenario)
-              ?.scenario_name,
-            fiscalYear: selectedYear,
-            selectedPeriods: selectedPeriods,
-            periodNames: selectedPeriods.map((pId) => {
-              const period = availablePeriods.find((p) => p.id === pId);
-              return period?.period_name || period?.name || pId;
-            }),
+            scenarioId: selectedScenario || null,
+            scenarioName: Array.isArray(scenarios)
+              ? scenarios.find((s) => s.id === selectedScenario)
+                  ?.scenario_name || null
+              : null,
+            fiscalYear: selectedYear || null,
+            selectedPeriods: Array.isArray(selectedPeriods)
+              ? selectedPeriods
+              : [],
+            periodNames:
+              Array.isArray(selectedPeriods) && Array.isArray(availablePeriods)
+                ? selectedPeriods
+                    .map((pId) => {
+                      const period = availablePeriods.find((p) => p.id === pId);
+                      return period?.period_name || period?.name || String(pId);
+                    })
+                    .filter(Boolean)
+                : [],
           }}
           onClose={() => setShowReports(false)}
         />

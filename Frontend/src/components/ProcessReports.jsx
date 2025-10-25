@@ -19,8 +19,25 @@ import {
 } from "lucide-react";
 import { useCompany } from "../contexts/CompanyContext";
 
-const ProcessReports = ({ processContext, onClose }) => {
+const ProcessReports = ({ processContext = {}, onClose }) => {
   const { selectedCompany } = useCompany();
+
+  // Validate and set defaults for processContext
+  const safeProcessContext = {
+    processId: processContext.processId || null,
+    processName: processContext.processName || "Unknown Process",
+    entityId: processContext.entityId || null,
+    entityName: processContext.entityName || null,
+    scenarioId: processContext.scenarioId || null,
+    scenarioName: processContext.scenarioName || null,
+    fiscalYear: processContext.fiscalYear || null,
+    selectedPeriods: Array.isArray(processContext.selectedPeriods)
+      ? processContext.selectedPeriods
+      : [],
+    periodNames: Array.isArray(processContext.periodNames)
+      ? processContext.periodNames
+      : [],
+  };
   const [loading, setLoading] = useState(false);
   const [hierarchies, setHierarchies] = useState([]);
   const [selectedHierarchy, setSelectedHierarchy] = useState(null);
@@ -123,15 +140,15 @@ const ProcessReports = ({ processContext, onClose }) => {
 
       const reportRequest = {
         process_context: {
-          process_id: processContext.processId,
-          process_name: processContext.processName,
-          entity_id: processContext.entityId,
-          entity_name: processContext.entityName,
-          scenario_id: processContext.scenarioId,
-          scenario_name: processContext.scenarioName,
-          fiscal_year: processContext.fiscalYear,
-          period_ids: processContext.selectedPeriods,
-          period_names: processContext.periodNames,
+          process_id: safeProcessContext.processId,
+          process_name: safeProcessContext.processName,
+          entity_id: safeProcessContext.entityId,
+          entity_name: safeProcessContext.entityName,
+          scenario_id: safeProcessContext.scenarioId,
+          scenario_name: safeProcessContext.scenarioName,
+          fiscal_year: safeProcessContext.fiscalYear,
+          period_ids: safeProcessContext.selectedPeriods,
+          period_names: safeProcessContext.periodNames,
         },
         hierarchy_selection: {
           hierarchy_id: selectedHierarchy.hierarchy_id,
@@ -142,7 +159,7 @@ const ProcessReports = ({ processContext, onClose }) => {
         },
         report_settings: {
           report_type: "balance_sheet",
-          periods: processContext.selectedPeriods || [],
+          periods: safeProcessContext.selectedPeriods || [],
           show_zero_balances: reportSettings.showZeroBalances,
           currency: reportSettings.currency,
           consolidation_level: reportSettings.consolidationLevel,
@@ -207,8 +224,8 @@ const ProcessReports = ({ processContext, onClose }) => {
         const response = await fetch(
           `/api/data-input/entries?company_name=${selectedCompany}` +
             `&card_type=entity_amounts` +
-            `&process_id=${processContext.processId}` +
-            `&scenario_id=${processContext.scenarioId}` +
+            `&process_id=${safeProcessContext.processId}` +
+            `&scenario_id=${safeProcessContext.scenarioId}` +
             `&account_code=${account.account_code}`,
           {
             headers: {
@@ -503,8 +520,10 @@ const ProcessReports = ({ processContext, onClose }) => {
                 Financial Reports
               </h2>
               <p className="text-blue-100 text-sm">
-                Process: {processContext.processName} | Period:{" "}
-                {processContext.periodNames?.join(", ")}
+                Process: {safeProcessContext.processName} | Period:{" "}
+                {safeProcessContext.periodNames.length > 0
+                  ? safeProcessContext.periodNames.join(", ")
+                  : "No periods selected"}
               </p>
             </div>
           </div>
