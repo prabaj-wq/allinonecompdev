@@ -214,70 +214,91 @@ const HierarchyEditorPanel = ({
   }
 
   const handleAssignElements = async () => {
+    console.log('🚀 handleAssignElements called')
+    console.log('🚀 selectedEntities:', selectedEntities)
+    console.log('🚀 selectedEntities.length:', selectedEntities.length)
+    
+    if (selectedEntities.length === 0) {
+      showNotification('Please select at least one element to assign', 'warning')
+      return
+    }
+    
     try {
       console.log('🚀 Assigning elements to node:', selectedNode)
       console.log('🚀 Selected entities:', selectedEntities)
       console.log('🚀 Hierarchy type:', hierarchyType)
       
+      // Ensure we're assigning to the correct node
+      if (!selectedNode?.id) {
+        console.error('🚀 ERROR: No selected node ID! Cannot assign elements.')
+        showNotification('Error: No node selected. Please select a node first.', 'error')
+        return
+      }
+      
+      let successCount = 0
+      let errorCount = 0
+      
       // Assign selected entities to the current node
       for (const entity of selectedEntities) {
-        const updateData = {
-          ...entity,
-          node_id: selectedNode?.id || null, // Assign to the selected node
-          hierarchy_id: hierarchy?.id
-        }
-        
-        console.log('🚀 selectedNode?.id:', selectedNode?.id)
-        console.log('🚀 hierarchy?.id:', hierarchy?.id)
-        console.log('🚀 updateData.node_id:', updateData.node_id)
-        console.log('🚀 updateData.hierarchy_id:', updateData.hierarchy_id)
-        
-        // Ensure we're assigning to the correct node
-        if (!selectedNode?.id) {
-          console.error('🚀 ERROR: No selected node ID! Cannot assign account.')
-          showNotification('Error: No node selected. Please select a node first.', 'error')
-          return
-        }
-        
-        console.log('🚀 Updating entity with data:', updateData)
-        console.log('🚀 Entity ID being sent:', entity.id, 'Type:', typeof entity.id)
-        console.log('🚀 Account code:', entity.account_code || entity.code)
-        
-        // Call the API to update the entity's/account's node_id
-        const endpoint = hierarchyType === 'account' ? `/api/ifrs-accounts/${entity.account_code || entity.code}` : `/api/axes-entity/entities/${entity.id}`
-        console.log('🚀 Using endpoint:', endpoint)
-        const response = await fetch(`${endpoint}?company_name=Default%20Company`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify(updateData)
-        })
-        
-        console.log('🚀 Response status:', response.status)
-        console.log('🚀 Response ok:', response.ok)
-        
-        if (response.ok) {
-          const responseData = await response.json()
-          console.log('🚀 Response data:', responseData)
-          console.log(`🚀 Entity ${entity.id} assigned to node ${selectedNode?.id}`)
-        } else {
-          const error = await response.text()
-          console.error('🚀 Error response:', error)
-          console.error(`🚀 Failed to assign entity ${entity.id}:`, error)
-          showNotification(`Failed to assign entity ${entity.name}: ${error || 'Unknown error'}`, 'error')
+        try {
+          const updateData = {
+            ...entity,
+            node_id: selectedNode.id,
+            hierarchy_id: hierarchy?.id
+          }
+          
+          console.log('🚀 Updating entity:', entity.name || entity.account_name)
+          console.log('🚀 Update data:', updateData)
+          
+          // Call the API to update the entity's/account's node_id
+          const endpoint = hierarchyType === 'account' 
+            ? `/api/axes-account/accounts/${entity.account_code || entity.code}`
+            : `/api/axes-entity/entities/${entity.id}`
+          
+          console.log('🚀 Using endpoint:', endpoint)
+          
+          const response = await fetch(`${endpoint}?company_name=Default%20Company`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify(updateData)
+          })
+          
+          console.log('🚀 Response status:', response.status)
+          
+          if (response.ok) {
+            const responseData = await response.json()
+            console.log('🚀 Successfully assigned:', entity.name || entity.account_name)
+            successCount++
+          } else {
+            const error = await response.text()
+            console.error('🚀 Failed to assign:', entity.name || entity.account_name, error)
+            errorCount++
+          }
+        } catch (err) {
+          console.error('🚀 Error assigning entity:', err)
+          errorCount++
         }
       }
       
       // Refresh the hierarchy structure to show the changes
       if (onRefresh) {
+        console.log('🚀 Refreshing hierarchy structure...')
         await onRefresh()
       }
       
+      // Close the selector and clear selection
       setShowElementSelector(false)
       setSelectedEntities([])
-      showNotification(`Successfully assigned ${selectedEntities.length} ${hierarchyType === 'account' ? 'account(s)' : 'element(s)'} to the node!`, 'success')
+      
+      // Show result notification
+      if (errorCount === 0) {
+        showNotification(`Successfully assigned ${successCount} ${hierarchyType === 'account' ? 'account(s)' : 'element(s)'} to the node!`, 'success')
+      } else {
+        showNotification(`Assigned ${successCount} element(s), ${errorCount} failed`, 'warning')
+      }
     } catch (error) {
       console.error('Error assigning elements:', error)
       showNotification('Error assigning elements. Please try again.', 'error')
@@ -329,7 +350,8 @@ const HierarchyEditorPanel = ({
   }
 
   const handleAddNew = (type) => {
-    console.log('handleAddNew called with type:', type)
+    console.log('🔍 handleAddNew called with type:', type)
+    console.log('🔍 hierarchyType:', hierarchyType)
     
     if (type === 'node') {
       // For nodes, show the form to create new node
@@ -359,12 +381,20 @@ const HierarchyEditorPanel = ({
       setErrors({})
     } else if (type === 'element') {
       // For elements, show multi-select dropdown of existing entities/accounts
+      console.log('🔍 Opening element selector...')
+      console.log('🔍 Current hierarchyStructure:', hierarchyStructure)
+      
       setShowElementSelector(true)
       setSelectedEntities([])
+      setSelectionKey(prev => prev + 1) // Force re-render
       
       // Load all accounts if this is an account hierarchy
       if (hierarchyType === 'account') {
+        console.log('🔍 Loading all accounts...')
         loadAllAccounts()
+      } else {
+        console.log('🔍 Entity hierarchy - using unassigned entities from structure')
+        console.log('🔍 Unassigned entities:', hierarchyStructure.unassigned_entities)
       }
     }
   }
@@ -936,11 +966,16 @@ const HierarchyEditorPanel = ({
                 const itemsToShow = hierarchyType === 'account' ? allAccounts : 
                   ((hierarchyStructure.unassigned_entities || []).concat(hierarchyStructure.unassigned_accounts || []))
                 
+                console.log(' Element Selector - itemsToShow:', itemsToShow)
+                console.log(' Element Selector - hierarchyType:', hierarchyType)
+                console.log(' Element Selector - allAccounts:', allAccounts)
+                console.log(' Element Selector - unassigned_entities:', hierarchyStructure.unassigned_entities)
                 
                 if (itemsToShow.length === 0) {
                   return (
                     <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                      No {hierarchyType === 'account' ? 'accounts' : 'items'} available
+                      <p>No {hierarchyType === 'account' ? 'accounts' : 'entities'} available</p>
+                      <p className="text-xs mt-2">All elements may already be assigned to nodes</p>
                     </div>
                   )
                 }

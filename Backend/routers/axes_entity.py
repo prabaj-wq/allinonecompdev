@@ -2059,21 +2059,46 @@ async def delete_hierarchy_node(
         with get_company_connection(company_name) as conn:
             cur = conn.cursor()
             
+            # Check if node has child nodes
+            cur.execute("SELECT COUNT(*) FROM hierarchy_nodes WHERE parent_id = %s AND company_id = %s", (node_id, company_name))
+            child_node_count = cur.fetchone()[0]
+            
+            # Check if node has assigned entities
+            cur.execute("SELECT COUNT(*) FROM axes_entities WHERE node_id = %s AND company_id = %s", (node_id, company_name))
+            entity_count = cur.fetchone()[0]
+            
+            if not cascade and (child_node_count > 0 or entity_count > 0):
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Cannot delete node with {child_node_count} child node(s) and {entity_count} assigned entity(ies). Use cascade=true to delete all."
+                )
+            
             if cascade:
-                # Delete node and all children (CASCADE will handle this)
-                cur.execute("DELETE FROM axes_entities WHERE id = %s", (node_id,))
-            else:
-                # Check if node has children
-                cur.execute("SELECT COUNT(*) FROM axes_entities WHERE parent_id = %s", (node_id,))
-                child_count = cur.fetchone()[0]
-                
-                if child_count > 0:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail="Cannot delete node with children. Use cascade=true to delete all children."
+                # Unassign all entities from this node and child nodes
+                cur.execute("""
+                    UPDATE axes_entities 
+                    SET node_id = NULL 
+                    WHERE node_id IN (
+                        WITH RECURSIVE node_tree AS (
+                            SELECT id FROM hierarchy_nodes WHERE id = %s AND company_id = %s
+                            UNION ALL
+                            SELECT hn.id FROM hierarchy_nodes hn
+                            INNER JOIN node_tree nt ON hn.parent_id = nt.id
+                            WHERE hn.company_id = %s
+                        )
+                        SELECT id FROM node_tree
                     )
+                    AND company_id = %s
+                """, (node_id, company_name, company_name, company_name))
                 
-                cur.execute("DELETE FROM axes_entities WHERE id = %s", (node_id,))
+                # Delete the node and all children (CASCADE will handle child nodes)
+                cur.execute("DELETE FROM hierarchy_nodes WHERE id = %s AND company_id = %s", (node_id, company_name))
+            else:
+                # Unassign entities from this node only
+                cur.execute("UPDATE axes_entities SET node_id = NULL WHERE node_id = %s AND company_id = %s", (node_id, company_name))
+                
+                # Delete the node
+                cur.execute("DELETE FROM hierarchy_nodes WHERE id = %s AND company_id = %s", (node_id, company_name))
             
             conn.commit()
             return {"message": "Node deleted successfully"}

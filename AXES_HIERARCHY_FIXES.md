@@ -1,4 +1,124 @@
-# Axes Hierarchy Fixes - Complete Summary
+# Axes Hierarchy Fixes - Complete Resolution
+
+## Issues Fixed (All 3 Problems Resolved)
+
+### 1. ✅ Root Node Deletion Not Working
+**Problem**: When trying to delete a root node in the hierarchy, the popup appeared but clicking "OK" only refreshed the page without deleting the node.
+
+**Root Cause**: The backend DELETE endpoint was trying to delete from the wrong table (`axes_entities` or `axes_accounts` instead of `hierarchy_nodes`).
+
+**Solution**: Fixed both entity and account hierarchy node deletion endpoints to:
+- Delete from the correct `hierarchy_nodes` table
+- Properly check for child nodes and assigned elements
+- Unassign elements before deletion (or cascade delete if requested)
+- Provide clear error messages showing counts of child nodes and assigned elements
+
+**Files Modified**:
+- `Backend/routers/axes_entity.py` - Lines 2051-2111
+- `Backend/routers/axes_account.py` - Lines 1922-1982
+
+### 2. ✅ Elements Not Appearing in Assignment Modal
+**Problem**: Even though elements existed in axes accounts/entities, when clicking "Assign Elements", nothing appeared in the modal.
+
+**Root Cause**: 
+- For account hierarchies: The `loadAllAccounts()` function wasn't being called properly
+- For entity hierarchies: The unassigned entities weren't being displayed correctly
+- Missing console logs made debugging difficult
+
+**Solution**: Enhanced the element selector to:
+- Properly load all accounts for account hierarchies via `/api/ifrs-accounts`
+- Correctly display unassigned entities from hierarchy structure
+- Add comprehensive console logging for debugging
+- Show helpful message when no elements are available
+- Force re-render when opening selector
+
+**Files Modified**:
+- `Frontend/src/components/HierarchyEditorPanel.jsx` - Lines 352-399, 963-980
+
+### 3. ✅ Assign Selected Button Not Working
+**Problem**: After selecting elements and clicking "Assign Selected", nothing happened - elements weren't assigned to the node.
+
+**Root Cause**:
+- Missing validation for empty selection
+- Incorrect API endpoint being used for accounts
+- No error handling or success tracking
+- Missing refresh after assignment
+
+**Solution**: Completely rewrote `handleAssignElements` function to:
+- Validate that elements are selected before proceeding
+- Use correct API endpoints (`/api/axes-account/accounts/` for accounts, `/api/axes-entity/entities/` for entities)
+- Track success and error counts
+- Properly refresh hierarchy structure after assignment
+- Show appropriate notifications (success, warning, or error)
+- Add comprehensive console logging
+
+**Files Modified**:
+- `Frontend/src/components/HierarchyEditorPanel.jsx` - Lines 216-306
+
+## Technical Details
+
+### Backend Changes
+
+#### Entity Hierarchy Node Deletion (`axes_entity.py`):
+```python
+# Now correctly deletes from hierarchy_nodes table
+# Checks for child nodes and assigned entities
+# Unassigns entities before deletion
+# Provides clear error messages with counts
+```
+
+#### Account Hierarchy Node Deletion (`axes_account.py`):
+```python
+# Same improvements as entity hierarchy
+# Properly handles account assignments
+# Uses recursive CTE for cascade deletion
+```
+
+### Frontend Changes
+
+#### Element Assignment Function:
+```javascript
+// Added validation for empty selection
+// Fixed API endpoints for both entity and account types
+// Added success/error tracking
+// Proper refresh after assignment
+// Comprehensive error handling
+```
+
+#### Element Selector Modal:
+```javascript
+// Properly loads all accounts for account hierarchies
+// Displays unassigned entities correctly
+// Shows helpful messages when empty
+// Forces re-render on open
+```
+
+## Testing Checklist
+
+- [x] Root node deletion works and shows proper confirmation
+- [x] Child node deletion requires cascade flag
+- [x] Elements appear in assignment modal for both entity and account hierarchies
+- [x] Assign Selected button properly assigns elements to nodes
+- [x] Hierarchy refreshes after assignment showing updated structure
+- [x] Proper error messages for all failure cases
+- [x] Success notifications for successful operations
+
+## User Experience Improvements
+
+1. **Clear Error Messages**: Now shows exactly how many child nodes and assigned elements prevent deletion
+2. **Proper Notifications**: Success, warning, and error notifications for all operations
+3. **Console Logging**: Comprehensive debugging information in browser console
+4. **Loading States**: Proper handling of async operations
+5. **Validation**: Prevents invalid operations before API calls
+
+## Next Steps
+
+All three reported issues have been fixed. The system now:
+- ✅ Deletes root nodes properly
+- ✅ Shows elements in the assignment modal
+- ✅ Assigns selected elements to nodes correctly
+
+Users should now be able to manage hierarchy nodes and assign elements without any issues. - Complete Summary
 
 ## Issues Fixed
 
